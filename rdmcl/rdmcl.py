@@ -367,13 +367,25 @@ def _psi_pred(seq_obj):
         return
     temp_dir = MyFuncs.TempDir()
     pwd = os.getcwd()
+    psipred_dir = os.path.abspath("%s/../psipred" % os.path.dirname(__file__))
     os.chdir(temp_dir.path)
     with open("sequence.fa", "w") as _ofile:
         _ofile.write(seq_obj.format("fasta"))
 
-    Popen("runpsipred sequence.fa > /dev/null 2>&1", shell=True).wait()
+    # ToDo: Merge this all into a single Popen call
+    Popen("psiblast -db {0}/blastdb/pannexins -query sequence.fa -inclusion_ethresh 0.001 -out_pssm {1}/{2}.chk -num_iterations 3 "
+          "-num_alignments 0 >& {1}/{2}.blast".format(psipred_dir, temp_dir.path, seq_obj.id), shell=True).wait()
+
+    Popen("{0}/bin/chkparse {1}/{2}.chk > {1}/{2}.mtx".format(psipred_dir, temp_dir.path, seq_obj.id), shell=True).wait()
+
+    Popen("{0}/bin/psipred {1}/{2}.mtx {0}/data/weights.dat {0}/data/weights.dat2 {0}/data/weights.dat3 "
+          "> {1}/{2}.ss".format(psipred_dir, temp_dir.path, seq_obj.id), shell=True).wait()
+
+    Popen("{0}/bin/psipass2 {0}/data/weights_p2.dat 1 1.0 1.0 {1}/{2}.ss2 {1}/{2}.ss "
+          "> {1}/{2}.horiz".format(psipred_dir, temp_dir.path, seq_obj.id), shell=True).wait()
+
     os.chdir(pwd)
-    shutil.move("%s/sequence.ss2" % temp_dir.path, "%s/psi_pred/%s.ss2" % (in_args.outdir, seq_obj.id))
+    shutil.move("%s/%s.ss2" % (temp_dir.path, seq_obj.id), "%s/psi_pred/" % in_args.outdir)
     return
 
 
@@ -792,7 +804,7 @@ if __name__ == '__main__':
     final_clusters = orthogroup_caller(group_0, final_clusters, seqbuddy=sequences,
                                        steps=in_args.mcmcmc_steps, quiet=False)
     print("Done")
-    print(final_clusters)
+    print([x.seq_ids for x in final_clusters])
     sys.exit()
     # Try to fold singletons and doublets back into groups.
     if not in_args.supress_singlet_folding:
