@@ -29,8 +29,8 @@ from Bio.SubsMat import SeqMat, MatrixInfo
 # My packages
 import mcmcmc  # Note: This is in ../utilities and sym-linked to python3.5/site-packages
 import MyFuncs
-import SeqBuddy as Sb
-import AlignBuddy as Alb
+from buddysuite import SeqBuddy as Sb
+from buddysuite import AlignBuddy as Alb
 
 
 class Cluster(object):
@@ -649,7 +649,7 @@ def create_all_by_all_scores(seqbuddy, quiet=False):
         alignment = Alb.AlignBuddy(str(seqbuddy))
         sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "score"])
     else:
-        alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), tool="mafft", params="--globalpair --thread -1", quiet=True)
+        alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -1", quiet=True)
 
         # Need to specify what columns the PsiPred files map to now that there are gaps.
         psi_pred_files = {}
@@ -741,7 +741,7 @@ if __name__ == '__main__':
     printer = MyFuncs.DynamicPrint(quiet=in_args.quiet)
 
     sequences = Sb.SeqBuddy(in_args.sequences)
-    PHAT = make_full_mat(SeqMat(MatrixInfo.phat75_73))
+    #PHAT = make_full_mat(SeqMat(MatrixInfo.phat75_73))
     BLOSUM62 = make_full_mat(SeqMat(MatrixInfo.blosum62))
     BLOSUM45 = make_full_mat(SeqMat(MatrixInfo.blosum45))
 
@@ -750,7 +750,7 @@ if __name__ == '__main__':
     for aa in ambiguous_X:
         pair = sorted((aa, "X"))
         pair = tuple(pair)
-        PHAT[pair] = ambiguous_X[aa]
+        #PHAT[pair] = ambiguous_X[aa]
         BLOSUM62[pair] = ambiguous_X[aa]
         BLOSUM45[pair] = ambiguous_X[aa]
 
@@ -771,11 +771,11 @@ if __name__ == '__main__':
     MyFuncs.run_multicore_function(sequences.records, _psi_pred)
 
     print("\nGenerating initial all-by-all")
-    #alignbuddy, scores_data = create_all_by_all_scores(sequences)
-    alignbuddy = Alb.generate_msa(Sb.make_copy(sequences), tool="mafft", params="--globalpair --thread -1", quiet=True)
+    alignbuddy, scores_data = create_all_by_all_scores(sequences)
+    #alignbuddy = Alb.generate_msa(Sb.make_copy(sequences), "mafft", params="--globalpair --thread -1", quiet=True)
     alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
-    scores_data = pd.read_csv("temp_group0.csv", index_col=False)
-    scores_data.to_csv("%s/sim_scores/group_0.csv" % in_args.outdir, index=False)
+    #scores_data = pd.read_csv("temp_group0.csv", index_col=False)
+    #scores_data.to_csv("%s/sim_scores/group_0.csv" % in_args.outdir, index=False)
     group_0 = pd.concat([scores_data.seq1, scores_data.seq2])
     group_0 = group_0.value_counts()
     group_0 = Cluster([i for i in group_0.index], scores_data)
