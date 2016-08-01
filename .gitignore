@@ -1,0 +1,36 @@
+# Python binaries
+*.pyc
+
+# PyCharm profile stuff
+.idea
+.idea/*
+
+# Spyder IDE config files
+.spyderworkspace
+.spyderproject
+
+# Sublime IDE stuff
+*sublime-workspace
+
+# Mac system stuff
+.DS_Store
+
+# Unit test html coverage files
+htmlcov
+.coverage
+.cache
+
+# Test/build files
+dependencies.conf
+/buddysuite/test_files/*
+/buddysuite/build_dir/BuddySuite.py
+
+# IPython
+.ipynb_checkpoints/*
+*.ipynb
+
+# Manuscript compilation files
+bmc_article.log
+bmc_article.aux
+bmc_article.bbl
+bmc_article.blg
