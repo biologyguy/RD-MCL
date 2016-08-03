@@ -20,17 +20,15 @@ htmlcov
 .coverage
 .cache
 
-# Test/build files
-dependencies.conf
-/buddysuite/test_files/*
-/buddysuite/build_dir/BuddySuite.py
+# Unsaved runs of the software
+workshop/*
 
 # IPython
 .ipynb_checkpoints/*
 *.ipynb
 
 # Manuscript compilation files
-bmc_article.log
-bmc_article.aux
-bmc_article.bbl
-bmc_article.blg
+*article.log
+*article.aux
+*article.bbl
+*article.blg
