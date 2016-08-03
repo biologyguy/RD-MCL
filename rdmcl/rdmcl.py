@@ -1,8 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Created on: Apr 27 2015 
 
 """
+This program is free software in the public domain as stipulated by the Copyright Law
+of the United States of America, chapter 1, subsection 105. You may modify it and/or redistribute it
+without restriction.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+name: rdmcl.py
+author: Stephen R. Bond
+email: steve.bond@nih.gov
+institute: Computational and Statistical Genomics Branch, Division of Intramural Research,
+           National Human Genome Research Institute, National Institutes of Health
+           Bethesda, MD
+repository: https://github.com/biologyguy/RD-MCL
+© license: None, this work is public domain
+
+Description:
 Convert an all-by-all scores matrix into groups. MCMCMC-driven MCL is the basic work horse for clustering, and then
 the groups are refined further to include singletons and doublets and/or be broken up into cliques, where appropriate.
 """
@@ -12,8 +28,10 @@ import sys
 import os
 import re
 import shutil
+import logging
+from time import time
 from copy import copy
-from subprocess import Popen, PIPE
+from subprocess import Popen, PIPE, check_output
 from multiprocessing import Lock
 from random import random
 from math import log
@@ -31,6 +49,18 @@ import mcmcmc  # Note: This is in ../utilities and sym-linked to python3.5/site-
 import MyFuncs
 from buddysuite import SeqBuddy as Sb
 from buddysuite import AlignBuddy as Alb
+
+git_commit = check_output(['git', 'rev-parse', '--short', 'HEAD']).decode().strip()
+git_commit = " (git %s)" % git_commit if git_commit else ""
+VERSION = "0.1.alpha%s" % git_commit
+NOTICE = '''\
+Public Domain Notice
+--------------------
+This is free software; see the source for detailed copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
+'''
 
 
 class Cluster(object):
@@ -701,6 +731,28 @@ def create_all_by_all_scores(seqbuddy, quiet=False):
         sim_scores = pd.read_csv(outfile.path, index_col=False)
     return alignment, sim_scores
 
+
+class Logger(object):
+    def __init__(self, location=None):
+        if not location:
+            tmpfile = MyFuncs.TempFile()
+            self.location = "%s/rdmcl.log" % tmpfile.path
+        else:
+            self.location = location
+
+        # Set up logging. Use 'info' to write to file only, anything higher will go to both terminal and file.
+        logging.basicConfig(filename=location, level=logging.INFO, format="")
+        self.logger = logging.getLogger()
+        self.console = logging.StreamHandler()
+        self.console.setLevel(logging.WARNING)
+        self.logger.addHandler(self.console)
+
+    def move_log(self, location):
+        shutil.move(self.location, location)
+        logging.basicConfig(filename=location, level=logging.INFO, format="")
+        self.location = location
+        return
+
 if __name__ == '__main__':
 
     import argparse
@@ -735,15 +787,36 @@ if __name__ == '__main__':
 
     in_args = parser.parse_args()
 
+    logger_obj = Logger("rdmcl.log")
+    logging.warning("RD-MCL version %s\n\n%s" % (VERSION, NOTICE))
+    logging.info("Working directory: %s" % os.getcwd())
+    logging.info("Function call: %s\n" % " ".join(sys.argv))
+
     if os.path.exists(in_args.outdir):
         check = MyFuncs.ask("Output directory already exists, overwrite it [y]/n?") if not in_args.force else True
         if check:
+            logging.info("Deleting all previous files from output directory.")
             shutil.rmtree(in_args.outdir)
             while os.path.exists(in_args.outdir):
                 pass
         else:
-            print("Program aborted. Output directory required.")
+            logging.warning("Program aborted by user to prevent overwriting of pre-existing output directory.")
             sys.exit()
+
+    # Make all the directories needed for the run
+    logging.info("mkdir %s" % in_args.outdir)
+    os.makedirs(in_args.outdir)
+    logging.info("mkdir %s/alignments" % in_args.outdir)
+    os.makedirs("%s/alignments" % in_args.outdir)
+    logging.info("mkdir %s/mcmcmc" % in_args.outdir)
+    os.makedirs("%s/mcmcmc" % in_args.outdir)
+    logging.info("mkdir %s/sim_scores" % in_args.outdir)
+    os.makedirs("%s/sim_scores" % in_args.outdir)
+    logging.info("mkdir %s/psi_pred\n" % in_args.outdir)
+    os.makedirs("%s/psi_pred" % in_args.outdir)
+
+    # Move log file into output directory
+    logger_obj.move_log("%s/rdmcl.log" % in_args.outdir)
 
     clique_check = True if not in_args.supress_clique_check else False
     recursion_check = True if not in_args.supress_recursion else False
@@ -769,20 +842,20 @@ if __name__ == '__main__':
     gap_open = in_args.open_penalty
     gap_extend = in_args.extend_penalty
 
-    os.makedirs(in_args.outdir)
-    os.makedirs("%s/alignments" % in_args.outdir)
-    os.makedirs("%s/mcmcmc" % in_args.outdir)
-    os.makedirs("%s/sim_scores" % in_args.outdir)
-    os.makedirs("%s/psi_pred" % in_args.outdir)
     if in_args.psi_pred and os.path.isdir(in_args.psi_pred):
         files = os.listdir(in_args.psi_pred)
         for f in files:
             shutil.copyfile("%s/%s" % (in_args.psi_pred, f), "%s/psi_pred/%s" % (in_args.outdir, f))
 
-    print("\nExecuting PSI-Pred")
+    # PSIPRED
+    logging.warning("** Executing PSI-Pred **")
+    timer = MyFuncs.Timer()
     MyFuncs.run_multicore_function(sequences.records, _psi_pred)
+    logging.info("\tfinished in %s" % timer.split())
+    logging.info("\tfiles saved to %s\n" % "%s/psi_pred" % in_args.outdir)
 
-    print("\nGenerating initial all-by-all")
+    # Alignment
+    logging.warning("** Generating initial all-by-all **")
     alignbuddy, scores_data = create_all_by_all_scores(sequences)
     #alignbuddy = Alb.generate_msa(Sb.make_copy(sequences), "mafft", params="--globalpair --thread -1", quiet=True)
     alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
@@ -791,26 +864,35 @@ if __name__ == '__main__':
     group_0 = pd.concat([scores_data.seq1, scores_data.seq2])
     group_0 = group_0.value_counts()
     group_0 = Cluster([i for i in group_0.index], scores_data)
+    logging.info("\tfinished in %s" % timer.split())
+    logging.info("\tgroup_0 alignment saved to %s\n" % "%s/alignments/group_0.aln" % in_args.outdir)
 
-    print("\nScoring base cluster")
-    group_0.score()
+    # Base cluster score
+    logging.warning("** Scoring base cluster **")
+    score = group_0.score()
+    logging.warning("%s\n" % round(score, 4))
 
     #taxa_count = [x.split("-")[0] for x in master_cluster.seq_ids]
     #taxa_count = pd.Series(taxa_count)
     #taxa_count = taxa_count.value_counts()
 
-    print("Creating clusters")
+    # Ortholog caller
+    logging.warning("** Creating clusters **")
     final_clusters = []
     final_clusters = orthogroup_caller(group_0, final_clusters, seqbuddy=sequences,
                                        steps=in_args.mcmcmc_steps, quiet=False)
-    print("Done")
+
+    logging.info("\tfinished in %s" % timer.split())
     print([x.seq_ids for x in final_clusters])
     sys.exit()
-    # Try to fold singletons and doublets back into groups.
+    # Fold singletons and doublets back into groups.
     if not in_args.supress_singlet_folding:
+        logging.warning("** Folding singletons back into clusters **")
         final_clusters = merge_singles(final_clusters, scores_data)
+        logging.warning("\tfinished in %s" % timer.split())
 
     # Format the clusters and output to stdout or file
+    logging.warning("** Final formatting **")
     output = ""
     while len(final_clusters) > 0:
         _max = (0, 0)
@@ -825,5 +907,9 @@ if __name__ == '__main__':
             output += "%s\t" % seq_id
         output = "%s\n" % output.strip()
 
-    with open("%s/clusters.txt" % in_args.outdir, "w") as ofile:
+    logging.warning("\tfinished in %s\n" % timer.split())
+
+    logging.warning("Total execution time: %s" % timer.total_elapsed())
+    with open("%s/final_clusters.txt" % in_args.outdir, "w") as ofile:
         ofile.write(output)
+        logging.warning("Final clusters written to: %s/final_clusters.txt" % in_args.outdir)
