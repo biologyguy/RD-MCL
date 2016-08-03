@@ -753,6 +753,45 @@ class Logger(object):
         self.location = location
         return
 
+
+def new_project():
+    if os.path.exists(in_args.outdir):
+        check = MyFuncs.ask("Output directory already exists, overwrite it [y]/n?") if not in_args.force else True
+        if check:
+            logging.info("Deleting all previous files from output directory.")
+            shutil.rmtree(in_args.outdir)
+            while os.path.exists(in_args.outdir):
+                pass
+        else:
+            logging.warning("Program aborted by user to prevent overwriting of pre-existing output directory.")
+            sys.exit()
+
+    # Make all the directories needed for the run
+    logging.info("mkdir %s" % in_args.outdir)
+    os.makedirs(in_args.outdir)
+    logging.info("mkdir %s/alignments" % in_args.outdir)
+    os.makedirs("%s/alignments" % in_args.outdir)
+    logging.info("mkdir %s/mcmcmc" % in_args.outdir)
+    os.makedirs("%s/mcmcmc" % in_args.outdir)
+    logging.info("mkdir %s/sim_scores" % in_args.outdir)
+    os.makedirs("%s/sim_scores" % in_args.outdir)
+    logging.info("mkdir %s/psi_pred\n" % in_args.outdir)
+    os.makedirs("%s/psi_pred" % in_args.outdir)
+    return
+
+
+def resume():
+    if not os.path.isdir(in_args.outdir):
+        confirm = MyFuncs.ask("Specified input directory does not exist but the 'resume' flag was passed in. "
+                              "Do you want to start a new whole new RD-MCL run [y]/n?: ")
+        if confirm:
+            new_project()
+        else:
+            logging.warning("Aborted... 'Resume' directory not found.")
+            sys.exit()
+    logging.info("RESUME: RD-MCL will attempt to load data.\n")
+    return
+
 if __name__ == '__main__':
 
     import argparse
@@ -782,38 +821,22 @@ if __name__ == '__main__':
                         help="Overwrite previous run")
     parser.add_argument("-q", "--quiet", action="store_true",
                         help="Suppress all output during run (only final output is returned)")
-    parser.add_argument("-psi", "--psi_pred", action="store",
-                        help="Specify directory with psi_pred results")
+    parser.add_argument("-r", "--resume", help="Try to resume a job", action="store_true")
 
     in_args = parser.parse_args()
 
     logger_obj = Logger("rdmcl.log")
+    logging.info("****************************** Recursive Dynamic Markov Clustering *******************************")
     logging.warning("RD-MCL version %s\n\n%s" % (VERSION, NOTICE))
+    logging.info("**************************************************************************************************\n")
     logging.info("Working directory: %s" % os.getcwd())
     logging.info("Function call: %s\n" % " ".join(sys.argv))
 
-    if os.path.exists(in_args.outdir):
-        check = MyFuncs.ask("Output directory already exists, overwrite it [y]/n?") if not in_args.force else True
-        if check:
-            logging.info("Deleting all previous files from output directory.")
-            shutil.rmtree(in_args.outdir)
-            while os.path.exists(in_args.outdir):
-                pass
-        else:
-            logging.warning("Program aborted by user to prevent overwriting of pre-existing output directory.")
-            sys.exit()
-
-    # Make all the directories needed for the run
-    logging.info("mkdir %s" % in_args.outdir)
-    os.makedirs(in_args.outdir)
-    logging.info("mkdir %s/alignments" % in_args.outdir)
-    os.makedirs("%s/alignments" % in_args.outdir)
-    logging.info("mkdir %s/mcmcmc" % in_args.outdir)
-    os.makedirs("%s/mcmcmc" % in_args.outdir)
-    logging.info("mkdir %s/sim_scores" % in_args.outdir)
-    os.makedirs("%s/sim_scores" % in_args.outdir)
-    logging.info("mkdir %s/psi_pred\n" % in_args.outdir)
-    os.makedirs("%s/psi_pred" % in_args.outdir)
+    # Once passed this if/else, every step will try to read data from the output directory (i.e., attempt to 'resume').
+    if in_args.resume:
+        resume()
+    else:
+        new_project()
 
     # Move log file into output directory
     logger_obj.move_log("%s/rdmcl.log" % in_args.outdir)
@@ -826,7 +849,6 @@ if __name__ == '__main__':
     printer = MyFuncs.DynamicPrint(quiet=in_args.quiet)
 
     sequences = Sb.SeqBuddy(in_args.sequences)
-    #PHAT = make_full_mat(SeqMat(MatrixInfo.phat75_73))
     BLOSUM62 = make_full_mat(SeqMat(MatrixInfo.blosum62))
     BLOSUM45 = make_full_mat(SeqMat(MatrixInfo.blosum45))
 
@@ -835,27 +857,39 @@ if __name__ == '__main__':
     for aa in ambiguous_X:
         pair = sorted((aa, "X"))
         pair = tuple(pair)
-        #PHAT[pair] = ambiguous_X[aa]
         BLOSUM62[pair] = ambiguous_X[aa]
         BLOSUM45[pair] = ambiguous_X[aa]
 
-    gap_open = in_args.open_penalty
-    gap_extend = in_args.extend_penalty
-
-    if in_args.psi_pred and os.path.isdir(in_args.psi_pred):
-        files = os.listdir(in_args.psi_pred)
-        for f in files:
-            shutil.copyfile("%s/%s" % (in_args.psi_pred, f), "%s/psi_pred/%s" % (in_args.outdir, f))
-
     # PSIPRED
-    logging.warning("** Executing PSI-Pred **")
-    timer = MyFuncs.Timer()
-    MyFuncs.run_multicore_function(sequences.records, _psi_pred)
-    logging.info("\tfinished in %s" % timer.split())
-    logging.info("\tfiles saved to %s\n" % "%s/psi_pred" % in_args.outdir)
+    logging.warning("** PSI-Pred **")
+    records_missing_ss_files = []
+    records_with_ss_files = []
+    for rec in sequences.records:
+        if os.path.isfile("%s/psi_pred/%s.ss2" % (in_args.outdir, rec.id)):
+            records_with_ss_files.append(rec.id)
+        else:
+            records_missing_ss_files.append(rec)
+    if records_missing_ss_files and len(records_missing_ss_files) != len(sequences):
+        logging.info("RESUME: PSI-Pred .ss2 files found for %s sequences:\n" % len(records_with_ss_files))
+
+    if records_missing_ss_files:
+        logging.warning("Executing PSI-Pred on %s sequences" % len(records_missing_ss_files))
+        timer = MyFuncs.Timer()
+        MyFuncs.run_multicore_function(records_missing_ss_files, _psi_pred)
+        logging.info("\tfinished in %s" % timer.split())
+        logging.info("\tfiles saved to %s\n" % "%s/psi_pred/" % in_args.outdir)
+    else:
+        logging.warning("RESUME: All PSI-Pred .ss2 files found in %s/psi_pred/\n" % in_args.outdir)
 
     # Alignment
-    logging.warning("** Generating initial all-by-all **")
+    logging.warning("** All-by-all graph **")
+    gap_open = in_args.open_penalty
+    gap_extend = in_args.extend_penalty
+    logging.info("gap open penalty: %s\ngap extend penalty: %s" % (gap_open, gap_extend))
+
+    #if os.path.isfile("%s/alignments/group_0.aln"):
+    #    logging.warning("RESUME: Initial multiple sequence alignment found")
+    #else:
     alignbuddy, scores_data = create_all_by_all_scores(sequences)
     #alignbuddy = Alb.generate_msa(Sb.make_copy(sequences), "mafft", params="--globalpair --thread -1", quiet=True)
     alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
@@ -869,8 +903,8 @@ if __name__ == '__main__':
 
     # Base cluster score
     logging.warning("** Scoring base cluster **")
-    score = group_0.score()
-    logging.warning("%s\n" % round(score, 4))
+    base_score = group_0.score()
+    logging.warning("%s\n" % round(base_score, 4))
 
     #taxa_count = [x.split("-")[0] for x in master_cluster.seq_ids]
     #taxa_count = pd.Series(taxa_count)
@@ -883,8 +917,7 @@ if __name__ == '__main__':
                                        steps=in_args.mcmcmc_steps, quiet=False)
 
     logging.info("\tfinished in %s" % timer.split())
-    print([x.seq_ids for x in final_clusters])
-    sys.exit()
+
     # Fold singletons and doublets back into groups.
     if not in_args.supress_singlet_folding:
         logging.warning("** Folding singletons back into clusters **")
