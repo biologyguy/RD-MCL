@@ -64,7 +64,7 @@ Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
 
 
 class Cluster(object):
-    def __init__(self, seq_ids, sim_scores, _parent=None, clique=False):
+    def __init__(self, seq_ids, sim_scores, parent=None, clique=False):
         """
         - Note that reciprocal best hits between paralogs are collapsed when instantiating group_0, so
           no problem strongly penalizing all paralogs in the scoring algorithm
@@ -73,14 +73,14 @@ class Cluster(object):
         :type seq_ids: list
         :param sim_scores: All-by-all similarity matrix for everything in the seq_ids (and parental clusters)
         :type sim_scores: pandas.DataFrame
-        :param _parent: Parental seq_ids
-        :type _parent: Cluster
+        :param parent: Parental seq_ids
+        :type parent: Cluster
         :param clique: Specify whether cluster is a clique or not
         :type clique: bool
         """
         self.taxa = {}
         self.sim_scores = sim_scores
-        self.parent = _parent
+        self.parent = parent
         self._subgroup_counter = 0
         self._clique_counter = 0
         self.clique = clique
@@ -89,14 +89,14 @@ class Cluster(object):
         self.collapsed_genes = {}  # If paralogs are reciprocal best hits, collapse them
         self._name = None
 
-        if clique and not _parent:
+        if clique and not parent:
             raise AttributeError("A clique cannot be declared without including its parental seq_ids.")
 
-        if _parent:
-            self.cluster_score_file = _parent.cluster_score_file
-            self.similarity_graphs = _parent.similarity_graphs
-            self.lock = _parent.lock
-            for indx, genes in _parent.collapsed_genes.items():
+        if parent:
+            self.cluster_score_file = parent.cluster_score_file
+            self.similarity_graphs = parent.similarity_graphs
+            self.lock = parent.lock
+            for indx, genes in parent.collapsed_genes.items():
                 if indx in seq_ids:
                     self.collapsed_genes[indx] = genes
             self.seq_ids = seq_ids
@@ -210,12 +210,12 @@ class Cluster(object):
 
     @staticmethod
     def perturb(scores):
-                _valve = MyFuncs.SafetyValve(global_reps=10)
-                while scores.score.std() == 0:
-                    _valve.step("Failed to perturb:\n%s" % scores)
-                    for _indx, _score in scores.score.iteritems():
-                        scores.set_value(_indx, "score", random.gauss(_score, (_score * 0.0000001)))
-                return scores
+        valve = MyFuncs.SafetyValve(global_reps=10)
+        while scores.score.std() == 0:
+            valve.step("Failed to perturb:\n%s" % scores)
+            for indx, score in scores.score.iteritems():
+                scores.set_value(indx, "score", random.gauss(score, (score * 0.0000001)))
+        return scores
 
     def score(self):
         if self._score:
@@ -283,7 +283,7 @@ class Cluster(object):
                 clique95 = [np.percentile(clique_resample, 2.5), np.percentile(clique_resample, 97.5)]
                 integrated = total_kde.integrate_box_1d(clique95[0], clique95[1])
                 if integrated < 0.05:
-                    clique = Cluster(clique, sim_scores=clique_scores, _parent=self, clique=True)
+                    clique = Cluster(clique, sim_scores=clique_scores, parent=self, clique=True)
                     self.cliques.append(clique)
             self.cliques = [None] if not self.cliques else self.cliques
 
@@ -361,9 +361,9 @@ class Cluster(object):
         return str(self.seq_ids)
 
 
-def md5_hash(_input):
-    _input = str(_input).encode()
-    return md5(_input).hexdigest()
+def md5_hash(in_str):
+    in_str = str(in_str).encode()
+    return md5(in_str).hexdigest()
 
 
 def make_full_mat(subsmat):
@@ -393,8 +393,8 @@ def _psi_pred(seq_obj, args):
     pwd = os.getcwd()
     psipred_dir = os.path.abspath("%s/psipred" % os.path.dirname(__file__))
     os.chdir(temp_dir.path)
-    with open("sequence.fa", "w") as _ofile:
-        _ofile.write(seq_obj.format("fasta"))
+    with open("sequence.fa", "w") as ofile:
+        ofile.write(seq_obj.format("fasta"))
 
     command = '''\
 psiblast -db {0}/blastdb/pannexins -query sequence.fa -inclusion_ethresh 0.001 -out_pssm {1}/{2}.chk \
@@ -415,12 +415,12 @@ def mcmcmc_mcl(args, params):
     external_tmp_dir, min_score, seqbuddy, parent_cluster = params
     mcl_tmp_dir = MyFuncs.TempDir()
 
-    _output = Popen("mcl %s/input.csv --abc -te 2 -tf 'gq(%s)' -I %s -o %s/output.groups" %
+    mcl_output = Popen("mcl %s/input.csv --abc -te 2 -tf 'gq(%s)' -I %s -o %s/output.groups" %
                     (external_tmp_dir, gq, inflation, mcl_tmp_dir.path), shell=True, stderr=PIPE).communicate()
 
-    _output = _output[1].decode()
+    mcl_output = mcl_output[1].decode()
 
-    if re.search("\[mclvInflate\] warning", _output) and min_score:
+    if re.search("\[mclvInflate\] warning", mcl_output) and min_score:
         return min_score
 
     clusters = parse_mcl_clusters("%s/output.groups" % mcl_tmp_dir.path)
@@ -439,21 +439,21 @@ def mcmcmc_mcl(args, params):
             score += float()
         else:
             sb_copy = Sb.make_copy(seqbuddy)
-            sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % _id for _id in cluster]))
+            sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster]))
             alb_obj = generate_mas(sb_copy)
             sim_scores = create_all_by_all_scores(alb_obj, quiet=True)
 
-        cluster = Cluster(cluster, sim_scores, _parent=parent_cluster)
+        cluster = Cluster(cluster, sim_scores, parent=parent_cluster)
         clusters[indx] = cluster
         score += cluster.score()
 
     with lock:
-        with open("%s/max.txt" % external_tmp_dir, "r") as _ifile:
-            current_max = float(_ifile.read())
+        with open("%s/max.txt" % external_tmp_dir, "r") as ifile:
+            current_max = float(ifile.read())
         if score > current_max:
             write_mcl_clusters(clusters, "%s/best_group" % external_tmp_dir)
-            with open("%s/max.txt" % external_tmp_dir, "w") as _ofile:
-                _ofile.write(str(score))
+            with open("%s/max.txt" % external_tmp_dir, "w") as ofile:
+                ofile.write(str(score))
     return score
 
 
@@ -475,8 +475,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     gq_var = mcmcmc.Variable("gq", min(master_cluster.sim_scores.score), max(master_cluster.sim_scores.score))
 
     try:
-        with open("%s/max.txt" % temp_dir.path, "w") as _ofile:
-            _ofile.write("-1000000000")
+        with open("%s/max.txt" % temp_dir.path, "w") as ofile:
+            ofile.write("-1000000000")
 
         mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1,
                                        params=["%s" % temp_dir.path, False, seqbuddy, master_cluster], quiet=quiet,
@@ -507,7 +507,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     for sub_cluster in mcl_clusters:
         cluster_ids = md5_hash("".join(sorted(sub_cluster)))
         sim_scores = pd.read_csv("%s/%s" % (master_cluster.similarity_graphs.path, cluster_ids), index_col=False)
-        sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, _parent=master_cluster)
+        sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster)
         if len(sub_cluster) in [1, 2]:
             sub_cluster.set_name()
             cluster_list.append(sub_cluster)
@@ -524,8 +524,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
 
 
 def parse_mcl_clusters(path):
-    with open(path, "r") as _ifile:
-        clusters = _ifile.read()
+    with open(path, "r") as ifile:
+        clusters = ifile.read()
     clusters = clusters.strip().split("\n")
     clusters = [cluster.strip().split("\t") for cluster in clusters]
     return clusters
@@ -535,8 +535,8 @@ def write_mcl_clusters(clusters, path):
     clusters_string = ""
     for cluster in clusters:
         clusters_string += "%s\n" % "\t".join(cluster.seq_ids)
-    with open(path, "w") as _ofile:
-        _ofile.write(clusters_string.strip())
+    with open(path, "w") as ofile:
+        ofile.write(clusters_string.strip())
     return
 
 
@@ -558,7 +558,7 @@ def merge_singles(clusters, scores):
 
     small_to_large_dict = {}
     for sclust in small_clusters:
-        small_to_large_dict[sclust.name()] = {_ind: [] for _ind, value in large_clusters.items()}
+        small_to_large_dict[sclust.name()] = {key: [] for key, value in large_clusters.items()}
         for sgene in sclust.seq_ids:
             for key, lclust in large_clusters.items():
                 for lgene in lclust.seq_ids:
@@ -608,16 +608,16 @@ def merge_singles(clusters, scores):
             large_clusters[max_ave].seq_ids += small_clusters[small_group_id].seq_ids
             del small_clusters[small_group_id]
 
-    clusters = [value for _ind, value in large_clusters.items()]
-    clusters += [value for _ind, value in small_clusters.items()]
+    clusters = [value for key, value in large_clusters.items()]
+    clusters += [value for key, value in small_clusters.items()]
     return clusters
 # NOTE: There used to be a support function. Check the GitHub history if there's desire to bring parts of it back
 
 
-def score_sequences(_pair, args):
+def score_sequences(seq_pair, args):
     # Calculate the best possible scores, and divide by the observed scores
-    id1, id2 = _pair
-    alb_obj, psi_pred_files, outfile = args
+    id1, id2 = seq_pair
+    alb_obj, psi_pred_files, putput_file = args
     id_regex = "^%s$|^%s$" % (id1, id2)
     alb_copy = Alb.make_copy(alb_obj)
     Alb.pull_records(alb_copy, id_regex)
@@ -667,8 +667,8 @@ def score_sequences(_pair, args):
     ss_score /= align_len
     final_score = (ss_score * 0.3) + (subs_mat_score * 0.7)
     with lock:
-        with open(outfile, "a") as _ofile:
-            _ofile.write("\n%s,%s,%s" % (id1, id2, final_score))
+        with open(putput_file, "a") as ofile:
+            ofile.write("\n%s,%s,%s" % (id1, id2, final_score))
     return
 
 
@@ -927,7 +927,7 @@ if __name__ == '__main__':
 
     logging.info("\tfinished in %s" % timer.split())
 
-    # Fold singletons and doublets back into groups.
+    # Fold singletons and doublets back into groups. This can't be 'resumed', because it changes the clusters
     if not in_args.supress_singlet_folding:
         logging.warning("** Folding singletons back into clusters **")
         final_clusters = merge_singles(final_clusters, scores_data)
@@ -942,16 +942,16 @@ if __name__ == '__main__':
             if len(clust.seq_ids) > _max[1]:
                 _max = (ind, len(clust.seq_ids))
 
-        ind, _max = _max[0], final_clusters[_max[0]]
+        ind, max_clust = _max[0], final_clusters[_max[0]]
         del final_clusters[ind]
-        output += "group_%s\t%s\t" % (_max.name(), _max.score())
-        for seq_id in _max.seq_ids:
+        output += "group_%s\t%s\t" % (max_clust.name(), max_clust.score())
+        for seq_id in max_clust.seq_ids:
             output += "%s\t" % seq_id
         output = "%s\n" % output.strip()
 
     logging.warning("\tfinished in %s" % timer.split())
 
     logging.warning("\nTotal execution time: %s" % timer.total_elapsed())
-    with open("%s/final_clusters.txt" % in_args.outdir, "w") as ofile:
-        ofile.write(output)
+    with open("%s/final_clusters.txt" % in_args.outdir, "w") as outfile:
+        outfile.write(output)
         logging.warning("Final clusters written to: %s/final_clusters.txt" % in_args.outdir)
