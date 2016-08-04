@@ -208,75 +208,14 @@ class Cluster(object):
                 global_best_hits = self._recursive_best_hits(_edge.seq2, global_best_hits, tested_ids)
         return global_best_hits
 
-    def clique_checker(self):
-        best_hits = pd.DataFrame(columns=["seq1", "seq2", "score"])
-        # pull out all genes with replicate taxa and get best hits
-        for taxa, genes in self.taxa.items():
-            if len(genes) > 1:
-                for gene in genes:
-                    best_hits = self._recursive_best_hits(gene, best_hits, [gene])
-
-        cliques = []
-        for edge in best_hits.itertuples():
-            match_indicies = []
-            for indx, clique in enumerate(cliques):
-                if edge.seq1 in clique and indx not in match_indicies:
-                    match_indicies.append(indx)
-                if edge.seq2 in clique and indx not in match_indicies:
-                    match_indicies.append(indx)
-                if len(match_indicies) == 2:
-                    break
-
-            if not match_indicies:
-                cliques.append([edge.seq1, edge.seq2])
-            elif len(match_indicies) == 1:
-                new_clique = set(cliques[match_indicies[0]] + [edge.seq1, edge.seq2])
-                cliques[match_indicies[0]] = list(new_clique)
-            else:
-                match_indicies.sort()
-                new_clique = set(cliques[match_indicies[0]] + cliques[match_indicies[1]])
-                cliques[match_indicies[0]] = list(new_clique)
-                del cliques[match_indicies[1]]
-
-        # Strip out any 'cliques' that contain less than 3 genes
-        cliques = [clique for clique in cliques if len(clique) >= 3]
-
-        # Get the similarity scores for within cliques and between cliques-remaining sequences, then generate kernel-density
-        # functions for both. The overlap between the two functions is used to determine whether they should be separated
-
-        def perturb(_scores):
-            _valve = MyFuncs.SafetyValve(global_reps=10)
-            while _scores.score.std() == 0:
-                _valve.step("Failed to perturb:\n%s" % _scores)
-                for _indx, _score in _scores.score.iteritems():
-                    _scores.set_value(_indx, "score", random.gauss(_score, (_score * 0.0000001)))
-            return _scores
-
-        self.cliques = []
-        for clique in cliques:
-            clique_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique)) & (self.sim_scores.seq2.isin(clique))]
-            total_scores = self.sim_scores.drop(clique_scores.index.values)
-
-            # if a clique is found that pulls in every single gene, skip
-            if not len(total_scores):
-                continue
-
-            # if all sim scores in a group are identical, we can't get a KDE. Fix by perturbing the scores a little.
-            clique_scores = perturb(clique_scores)
-            total_scores = perturb(total_scores)
-
-            total_kde = scipy.stats.gaussian_kde(total_scores.score, bw_method='silverman')
-            clique_kde = scipy.stats.gaussian_kde(clique_scores.score, bw_method='silverman')
-            clique_resample = clique_kde.resample(10000)
-            clique95 = [scipy.stats.scoreatpercentile(clique_resample, 2.5),
-                        scipy.stats.scoreatpercentile(clique_resample, 97.5)]
-
-            integrated = total_kde.integrate_box_1d(clique95[0], clique95[1])
-            if integrated < 0.05:
-                clique = Cluster(clique, sim_scores=clique_scores, _parent=self, clique=True)
-                self.cliques.append(clique)
-        self.cliques = [None] if not self.cliques else self.cliques
-        return
+    @staticmethod
+    def perturb(scores):
+                _valve = MyFuncs.SafetyValve(global_reps=10)
+                while scores.score.std() == 0:
+                    _valve.step("Failed to perturb:\n%s" % scores)
+                    for _indx, _score in scores.score.iteritems():
+                        scores.set_value(_indx, "score", random.gauss(_score, (_score * 0.0000001)))
+                return scores
 
     def score(self):
         if self._score:
@@ -290,7 +229,76 @@ class Cluster(object):
 
         # Don't ignore the possibility of cliques, which will alter the score.
         # Note that cliques are assumed to be the smallest unit, so not containing any sub-cliques. Valid?
-        decliqued_cluster = self.decliqued()
+        if not self.cliques:
+            best_hits = pd.DataFrame(columns=["seq1", "seq2", "score"])
+            # pull out all genes with replicate taxa and get best hits
+            for taxa, genes in self.taxa.items():
+                if len(genes) > 1:
+                    for gene in genes:
+                        best_hits = self._recursive_best_hits(gene, best_hits, [gene])
+
+            cliques = []
+            for edge in best_hits.itertuples():
+                match_indicies = []
+                for indx, clique in enumerate(cliques):
+                    if edge.seq1 in clique and indx not in match_indicies:
+                        match_indicies.append(indx)
+                    if edge.seq2 in clique and indx not in match_indicies:
+                        match_indicies.append(indx)
+                    if len(match_indicies) == 2:
+                        break
+
+                if not match_indicies:
+                    cliques.append([edge.seq1, edge.seq2])
+                elif len(match_indicies) == 1:
+                    new_clique = set(cliques[match_indicies[0]] + [edge.seq1, edge.seq2])
+                    cliques[match_indicies[0]] = list(new_clique)
+                else:
+                    match_indicies.sort()
+                    new_clique = set(cliques[match_indicies[0]] + cliques[match_indicies[1]])
+                    cliques[match_indicies[0]] = list(new_clique)
+                    del cliques[match_indicies[1]]
+
+            # Strip out any 'cliques' that contain less than 3 genes
+            cliques = [clique for clique in cliques if len(clique) >= 3]
+
+            # Get the similarity scores for within cliques and between cliques-remaining sequences, then generate kernel-density
+            # functions for both. The overlap between the two functions is used to determine whether they should be separated
+            self.cliques = []
+            for clique in cliques:
+                clique_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique)) & (self.sim_scores.seq2.isin(clique))]
+                total_scores = self.sim_scores.drop(clique_scores.index.values)
+
+                # if a clique is found that pulls in every single gene, skip
+                if not len(total_scores):
+                    continue
+
+                # if all sim scores in a group are identical, we can't get a KDE. Fix by perturbing the scores a little.
+                clique_scores = self.perturb(clique_scores)
+                total_scores = self.perturb(total_scores)
+
+                total_kde = scipy.stats.gaussian_kde(total_scores.score, bw_method='silverman')
+                clique_kde = scipy.stats.gaussian_kde(clique_scores.score, bw_method='silverman')
+                clique_resample = clique_kde.resample(10000)
+                clique95 = [scipy.stats.scoreatpercentile(clique_resample, 2.5),
+                            scipy.stats.scoreatpercentile(clique_resample, 97.5)]
+
+                integrated = total_kde.integrate_box_1d(clique95[0], clique95[1])
+                if integrated < 0.05:
+                    clique = Cluster(clique, sim_scores=clique_scores, _parent=self, clique=True)
+                    self.cliques.append(clique)
+            self.cliques = [None] if not self.cliques else self.cliques
+
+        if self.cliques[0]:
+            clique_list = [i for j in self.cliques for i in j.seq_ids]
+            decliqued_cluster = []
+            for gene in self.seq_ids:
+                if gene not in clique_list:
+                    decliqued_cluster.append(gene)
+            decliqued_cluster = decliqued_cluster
+        else:
+            decliqued_cluster = self.seq_ids
+
         self._score = self.raw_score(decliqued_cluster)
         for clique in self.cliques:
             if not clique:
@@ -310,19 +318,6 @@ class Cluster(object):
             self.cluster_score_file.write("\n%s,%s" % (self._score, seq_ids))
             self.sim_scores.to_csv("%s/%s" % (self.similarity_graphs.path, seq_ids), index=False)
         return self._score
-
-    def decliqued(self):
-        if not self.cliques:
-            self.clique_checker()
-        if self.cliques[0]:
-            clique_list = [i for j in self.cliques for i in j.seq_ids]
-            decliqued_cluster = []
-            for gene in self.seq_ids:
-                if gene not in clique_list:
-                    decliqued_cluster.append(gene)
-            return decliqued_cluster
-        else:
-            return self.seq_ids
 
     """The following are possible score modifier schemes to account for group size
     def gpt(self, score, taxa):  # groups per taxa
@@ -849,7 +844,6 @@ if __name__ == '__main__':
 
     sequences = Sb.SeqBuddy(in_args.sequences)
     BLOSUM62 = make_full_mat(SeqMat(MatrixInfo.blosum62))
-    BLOSUM45 = make_full_mat(SeqMat(MatrixInfo.blosum45))
 
     ambiguous_X = {"A": 0, "R": -1, "N": -1, "D": -1, "C": -2, "Q": -1, "E": -1, "G": -1, "H": -1, "I": -1, "L": -1,
                    "K": -1, "M": -1, "F": -1, "P": -2, "S": 0, "T": 0, "W": -2, "Y": -1, "V": -1}
@@ -857,17 +851,16 @@ if __name__ == '__main__':
         pair = sorted((aa, "X"))
         pair = tuple(pair)
         BLOSUM62[pair] = ambiguous_X[aa]
-        BLOSUM45[pair] = ambiguous_X[aa]
 
     # PSIPRED
     logging.warning("** PSI-Pred **")
     records_missing_ss_files = []
     records_with_ss_files = []
-    for rec in sequences.records:
-        if os.path.isfile("%s/psi_pred/%s.ss2" % (in_args.outdir, rec.id)):
-            records_with_ss_files.append(rec.id)
+    for record in sequences.records:
+        if os.path.isfile("%s/psi_pred/%s.ss2" % (in_args.outdir, record.id)):
+            records_with_ss_files.append(record.id)
         else:
-            records_missing_ss_files.append(rec)
+            records_missing_ss_files.append(record)
     if records_missing_ss_files and len(records_missing_ss_files) != len(sequences):
         logging.info("RESUME: PSI-Pred .ss2 files found for %s sequences:\n" % len(records_with_ss_files))
 
