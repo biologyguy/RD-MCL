@@ -832,7 +832,7 @@ if __name__ == '__main__':
     logging.warning("RD-MCL version %s\n\n%s" % (VERSION, NOTICE))
     logging.info("**************************************************************************************************\n")
     logging.info("Working directory: %s" % os.getcwd())
-    logging.info("Function call: %s\n" % " ".join(sys.argv))
+    logging.info("Function call: %s" % " ".join(sys.argv))
 
     # Once passed this if/else, every step will try to read data from the output directory (i.e., attempt to 'resume').
     if in_args.resume:
@@ -862,7 +862,7 @@ if __name__ == '__main__':
         BLOSUM62[pair] = ambiguous_X[aa]
 
     # PSIPRED
-    logging.warning("** PSI-Pred **")
+    logging.warning("\n** PSI-Pred **")
     records_missing_ss_files = []
     records_with_ss_files = []
     for record in sequences.records:
@@ -871,7 +871,7 @@ if __name__ == '__main__':
         else:
             records_missing_ss_files.append(record)
     if records_missing_ss_files and len(records_missing_ss_files) != len(sequences):
-        logging.info("RESUME: PSI-Pred .ss2 files found for %s sequences:\n" % len(records_with_ss_files))
+        logging.info("RESUME: PSI-Pred .ss2 files found for %s sequences:" % len(records_with_ss_files))
 
     if records_missing_ss_files:
         logging.warning("Executing PSI-Pred on %s sequences" % len(records_missing_ss_files))
@@ -879,10 +879,10 @@ if __name__ == '__main__':
         logging.info("\tfinished in %s" % timer.split())
         logging.info("\tfiles saved to %s\n" % "%s/psi_pred/" % in_args.outdir)
     else:
-        logging.warning("RESUME: All PSI-Pred .ss2 files found in %s/psi_pred/\n" % in_args.outdir)
+        logging.warning("RESUME: All PSI-Pred .ss2 files found in %s/psi_pred/" % in_args.outdir)
 
     # Initial alignment
-    logging.warning("** All-by-all graph **")
+    logging.warning("\n** All-by-all graph **")
     gap_open = in_args.open_penalty
     gap_extend = in_args.extend_penalty
     logging.info("gap open penalty: %s\ngap extend penalty: %s" % (gap_open, gap_extend))
@@ -912,16 +912,15 @@ if __name__ == '__main__':
     group_0 = Cluster([i for i in group_0.index], scores_data)
 
     # Base cluster score
-    logging.warning("** Scoring base cluster **")
     base_score = group_0.score()
-    logging.warning("%s\n" % round(base_score, 4))
+    logging.warning("Base cluster score: %s" % round(base_score, 4))
 
     #taxa_count = [x.split("-")[0] for x in master_cluster.seq_ids]
     #taxa_count = pd.Series(taxa_count)
     #taxa_count = taxa_count.value_counts()
 
     # Ortholog caller
-    logging.warning("** Creating clusters **")
+    logging.warning("\n** Recursive MCL **")
     final_clusters = []
     final_clusters = orthogroup_caller(group_0, final_clusters, seqbuddy=sequences,
                                        steps=in_args.mcmcmc_steps, quiet=False)
@@ -935,7 +934,7 @@ if __name__ == '__main__':
         logging.warning("\tfinished in %s" % timer.split())
 
     # Format the clusters and output to stdout or file
-    logging.warning("** Final formatting **")
+    logging.warning("\n** Final formatting **")
     output = ""
     while len(final_clusters) > 0:
         _max = (0, 0)
@@ -950,9 +949,9 @@ if __name__ == '__main__':
             output += "%s\t" % seq_id
         output = "%s\n" % output.strip()
 
-    logging.warning("\tfinished in %s\n" % timer.split())
+    logging.warning("\tfinished in %s" % timer.split())
 
-    logging.warning("Total execution time: %s" % timer.total_elapsed())
+    logging.warning("\nTotal execution time: %s" % timer.total_elapsed())
     with open("%s/final_clusters.txt" % in_args.outdir, "w") as ofile:
         ofile.write(output)
         logging.warning("Final clusters written to: %s/final_clusters.txt" % in_args.outdir)
