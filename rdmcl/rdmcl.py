@@ -392,30 +392,28 @@ def bit_score(raw_score):
     return bits
 
 
-def _psi_pred(seq_obj):
-    if os.path.isfile("%s/psi_pred/%s.ss2" % (in_args.outdir, seq_obj.id)):
+def _psi_pred(seq_obj, args):
+    outdir = args[0]
+    if os.path.isfile("%s/psi_pred/%s.ss2" % (outdir, seq_obj.id)):
         return
     temp_dir = MyFuncs.TempDir()
     pwd = os.getcwd()
-    psipred_dir = os.path.abspath("%s/../psipred" % os.path.dirname(__file__))
+    psipred_dir = os.path.abspath("%s/psipred" % os.path.dirname(__file__))
     os.chdir(temp_dir.path)
     with open("sequence.fa", "w") as _ofile:
         _ofile.write(seq_obj.format("fasta"))
 
-    # ToDo: Merge this all into a single Popen call
-    Popen("psiblast -db {0}/blastdb/pannexins -query sequence.fa -inclusion_ethresh 0.001 -out_pssm {1}/{2}.chk -num_iterations 3 "
-          "-num_alignments 0 >& {1}/{2}.blast".format(psipred_dir, temp_dir.path, seq_obj.id), shell=True).wait()
+    command = '''\
+psiblast -db {0}/blastdb/pannexins -query sequence.fa -inclusion_ethresh 0.001 -out_pssm {1}/{2}.chk \
+-num_iterations 3 -num_alignments 0 >& {1}/{2}.blast;
+{0}/bin/chkparse {1}/{2}.chk > {1}/{2}.mtx;
+{0}/bin/psipred {1}/{2}.mtx {0}/data/weights.dat {0}/data/weights.dat2 {0}/data/weights.dat3 > {1}/{2}.ss;
+{0}/bin/psipass2 {0}/data/weights_p2.dat 1 1.0 1.0 {1}/{2}.ss2 {1}/{2}.ss > {1}/{2}.horiz;
+'''.format(psipred_dir, temp_dir.path, seq_obj.id)
 
-    Popen("{0}/bin/chkparse {1}/{2}.chk > {1}/{2}.mtx".format(psipred_dir, temp_dir.path, seq_obj.id), shell=True).wait()
-
-    Popen("{0}/bin/psipred {1}/{2}.mtx {0}/data/weights.dat {0}/data/weights.dat2 {0}/data/weights.dat3 "
-          "> {1}/{2}.ss".format(psipred_dir, temp_dir.path, seq_obj.id), shell=True).wait()
-
-    Popen("{0}/bin/psipass2 {0}/data/weights_p2.dat 1 1.0 1.0 {1}/{2}.ss2 {1}/{2}.ss "
-          "> {1}/{2}.horiz".format(psipred_dir, temp_dir.path, seq_obj.id), shell=True).wait()
-
+    Popen(command, shell=True).wait()
     os.chdir(pwd)
-    shutil.move("%s/%s.ss2" % (temp_dir.path, seq_obj.id), "%s/psi_pred/" % in_args.outdir)
+    shutil.move("%s/%s.ss2" % (temp_dir.path, seq_obj.id), "%s/psi_pred/" % outdir)
     return
 
 
@@ -847,6 +845,7 @@ if __name__ == '__main__':
     best_clusters = None
     lock = Lock()
     printer = MyFuncs.DynamicPrint(quiet=in_args.quiet)
+    timer = MyFuncs.Timer()
 
     sequences = Sb.SeqBuddy(in_args.sequences)
     BLOSUM62 = make_full_mat(SeqMat(MatrixInfo.blosum62))
@@ -874,8 +873,7 @@ if __name__ == '__main__':
 
     if records_missing_ss_files:
         logging.warning("Executing PSI-Pred on %s sequences" % len(records_missing_ss_files))
-        timer = MyFuncs.Timer()
-        MyFuncs.run_multicore_function(records_missing_ss_files, _psi_pred)
+        MyFuncs.run_multicore_function(records_missing_ss_files, _psi_pred, [in_args.outdir])
         logging.info("\tfinished in %s" % timer.split())
         logging.info("\tfiles saved to %s\n" % "%s/psi_pred/" % in_args.outdir)
     else:

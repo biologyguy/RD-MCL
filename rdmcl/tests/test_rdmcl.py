@@ -2,23 +2,24 @@
 # -*- coding: utf-8 -*-
 
 import pytest
-from phylo_tools.homolog_caller import Cluster, Clusters, split_all_by_all, mcmcmc_mcl, clique_checker, orthogroup_caller, \
-    merge_singles, support
-
-@pytest.fixture(scope="session")
-def cluster_sample(request):
-    cluster = Cluster(["Tin-PanxαB", "Bab-PanxαE", "Bfo-PanxαI", "BOL-PanxαD", "Dgl-PanxαD", "Hru-PanxαB",
-                       "Lcr-PanxαD", "Mle-Panxα2", "Pba-PanxαG"])
-    return cluster
+import MyFuncs
+import os
+from hashlib import md5
+from buddysuite import SeqBuddy as Sb
+from .. import rdmcl
 
 
-def test_init_cluster(cluster_sample):
-    assert cluster_sample.cluster == ['BOL-PanxαD', 'Bab-PanxαE', 'Bfo-PanxαI', 'Dgl-PanxαD', 'Hru-PanxαB', 'Lcr-PanxαD',
-                                      'Mle-Panxα2', 'Pba-PanxαG', 'Tin-PanxαB']
-    assert cluster_sample.name == ""
-    assert cluster_sample.taxa_split == "-"
-    assert not cluster_sample.global_taxa_count
+def string2hash(_input):
+    return md5(_input.encode("utf-8")).hexdigest()
 
-def test_score_cluster(cluster_sample):
-    assert cluster_sample.score() == 81
+datasets = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../datasets')
 
+
+# ### Begin tests
+def test_psi_pred():
+    seqbuddy = Sb.SeqBuddy("%s/Cteno_pannexins.fa" % datasets)
+    tmpdir = MyFuncs.TempDir()
+    tmpdir.subdir("psi_pred")
+    rdmcl._psi_pred(seqbuddy.to_dict()["BOL-PanxαB"], [tmpdir.path])
+    with open("%s/psi_pred/BOL-PanxαB.ss2" % tmpdir.path, "r") as ifile:
+        assert string2hash(ifile.read()) == "4a245a9304114bc2172b865bc5a266f0"
