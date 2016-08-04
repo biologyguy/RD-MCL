@@ -280,9 +280,7 @@ class Cluster(object):
                 total_kde = scipy.stats.gaussian_kde(total_scores.score, bw_method='silverman')
                 clique_kde = scipy.stats.gaussian_kde(clique_scores.score, bw_method='silverman')
                 clique_resample = clique_kde.resample(10000)
-                clique95 = [scipy.stats.scoreatpercentile(clique_resample, 2.5),
-                            scipy.stats.scoreatpercentile(clique_resample, 97.5)]
-
+                clique95 = [np.percentile(clique_resample, 2.5), np.percentile(clique_resample, 97.5)]
                 integrated = total_kde.integrate_box_1d(clique95[0], clique95[1])
                 if integrated < 0.05:
                     clique = Cluster(clique, sim_scores=clique_scores, _parent=self, clique=True)
@@ -442,7 +440,8 @@ def mcmcmc_mcl(args, params):
         else:
             sb_copy = Sb.make_copy(seqbuddy)
             sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % _id for _id in cluster]))
-            alb_obj, sim_scores = create_all_by_all_scores(sb_copy, quiet=True)
+            alb_obj = generate_mas(sb_copy)
+            sim_scores = create_all_by_all_scores(alb_obj, quiet=True)
 
         cluster = Cluster(cluster, sim_scores, _parent=parent_cluster)
         clusters[indx] = cluster
@@ -673,56 +672,66 @@ def score_sequences(_pair, args):
     return
 
 
-def create_all_by_all_scores(seqbuddy, quiet=False):
+def generate_mas(seqbuddy):
+    if len(seqbuddy) == 1:
+        alignment = Alb.AlignBuddy(str(seqbuddy))
+    else:
+        alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -1", quiet=True)
+    return alignment
+
+
+def create_all_by_all_scores(alignment, quiet=False):
     """
     Generate a multiple sequence alignment and pull out all-by-all similarity graph
-    :param seqbuddy: SeqBuddy object
+    :param alignment: AlignBuddy object
     :param quiet: Supress multicore output
     :return:
     """
-    if len(seqbuddy) == 1:
-        alignment = Alb.AlignBuddy(str(seqbuddy))
+    if len(alignment.records()) == 1:
         sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "score"])
-    else:
-        alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -1", quiet=True)
+        return sim_scores
 
-        # Need to specify what columns the PsiPred files map to now that there are gaps.
-        psi_pred_files = {}
-        for rec in alignment.records_iter():
-            ss_file = pd.read_csv("%s/psi_pred/%s.ss2" % (in_args.outdir, rec.id), comment="#",
-                                  header=None, delim_whitespace=True)
-            ss_file.columns = ["indx", "aa", "ss", "coil_prob", "helix_prob", "sheet_prob"]
-            ss_counter = 0
-            for indx, residue in enumerate(rec.seq):
-                if residue != "-":
-                    ss_file.set_value(ss_counter, "indx", indx)
-                    ss_counter += 1
-            psi_pred_files[rec.id] = ss_file
+    # Don't want to modify the alignbuddy object in place
+    alignment = Alb.make_copy(alignment)
 
-        alignment = Alb.trimal(alignment, "gappyout")
+    # Need to specify what columns the PsiPred files map to now that there are gaps.
+    psi_pred_files = {}
+    for rec in alignment.records_iter():
+        ss_file = pd.read_csv("%s/psi_pred/%s.ss2" % (in_args.outdir, rec.id), comment="#",
+                              header=None, delim_whitespace=True)
+        ss_file.columns = ["indx", "aa", "ss", "coil_prob", "helix_prob", "sheet_prob"]
+        ss_counter = 0
+        for indx, residue in enumerate(rec.seq):
+            if residue != "-":
+                ss_file.set_value(ss_counter, "indx", indx)
+                ss_counter += 1
+        psi_pred_files[rec.id] = ss_file
 
-        # Re-update PsiPred files, now that some columns are removed
-        for rec in alignment.records_iter():
-            new_psi_pred = []
-            for row in psi_pred_files[rec.id].itertuples():
-                if alignment.alignments[0].position_map[int(row[1])][1]:
-                    new_psi_pred.append(list(row)[1:])
-            psi_pred_files[rec.id] = pd.DataFrame(new_psi_pred, columns=["indx", "aa", "ss", "coil_prob",
-                                                                         "helix_prob", "sheet_prob"])
-        ids1 = [rec.id for rec in alignment.records_iter()]
-        ids2 = [rec.id for rec in alignment.records_iter()]
-        all_by_all = []
-        for rec1 in ids1:
-            del ids2[ids2.index(rec1)]
-            for rec2 in ids2:
-                all_by_all.append((rec1, rec2))
+    # Scored seem to be improved by removing gaps. Need to test this explicitly for the paper though
+    alignment = Alb.trimal(alignment, "gappyout")
 
-        outfile = MyFuncs.TempFile()
-        outfile.write("seq1,seq2,score")
-        printer.clear()
-        MyFuncs.run_multicore_function(all_by_all, score_sequences, [alignment, psi_pred_files, outfile.path], quiet=quiet)
-        sim_scores = pd.read_csv(outfile.path, index_col=False)
-    return alignment, sim_scores
+    # Re-update PsiPred files, now that some columns are removed
+    for rec in alignment.records_iter():
+        new_psi_pred = []
+        for row in psi_pred_files[rec.id].itertuples():
+            if alignment.alignments[0].position_map[int(row[1])][1]:
+                new_psi_pred.append(list(row)[1:])
+        psi_pred_files[rec.id] = pd.DataFrame(new_psi_pred, columns=["indx", "aa", "ss", "coil_prob",
+                                                                     "helix_prob", "sheet_prob"])
+    ids1 = [rec.id for rec in alignment.records_iter()]
+    ids2 = [rec.id for rec in alignment.records_iter()]
+    all_by_all = []
+    for rec1 in ids1:
+        del ids2[ids2.index(rec1)]
+        for rec2 in ids2:
+            all_by_all.append((rec1, rec2))
+
+    outfile = MyFuncs.TempFile()
+    outfile.write("seq1,seq2,score")
+    printer.clear()
+    MyFuncs.run_multicore_function(all_by_all, score_sequences, [alignment, psi_pred_files, outfile.path], quiet=quiet)
+    sim_scores = pd.read_csv(outfile.path, index_col=False)
+    return sim_scores
 
 
 class Logger(object):
@@ -872,25 +881,35 @@ if __name__ == '__main__':
     else:
         logging.warning("RESUME: All PSI-Pred .ss2 files found in %s/psi_pred/\n" % in_args.outdir)
 
-    # Alignment
+    # Initial alignment
     logging.warning("** All-by-all graph **")
     gap_open = in_args.open_penalty
     gap_extend = in_args.extend_penalty
     logging.info("gap open penalty: %s\ngap extend penalty: %s" % (gap_open, gap_extend))
 
-    #if os.path.isfile("%s/alignments/group_0.aln"):
-    #    logging.warning("RESUME: Initial multiple sequence alignment found")
-    #else:
-    alignbuddy, scores_data = create_all_by_all_scores(sequences)
-    #alignbuddy = Alb.generate_msa(Sb.make_copy(sequences), "mafft", params="--globalpair --thread -1", quiet=True)
-    alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
-    #scores_data = pd.read_csv("temp_group0.csv", index_col=False)
-    #scores_data.to_csv("%s/sim_scores/group_0.csv" % in_args.outdir, index=False)
+    if os.path.isfile("%s/alignments/group_0.aln" % in_args.outdir):
+        logging.warning("RESUME: Initial multiple sequence alignment found")
+        alignbuddy = Alb.AlignBuddy("%s/alignments/group_0.aln" % in_args.outdir)
+    else:
+        logging.warning("Generating initial multiple sequence alignment")
+        alignbuddy = generate_mas(sequences)
+        alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
+        logging.info("\tfinished in %s" % timer.split())
+
+    if os.path.isfile("%s/sim_scores/group_0.scores" % in_args.outdir):
+        logging.warning("RESUME: Initial all-by-all similarity scores found")
+        scores_data = pd.read_csv("%s/sim_scores/group_0.scores" % in_args.outdir, header=None,
+                                  index_col=False, sep="\t")
+        scores_data.columns = ['seq1', 'seq2', 'score']
+    else:
+        logging.warning("Generating initial all-by-all similarity graph")
+        scores_data = create_all_by_all_scores(alignbuddy)
+        scores_data.to_csv("%s/sim_scores/group_0.scores" % in_args.outdir, header=None, index=False, sep="\t")
+        logging.info("\tfinished in %s" % timer.split())
+
     group_0 = pd.concat([scores_data.seq1, scores_data.seq2])
     group_0 = group_0.value_counts()
     group_0 = Cluster([i for i in group_0.index], scores_data)
-    logging.info("\tfinished in %s" % timer.split())
-    logging.info("\tgroup_0 alignment saved to %s\n" % "%s/alignments/group_0.aln" % in_args.outdir)
 
     # Base cluster score
     logging.warning("** Scoring base cluster **")
