@@ -64,7 +64,7 @@ Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
 
 
 class Cluster(object):
-    def __init__(self, seq_ids, sim_scores, _parent=None, clique=False):
+    def __init__(self, seq_ids, sim_scores, parent=None, clique=False):
         """
         - Note that reciprocal best hits between paralogs are collapsed when instantiating group_0, so
           no problem strongly penalizing all paralogs in the scoring algorithm
@@ -73,14 +73,14 @@ class Cluster(object):
         :type seq_ids: list
         :param sim_scores: All-by-all similarity matrix for everything in the seq_ids (and parental clusters)
         :type sim_scores: pandas.DataFrame
-        :param _parent: Parental seq_ids
-        :type _parent: Cluster
+        :param parent: Parental seq_ids
+        :type parent: Cluster
         :param clique: Specify whether cluster is a clique or not
         :type clique: bool
         """
         self.taxa = {}
         self.sim_scores = sim_scores
-        self.parent = _parent
+        self.parent = parent
         self._subgroup_counter = 0
         self._clique_counter = 0
         self.clique = clique
@@ -89,14 +89,14 @@ class Cluster(object):
         self.collapsed_genes = {}  # If paralogs are reciprocal best hits, collapse them
         self._name = None
 
-        if clique and not _parent:
+        if clique and not parent:
             raise AttributeError("A clique cannot be declared without including its parental seq_ids.")
 
-        if _parent:
-            self.cluster_score_file = _parent.cluster_score_file
-            self.similarity_graphs = _parent.similarity_graphs
-            self.lock = _parent.lock
-            for indx, genes in _parent.collapsed_genes.items():
+        if parent:
+            self.cluster_score_file = parent.cluster_score_file
+            self.similarity_graphs = parent.similarity_graphs
+            self.lock = parent.lock
+            for indx, genes in parent.collapsed_genes.items():
                 if indx in seq_ids:
                     self.collapsed_genes[indx] = genes
             self.seq_ids = seq_ids
@@ -210,12 +210,12 @@ class Cluster(object):
 
     @staticmethod
     def perturb(scores):
-                _valve = MyFuncs.SafetyValve(global_reps=10)
-                while scores.score.std() == 0:
-                    _valve.step("Failed to perturb:\n%s" % scores)
-                    for _indx, _score in scores.score.iteritems():
-                        scores.set_value(_indx, "score", random.gauss(_score, (_score * 0.0000001)))
-                return scores
+        valve = MyFuncs.SafetyValve(global_reps=10)
+        while scores.score.std() == 0:
+            valve.step("Failed to perturb:\n%s" % scores)
+            for indx, score in scores.score.iteritems():
+                scores.set_value(indx, "score", random.gauss(score, (score * 0.0000001)))
+        return scores
 
     def score(self):
         if self._score:
@@ -280,12 +280,10 @@ class Cluster(object):
                 total_kde = scipy.stats.gaussian_kde(total_scores.score, bw_method='silverman')
                 clique_kde = scipy.stats.gaussian_kde(clique_scores.score, bw_method='silverman')
                 clique_resample = clique_kde.resample(10000)
-                clique95 = [scipy.stats.scoreatpercentile(clique_resample, 2.5),
-                            scipy.stats.scoreatpercentile(clique_resample, 97.5)]
-
+                clique95 = [np.percentile(clique_resample, 2.5), np.percentile(clique_resample, 97.5)]
                 integrated = total_kde.integrate_box_1d(clique95[0], clique95[1])
                 if integrated < 0.05:
-                    clique = Cluster(clique, sim_scores=clique_scores, _parent=self, clique=True)
+                    clique = Cluster(clique, sim_scores=clique_scores, parent=self, clique=True)
                     self.cliques.append(clique)
             self.cliques = [None] if not self.cliques else self.cliques
 
@@ -363,9 +361,9 @@ class Cluster(object):
         return str(self.seq_ids)
 
 
-def md5_hash(_input):
-    _input = str(_input).encode()
-    return md5(_input).hexdigest()
+def md5_hash(in_str):
+    in_str = str(in_str).encode()
+    return md5(in_str).hexdigest()
 
 
 def make_full_mat(subsmat):
@@ -395,8 +393,8 @@ def _psi_pred(seq_obj, args):
     pwd = os.getcwd()
     psipred_dir = os.path.abspath("%s/psipred" % os.path.dirname(__file__))
     os.chdir(temp_dir.path)
-    with open("sequence.fa", "w") as _ofile:
-        _ofile.write(seq_obj.format("fasta"))
+    with open("sequence.fa", "w") as ofile:
+        ofile.write(seq_obj.format("fasta"))
 
     command = '''\
 psiblast -db {0}/blastdb/pannexins -query sequence.fa -inclusion_ethresh 0.001 -out_pssm {1}/{2}.chk \
@@ -417,12 +415,12 @@ def mcmcmc_mcl(args, params):
     external_tmp_dir, min_score, seqbuddy, parent_cluster = params
     mcl_tmp_dir = MyFuncs.TempDir()
 
-    _output = Popen("mcl %s/input.csv --abc -te 2 -tf 'gq(%s)' -I %s -o %s/output.groups" %
-                    (external_tmp_dir, gq, inflation, mcl_tmp_dir.path), shell=True, stderr=PIPE).communicate()
+    mcl_output = Popen("mcl %s/input.csv --abc -te 2 -tf 'gq(%s)' -I %s -o %s/output.groups" %
+                       (external_tmp_dir, gq, inflation, mcl_tmp_dir.path), shell=True, stderr=PIPE).communicate()
 
-    _output = _output[1].decode()
+    mcl_output = mcl_output[1].decode()
 
-    if re.search("\[mclvInflate\] warning", _output) and min_score:
+    if re.search("\[mclvInflate\] warning", mcl_output) and min_score:
         return min_score
 
     clusters = parse_mcl_clusters("%s/output.groups" % mcl_tmp_dir.path)
@@ -441,21 +439,50 @@ def mcmcmc_mcl(args, params):
             score += float()
         else:
             sb_copy = Sb.make_copy(seqbuddy)
-            sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % _id for _id in cluster]))
-            alb_obj, sim_scores = create_all_by_all_scores(sb_copy, quiet=True)
+            sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster]))
+            alb_obj = generate_msa(sb_copy)
+            sim_scores = create_all_by_all_scores(alb_obj, quiet=True)
 
-        cluster = Cluster(cluster, sim_scores, _parent=parent_cluster)
+        cluster = Cluster(cluster, sim_scores, parent=parent_cluster)
         clusters[indx] = cluster
         score += cluster.score()
 
     with lock:
-        with open("%s/max.txt" % external_tmp_dir, "r") as _ifile:
-            current_max = float(_ifile.read())
+        with open("%s/max.txt" % external_tmp_dir, "r") as ifile:
+            current_max = float(ifile.read())
         if score > current_max:
             write_mcl_clusters(clusters, "%s/best_group" % external_tmp_dir)
-            with open("%s/max.txt" % external_tmp_dir, "w") as _ofile:
-                _ofile.write(str(score))
+            with open("%s/max.txt" % external_tmp_dir, "w") as ofile:
+                ofile.write(str(score))
     return score
+
+
+def load_cluster(group, outdir, parent=None):
+    # Make sure all the necessary files are present
+    necessary_files = ["%s/%s/%s.%s" % (outdir, subdir, group, ext) for subdir, ext in [("alignments", "aln"), ("sim_scores", "scores")]]
+    necessary_files += ["%s/mcmcmc/%s/%s" % (outdir, group, x) for x in ["best_group", "input.csv",
+                                                                         "max.txt", "mcmcmc_out.csv"]]
+    all_files_present = True
+    for file in necessary_files:
+        if not os.path.isfile(file):
+            all_files_present = False
+            break
+
+    if not all_files_present:
+        for file in necessary_files:
+            try:
+                os.remove(file)
+            except OSError:
+                pass
+        shutil.rmtree("%s/mcmcmc/%s" % (outdir, group), ignore_errors=True)
+        return False
+
+    alignment = Alb.AlignBuddy("%s/alignments/%s.aln" % (outdir, group))
+    seq_ids = [rec.id for rec in alignment.records_iter()]
+    sim_scores = pd.read_csv("%s/sim_scores/%s.scores" % (outdir, group), sep="\t", index_col=False)
+    sim_scores.columns = ["seq1", "seq2", "score"]
+    cluster = Cluster(seq_ids, sim_scores, parent=parent)
+    return cluster
 
 
 def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=True):
@@ -469,6 +496,14 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     :param quiet: Suppress StdErr
     :return: list of seq_ids objects
     """
+    def save_cluster():
+        temp_dir.save("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name()))
+        alignment = generate_msa(seqbuddy)
+        alignment.write("%s/alignments/%s.aln" % (in_args.outdir, master_cluster.name()))
+        master_cluster.sim_scores.to_csv("%s/sim_scores/%s.scores" % (in_args.outdir, master_cluster.name()),
+                                         header=None, index=False, sep="\t")
+        return
+
     temp_dir = MyFuncs.TempDir()
     master_cluster.sim_scores.to_csv("%s/input.csv" % temp_dir.path, header=None, index=False, sep="\t")
 
@@ -476,8 +511,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     gq_var = mcmcmc.Variable("gq", min(master_cluster.sim_scores.score), max(master_cluster.sim_scores.score))
 
     try:
-        with open("%s/max.txt" % temp_dir.path, "w") as _ofile:
-            _ofile.write("-1000000000")
+        with open("%s/max.txt" % temp_dir.path, "w") as ofile:
+            ofile.write("-1000000000")
 
         mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1,
                                        params=["%s" % temp_dir.path, False, seqbuddy, master_cluster], quiet=quiet,
@@ -485,7 +520,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
 
     except RuntimeError:  # Happens when mcmcmc fails to find different initial chain parameters
         cluster_list.append(master_cluster)
-        temp_dir.save("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name()))
+        save_cluster()
         return cluster_list
 
     # Set a 'worst score' that is reasonable for the data set
@@ -499,16 +534,17 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
 
     best_score = max(mcmcmc_output["result"])
     if best_score <= master_cluster.score():
-        master_cluster.set_name()
-        cluster_list.append(master_cluster)
-        temp_dir.save("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name()))
+        if master_cluster.name() != "group_0":
+            master_cluster.set_name()
+            cluster_list.append(master_cluster)
+            save_cluster()
         return cluster_list
 
     mcl_clusters = parse_mcl_clusters("%s/best_group" % temp_dir.path)
     for sub_cluster in mcl_clusters:
         cluster_ids = md5_hash("".join(sorted(sub_cluster)))
         sim_scores = pd.read_csv("%s/%s" % (master_cluster.similarity_graphs.path, cluster_ids), index_col=False)
-        sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, _parent=master_cluster)
+        sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster)
         if len(sub_cluster) in [1, 2]:
             sub_cluster.set_name()
             cluster_list.append(sub_cluster)
@@ -520,13 +556,13 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
         # Recursion...
         cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, steps=steps, quiet=quiet,)
 
-    temp_dir.save("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name()))
+    save_cluster()
     return cluster_list
 
 
 def parse_mcl_clusters(path):
-    with open(path, "r") as _ifile:
-        clusters = _ifile.read()
+    with open(path, "r") as ifile:
+        clusters = ifile.read()
     clusters = clusters.strip().split("\n")
     clusters = [cluster.strip().split("\t") for cluster in clusters]
     return clusters
@@ -536,8 +572,8 @@ def write_mcl_clusters(clusters, path):
     clusters_string = ""
     for cluster in clusters:
         clusters_string += "%s\n" % "\t".join(cluster.seq_ids)
-    with open(path, "w") as _ofile:
-        _ofile.write(clusters_string.strip())
+    with open(path, "w") as ofile:
+        ofile.write(clusters_string.strip())
     return
 
 
@@ -559,7 +595,7 @@ def merge_singles(clusters, scores):
 
     small_to_large_dict = {}
     for sclust in small_clusters:
-        small_to_large_dict[sclust.name()] = {_ind: [] for _ind, value in large_clusters.items()}
+        small_to_large_dict[sclust.name()] = {key: [] for key, value in large_clusters.items()}
         for sgene in sclust.seq_ids:
             for key, lclust in large_clusters.items():
                 for lgene in lclust.seq_ids:
@@ -609,16 +645,16 @@ def merge_singles(clusters, scores):
             large_clusters[max_ave].seq_ids += small_clusters[small_group_id].seq_ids
             del small_clusters[small_group_id]
 
-    clusters = [value for _ind, value in large_clusters.items()]
-    clusters += [value for _ind, value in small_clusters.items()]
+    clusters = [value for key, value in large_clusters.items()]
+    clusters += [value for key, value in small_clusters.items()]
     return clusters
 # NOTE: There used to be a support function. Check the GitHub history if there's desire to bring parts of it back
 
 
-def score_sequences(_pair, args):
+def score_sequences(seq_pair, args):
     # Calculate the best possible scores, and divide by the observed scores
-    id1, id2 = _pair
-    alb_obj, psi_pred_files, outfile = args
+    id1, id2 = seq_pair
+    alb_obj, psi_pred_files, putput_file = args
     id_regex = "^%s$|^%s$" % (id1, id2)
     alb_copy = Alb.make_copy(alb_obj)
     Alb.pull_records(alb_copy, id_regex)
@@ -668,61 +704,71 @@ def score_sequences(_pair, args):
     ss_score /= align_len
     final_score = (ss_score * 0.3) + (subs_mat_score * 0.7)
     with lock:
-        with open(outfile, "a") as _ofile:
-            _ofile.write("\n%s,%s,%s" % (id1, id2, final_score))
+        with open(putput_file, "a") as ofile:
+            ofile.write("\n%s,%s,%s" % (id1, id2, final_score))
     return
 
 
-def create_all_by_all_scores(seqbuddy, quiet=False):
+def generate_msa(seqbuddy):
+    if len(seqbuddy) == 1:
+        alignment = Alb.AlignBuddy(str(seqbuddy))
+    else:
+        alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -1", quiet=True)
+    return alignment
+
+
+def create_all_by_all_scores(alignment, quiet=False):
     """
     Generate a multiple sequence alignment and pull out all-by-all similarity graph
-    :param seqbuddy: SeqBuddy object
+    :param alignment: AlignBuddy object
     :param quiet: Supress multicore output
     :return:
     """
-    if len(seqbuddy) == 1:
-        alignment = Alb.AlignBuddy(str(seqbuddy))
+    if len(alignment.records()) == 1:
         sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "score"])
-    else:
-        alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -1", quiet=True)
+        return sim_scores
 
-        # Need to specify what columns the PsiPred files map to now that there are gaps.
-        psi_pred_files = {}
-        for rec in alignment.records_iter():
-            ss_file = pd.read_csv("%s/psi_pred/%s.ss2" % (in_args.outdir, rec.id), comment="#",
-                                  header=None, delim_whitespace=True)
-            ss_file.columns = ["indx", "aa", "ss", "coil_prob", "helix_prob", "sheet_prob"]
-            ss_counter = 0
-            for indx, residue in enumerate(rec.seq):
-                if residue != "-":
-                    ss_file.set_value(ss_counter, "indx", indx)
-                    ss_counter += 1
-            psi_pred_files[rec.id] = ss_file
+    # Don't want to modify the alignbuddy object in place
+    alignment = Alb.make_copy(alignment)
 
-        alignment = Alb.trimal(alignment, "gappyout")
+    # Need to specify what columns the PsiPred files map to now that there are gaps.
+    psi_pred_files = {}
+    for rec in alignment.records_iter():
+        ss_file = pd.read_csv("%s/psi_pred/%s.ss2" % (in_args.outdir, rec.id), comment="#",
+                              header=None, delim_whitespace=True)
+        ss_file.columns = ["indx", "aa", "ss", "coil_prob", "helix_prob", "sheet_prob"]
+        ss_counter = 0
+        for indx, residue in enumerate(rec.seq):
+            if residue != "-":
+                ss_file.set_value(ss_counter, "indx", indx)
+                ss_counter += 1
+        psi_pred_files[rec.id] = ss_file
 
-        # Re-update PsiPred files, now that some columns are removed
-        for rec in alignment.records_iter():
-            new_psi_pred = []
-            for row in psi_pred_files[rec.id].itertuples():
-                if alignment.alignments[0].position_map[int(row[1])][1]:
-                    new_psi_pred.append(list(row)[1:])
-            psi_pred_files[rec.id] = pd.DataFrame(new_psi_pred, columns=["indx", "aa", "ss", "coil_prob",
-                                                                         "helix_prob", "sheet_prob"])
-        ids1 = [rec.id for rec in alignment.records_iter()]
-        ids2 = [rec.id for rec in alignment.records_iter()]
-        all_by_all = []
-        for rec1 in ids1:
-            del ids2[ids2.index(rec1)]
-            for rec2 in ids2:
-                all_by_all.append((rec1, rec2))
+    # Scored seem to be improved by removing gaps. Need to test this explicitly for the paper though
+    alignment = Alb.trimal(alignment, "gappyout")
 
-        outfile = MyFuncs.TempFile()
-        outfile.write("seq1,seq2,score")
-        printer.clear()
-        MyFuncs.run_multicore_function(all_by_all, score_sequences, [alignment, psi_pred_files, outfile.path], quiet=quiet)
-        sim_scores = pd.read_csv(outfile.path, index_col=False)
-    return alignment, sim_scores
+    # Re-update PsiPred files, now that some columns are removed
+    for rec in alignment.records_iter():
+        new_psi_pred = []
+        for row in psi_pred_files[rec.id].itertuples():
+            if alignment.alignments[0].position_map[int(row[1])][1]:
+                new_psi_pred.append(list(row)[1:])
+        psi_pred_files[rec.id] = pd.DataFrame(new_psi_pred, columns=["indx", "aa", "ss", "coil_prob",
+                                                                     "helix_prob", "sheet_prob"])
+    ids1 = [rec.id for rec in alignment.records_iter()]
+    ids2 = [rec.id for rec in alignment.records_iter()]
+    all_by_all = []
+    for rec1 in ids1:
+        del ids2[ids2.index(rec1)]
+        for rec2 in ids2:
+            all_by_all.append((rec1, rec2))
+
+    ofile = MyFuncs.TempFile()
+    ofile.write("seq1,seq2,score")
+    printer.clear()
+    MyFuncs.run_multicore_function(all_by_all, score_sequences, [alignment, psi_pred_files, ofile.path], quiet=quiet)
+    sim_scores = pd.read_csv(ofile.path, index_col=False)
+    return sim_scores
 
 
 class Logger(object):
@@ -746,44 +792,6 @@ class Logger(object):
         self.location = location
         return
 
-
-def new_project():
-    if os.path.exists(in_args.outdir):
-        check = MyFuncs.ask("Output directory already exists, overwrite it [y]/n?") if not in_args.force else True
-        if check:
-            logging.info("Deleting all previous files from output directory.")
-            shutil.rmtree(in_args.outdir)
-            while os.path.exists(in_args.outdir):
-                pass
-        else:
-            logging.warning("Program aborted by user to prevent overwriting of pre-existing output directory.")
-            sys.exit()
-
-    # Make all the directories needed for the run
-    logging.info("mkdir %s" % in_args.outdir)
-    os.makedirs(in_args.outdir)
-    logging.info("mkdir %s/alignments" % in_args.outdir)
-    os.makedirs("%s/alignments" % in_args.outdir)
-    logging.info("mkdir %s/mcmcmc" % in_args.outdir)
-    os.makedirs("%s/mcmcmc" % in_args.outdir)
-    logging.info("mkdir %s/sim_scores" % in_args.outdir)
-    os.makedirs("%s/sim_scores" % in_args.outdir)
-    logging.info("mkdir %s/psi_pred\n" % in_args.outdir)
-    os.makedirs("%s/psi_pred" % in_args.outdir)
-    return
-
-
-def resume():
-    if not os.path.isdir(in_args.outdir):
-        confirm = MyFuncs.ask("Specified input directory does not exist but the 'resume' flag was passed in. "
-                              "Do you want to start a new whole new RD-MCL run [y]/n?: ")
-        if confirm:
-            new_project()
-        else:
-            logging.warning("Aborted... 'Resume' directory not found.")
-            sys.exit()
-    logging.info("RESUME: RD-MCL will attempt to load data.\n")
-    return
 
 if __name__ == '__main__':
 
@@ -823,13 +831,39 @@ if __name__ == '__main__':
     logging.warning("RD-MCL version %s\n\n%s" % (VERSION, NOTICE))
     logging.info("**************************************************************************************************\n")
     logging.info("Working directory: %s" % os.getcwd())
-    logging.info("Function call: %s\n" % " ".join(sys.argv))
+    logging.info("Function call: %s" % " ".join(sys.argv))
 
     # Once passed this if/else, every step will try to read data from the output directory (i.e., attempt to 'resume').
+    new_project = True
     if in_args.resume:
-        resume()
-    else:
-        new_project()
+        new_project = False
+        if not os.path.isdir(in_args.outdir):
+            confirm = MyFuncs.ask("Specified input directory does not exist but the 'resume' flag was passed in. "
+                                  "Do you want to start a new whole new RD-MCL run [y]/n?: ")
+            if confirm:
+                new_project = True
+            else:
+                logging.warning("Aborted... 'Resume' directory not found.")
+                sys.exit()
+        logging.info("RESUME: RD-MCL will attempt to load data.\n")
+
+    if new_project:
+        if os.path.exists(in_args.outdir):
+            check = MyFuncs.ask("Output directory already exists, overwrite it [y]/n?") if not in_args.force else True
+            if check:
+                logging.info("Deleting all previous files from output directory.")
+                shutil.rmtree(in_args.outdir)
+                while os.path.exists(in_args.outdir):
+                    pass
+            else:
+                logging.warning("Program aborted by user to prevent overwriting of pre-existing output directory.")
+                sys.exit()
+
+    # Make sure all the necessary directories are present
+    for outdir in ["%s%s" % (in_args.outdir, x) for x in ["", "/alignments", "/mcmcmc", "/sim_scores", "/psi_pred"]]:
+        if not os.path.isdir(outdir):
+            logging.info("mkdir %s" % outdir)
+            os.makedirs(outdir)
 
     # Move log file into output directory
     logger_obj.move_log("%s/rdmcl.log" % in_args.outdir)
@@ -853,7 +887,7 @@ if __name__ == '__main__':
         BLOSUM62[pair] = ambiguous_X[aa]
 
     # PSIPRED
-    logging.warning("** PSI-Pred **")
+    logging.warning("\n** PSI-Pred **")
     records_missing_ss_files = []
     records_with_ss_files = []
     for record in sequences.records:
@@ -862,7 +896,7 @@ if __name__ == '__main__':
         else:
             records_missing_ss_files.append(record)
     if records_missing_ss_files and len(records_missing_ss_files) != len(sequences):
-        logging.info("RESUME: PSI-Pred .ss2 files found for %s sequences:\n" % len(records_with_ss_files))
+        logging.info("RESUME: PSI-Pred .ss2 files found for %s sequences:" % len(records_with_ss_files))
 
     if records_missing_ss_files:
         logging.warning("Executing PSI-Pred on %s sequences" % len(records_missing_ss_files))
@@ -870,53 +904,59 @@ if __name__ == '__main__':
         logging.info("\tfinished in %s" % timer.split())
         logging.info("\tfiles saved to %s\n" % "%s/psi_pred/" % in_args.outdir)
     else:
-        logging.warning("RESUME: All PSI-Pred .ss2 files found in %s/psi_pred/\n" % in_args.outdir)
+        logging.warning("RESUME: All PSI-Pred .ss2 files found in %s/psi_pred/" % in_args.outdir)
 
-    # Alignment
-    logging.warning("** All-by-all graph **")
+    # Initial alignment
+    logging.warning("\n** All-by-all graph **")
     gap_open = in_args.open_penalty
     gap_extend = in_args.extend_penalty
     logging.info("gap open penalty: %s\ngap extend penalty: %s" % (gap_open, gap_extend))
 
-    #if os.path.isfile("%s/alignments/group_0.aln"):
-    #    logging.warning("RESUME: Initial multiple sequence alignment found")
-    #else:
-    alignbuddy, scores_data = create_all_by_all_scores(sequences)
-    #alignbuddy = Alb.generate_msa(Sb.make_copy(sequences), "mafft", params="--globalpair --thread -1", quiet=True)
-    alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
-    #scores_data = pd.read_csv("temp_group0.csv", index_col=False)
-    #scores_data.to_csv("%s/sim_scores/group_0.csv" % in_args.outdir, index=False)
-    group_0 = pd.concat([scores_data.seq1, scores_data.seq2])
-    group_0 = group_0.value_counts()
-    group_0 = Cluster([i for i in group_0.index], scores_data)
-    logging.info("\tfinished in %s" % timer.split())
-    logging.info("\tgroup_0 alignment saved to %s\n" % "%s/alignments/group_0.aln" % in_args.outdir)
+    if os.path.isfile("%s/alignments/group_0.aln" % in_args.outdir):
+        logging.warning("RESUME: Initial multiple sequence alignment found")
+        alignbuddy = Alb.AlignBuddy("%s/alignments/group_0.aln" % in_args.outdir)
+    else:
+        logging.warning("Generating initial multiple sequence alignment")
+        alignbuddy = generate_msa(sequences)
+        alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
+        logging.info("\tfinished in %s" % timer.split())
+
+    group_0_cluster = load_cluster("group_0", in_args.outdir)
+    if group_0_cluster:
+        logging.warning("RESUME: group_0 cluster loaded")
+    else:
+        logging.warning("Generating initial all-by-all similarity graph")
+        scores_data = create_all_by_all_scores(alignbuddy)
+        scores_data.to_csv("%s/sim_scores/group_0.scores" % in_args.outdir, header=None, index=False, sep="\t")
+        logging.info("\tfinished in %s" % timer.split())
+        group_0 = pd.concat([scores_data.seq1, scores_data.seq2])
+        group_0 = group_0.value_counts()
+        group_0_cluster = Cluster([i for i in group_0.index], scores_data)
 
     # Base cluster score
-    logging.warning("** Scoring base cluster **")
-    base_score = group_0.score()
-    logging.warning("%s\n" % round(base_score, 4))
+    base_score = group_0_cluster.score()
+    logging.warning("Base cluster score: %s" % round(base_score, 4))
 
     #taxa_count = [x.split("-")[0] for x in master_cluster.seq_ids]
     #taxa_count = pd.Series(taxa_count)
     #taxa_count = taxa_count.value_counts()
 
     # Ortholog caller
-    logging.warning("** Creating clusters **")
+    logging.warning("\n** Recursive MCL **")
     final_clusters = []
-    final_clusters = orthogroup_caller(group_0, final_clusters, seqbuddy=sequences,
+    final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences,
                                        steps=in_args.mcmcmc_steps, quiet=False)
 
     logging.info("\tfinished in %s" % timer.split())
 
-    # Fold singletons and doublets back into groups.
+    # Fold singletons and doublets back into groups. This can't be 'resumed', because it changes the clusters
     if not in_args.supress_singlet_folding:
         logging.warning("** Folding singletons back into clusters **")
-        final_clusters = merge_singles(final_clusters, scores_data)
+        final_clusters = merge_singles(final_clusters, group_0_cluster.sim_scores)
         logging.warning("\tfinished in %s" % timer.split())
 
     # Format the clusters and output to stdout or file
-    logging.warning("** Final formatting **")
+    logging.warning("\n** Final formatting **")
     output = ""
     while len(final_clusters) > 0:
         _max = (0, 0)
@@ -924,16 +964,16 @@ if __name__ == '__main__':
             if len(clust.seq_ids) > _max[1]:
                 _max = (ind, len(clust.seq_ids))
 
-        ind, _max = _max[0], final_clusters[_max[0]]
+        ind, max_clust = _max[0], final_clusters[_max[0]]
         del final_clusters[ind]
-        output += "group_%s\t%s\t" % (_max.name(), _max.score())
-        for seq_id in _max.seq_ids:
+        output += "group_%s\t%s\t" % (max_clust.name(), max_clust.score())
+        for seq_id in max_clust.seq_ids:
             output += "%s\t" % seq_id
         output = "%s\n" % output.strip()
 
-    logging.warning("\tfinished in %s\n" % timer.split())
+    logging.warning("\tfinished in %s" % timer.split())
 
-    logging.warning("Total execution time: %s" % timer.total_elapsed())
-    with open("%s/final_clusters.txt" % in_args.outdir, "w") as ofile:
-        ofile.write(output)
+    logging.warning("\nTotal execution time: %s" % timer.total_elapsed())
+    with open("%s/final_clusters.txt" % in_args.outdir, "w") as outfile:
+        outfile.write(output)
         logging.warning("Final clusters written to: %s/final_clusters.txt" % in_args.outdir)
