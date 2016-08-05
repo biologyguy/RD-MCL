@@ -13,6 +13,7 @@ import argparse
 from Bio.Phylo.BaseTree import Tree
 import copy
 import re
+import sys
 import string
 from string import ascii_uppercase
 from random import Random
@@ -48,7 +49,7 @@ def generate_perfect_tree(num_taxa, groups):
 
 
 class TreeGenerator:
-    def __init__(self, num_genes, num_taxa, seed=12345):
+    def __init__(self, num_genes, num_taxa, seed=12345, branch_length=1.0, branch_stdev=None):
         self.num_genes = num_genes
         self.num_taxa = num_taxa
         self.rand_gen = Random(seed)
@@ -57,8 +58,8 @@ class TreeGenerator:
         for x in range(num_taxa):
             self._generate_taxa_name()
         labels = ["%s-GENE_NAME" % self.taxa[x] for x in range(num_taxa)]
-        self.gene_tree = Tree.randomized(num_genes)
-        self.species_tree = Tree.randomized(labels)
+        self.gene_tree = Tree.randomized(num_genes, branch_length=branch_length, branch_stdev=branch_stdev)
+        self.species_tree = Tree.randomized(labels, branch_length=branch_length)
         self.root = self.gene_tree.clade
         self.assemble()
 
@@ -120,12 +121,24 @@ def main():
                         action='store', type=int, required=True)
     parser.add_argument('-ng', '--num_groups', help='Specifies the number of orthogroups to be generated', nargs=1,
                         action='store', type=int, required=True)
+    parser.add_argument('-bl', '--branch_length', help='Specifies the gene tree branch length', nargs=1,
+                        action='store', type=float, required=False)
+    parser.add_argument('-bs', '--branch_stdev', help='Specifies the standard deviation of the gene tree branch length',
+                        nargs=1, action='store', type=float, required=False)
 
     in_args = parser.parse_args()
     groups = in_args.num_groups[0]
     ntaxa = in_args.num_taxa[0]
+    if in_args.branch_length:
+        branch_length = in_args.branch_length[0]
+    else:
+        branch_length = None
+    if in_args.branch_stdev and in_args.branch_length:
+        branch_stdev = in_args.branch_stdev[0]
+    else:
+        branch_stdev = None
 
-    generator = TreeGenerator(groups, ntaxa)
+    generator = TreeGenerator(groups, ntaxa, branch_length=branch_length, branch_stdev=branch_stdev)
     tree_string = str(generator)
     print(tree_string)
 
