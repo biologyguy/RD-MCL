@@ -502,7 +502,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     :return: list of seq_ids objects
     """
     def save_cluster():
-        temp_dir.save("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name()))
+        if not os.path.isdir("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name())):
+            temp_dir.save("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name()))
         alignment = generate_msa(seqbuddy)
         alignment.write("%s/alignments/%s.aln" % (in_args.outdir, master_cluster.name()))
         master_cluster.sim_scores.to_csv("%s/sim_scores/%s.scores" % (in_args.outdir, master_cluster.name()),
@@ -883,6 +884,11 @@ if __name__ == '__main__':
     if not os.path.isdir("%s/alignments/all_alignments" % in_args.outdir):
         os.makedirs("%s/alignments/all_alignments" % in_args.outdir)
 
+    for root, dirs, files in os.walk("%s/mcmcmc" % in_args.outdir):
+        for _dir in dirs:
+            if _dir != "group_0":
+                shutil.rmtree("%s/%s" % (root, _dir))
+
     # Move log file into output directory
     logger_obj.move_log("%s/rdmcl.log" % in_args.outdir)
 
@@ -942,6 +948,7 @@ if __name__ == '__main__':
     group_0_cluster = load_cluster("group_0", in_args.outdir)
     if group_0_cluster:
         logging.warning("RESUME: group_0 cluster loaded")
+
     else:
         logging.warning("Generating initial all-by-all similarity graph")
         scores_data = create_all_by_all_scores(alignbuddy)
