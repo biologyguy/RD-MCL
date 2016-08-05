@@ -90,7 +90,7 @@ class Cluster(object):
         self._clique_counter = 0
         self.clique = clique
         self.cliques = None
-        self.score = None
+        self.cluster_score = None
         self.collapsed_genes = {}  # If paralogs are reciprocal best hits, collapse them
         self._name = None
         self.similarity_graphs = "%s/sim_scores/all_graphs" % self.out_dir
@@ -222,14 +222,14 @@ class Cluster(object):
         return scores
 
     def score(self):
-        if self.score:
-            return self.score
+        if self.cluster_score:
+            return self.cluster_score
         # Confirm that a score for this cluster has not been caluclated before
         prev_scores = pd.read_csv(self.cluster_score_file.path, index_col=False)
         seq_ids = md5_hash("".join(sorted(self.seq_ids)))
         if seq_ids in prev_scores.cluster.values:
-            self.score = float(prev_scores.score[prev_scores.cluster == seq_ids])
-            return self.score
+            self.cluster_score = float(prev_scores.score[prev_scores.cluster == seq_ids])
+            return self.cluster_score
 
         # Don't ignore the possibility of cliques, which will alter the score.
         # Note that cliques are assumed to be the smallest unit, so not containing any sub-cliques. Valid?
@@ -301,25 +301,25 @@ class Cluster(object):
         else:
             decliqued_cluster = self.seq_ids
 
-        self.score = self.raw_score(decliqued_cluster)
+        self.cluster_score = self.raw_score(decliqued_cluster)
         for clique in self.cliques:
             if not clique:
                 break
             clique_ids = md5_hash("".join(sorted(clique.seq_ids)))
             if clique_ids in prev_scores.cluster.values:
-                self.score += float(prev_scores.score[prev_scores.cluster == clique_ids])
+                self.cluster_score += float(prev_scores.score[prev_scores.cluster == clique_ids])
             else:
                 clique_score = self.raw_score(clique.seq_ids)
-                self.score += clique_score
+                self.cluster_score += clique_score
                 with self.lock:
                     self.cluster_score_file.write("\n%s,%s" % (clique_score, clique_ids))
                     sim_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique.seq_ids)) &
                                                  (self.sim_scores.seq2.isin(clique.seq_ids))]
                     sim_scores.to_csv("%s/%s" % (self.similarity_graphs, clique_ids), index=False)
         with self.lock:
-            self.cluster_score_file.write("\n%s,%s" % (self.score, seq_ids))
+            self.cluster_score_file.write("\n%s,%s" % (self.cluster_score, seq_ids))
             self.sim_scores.to_csv("%s/%s" % (self.similarity_graphs, seq_ids), index=False)
-        return self.score
+        return self.cluster_score
 
     """The following are possible score modifier schemes to account for group size
     def gpt(self, score, taxa):  # groups per taxa
@@ -715,10 +715,17 @@ def score_sequences(seq_pair, args):
 
 
 def generate_msa(seqbuddy):
-    if len(seqbuddy) == 1:
-        alignment = Alb.AlignBuddy(str(seqbuddy))
+    seq_ids = sorted([rec.id for rec in seqbuddy.records])
+    seq_ids = "".join(seq_ids)
+    align_file = "%s/alignments/all_alignments/%s" % (in_args.outdir, md5_hash(seq_ids))
+    if os.path.isfile(align_file):
+        alignment = Alb.AlignBuddy(align_file)
     else:
-        alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -1", quiet=True)
+        if len(seqbuddy) == 1:
+            alignment = Alb.AlignBuddy(str(seqbuddy))
+        else:
+            alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -1", quiet=True)
+        alignment.write(align_file)
     return alignment
 
 
@@ -869,8 +876,12 @@ if __name__ == '__main__':
         if not os.path.isdir(outdir):
             logging.info("mkdir %s" % outdir)
             os.makedirs(outdir)
+
     if not os.path.isdir("%s/sim_scores/all_graphs" % in_args.outdir):
         os.makedirs("%s/sim_scores/all_graphs" % in_args.outdir)
+
+    if not os.path.isdir("%s/alignments/all_alignments" % in_args.outdir):
+        os.makedirs("%s/alignments/all_alignments" % in_args.outdir)
 
     # Move log file into output directory
     logger_obj.move_log("%s/rdmcl.log" % in_args.outdir)
