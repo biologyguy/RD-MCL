@@ -9,7 +9,6 @@
 # [&R] ((A1,(B1,(C1,(D1,E1)))),((A2,(B2,(C2,(D2,E2)))),(((A3,E3),(B3,(C3,D3))),(((A4,((B4,D4),(C4,E4))),(A6,(B6,(C6,(D6,E6))))),(A5,(B5,(D5,(E5,C5))))))));
 
 
-from sys import argv
 import argparse
 from Bio.Phylo.BaseTree import Tree
 import copy
@@ -19,11 +18,6 @@ from string import ascii_uppercase
 from random import Random
 import math
 
-assert len(argv) >= 3
-
-ntaxa = int(argv[1])
-
-groups = int(argv[2])
 
 def generate_perfect_tree(num_taxa, groups):
     tree_str = "[&R] "
@@ -119,6 +113,18 @@ class TreeGenerator:
         return re.sub("\)n[0-9]*", ")", tree_string)
 
 def main():
+    parser = argparse.ArgumentParser(prog="PhyloBuddy.py", usage=argparse.SUPPRESS,
+                                     description='A tool for generating random ortholog trees.\nUsage:'
+                                                 '\n./tree_generator.py -nt <#> -ng <#>')
+    parser.add_argument('-nt', '--num_taxa', help='Specifies the number of taxa to be generated', nargs=1,
+                        action='store', type=int, required=True)
+    parser.add_argument('-ng', '--num_groups', help='Specifies the number of orthogroups to be generated', nargs=1,
+                        action='store', type=int, required=True)
+
+    in_args = parser.parse_args()
+    groups = in_args.num_groups[0]
+    ntaxa = in_args.num_taxa[0]
+
     generator = TreeGenerator(groups, ntaxa)
     tree_string = str(generator)
     print(tree_string)
