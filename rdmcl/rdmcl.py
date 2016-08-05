@@ -64,7 +64,7 @@ Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
 
 
 class Cluster(object):
-    def __init__(self, seq_ids, sim_scores, parent=None, clique=False):
+    def __init__(self, seq_ids, sim_scores, out_dir=None, parent=None, clique=False):
         """
         - Note that reciprocal best hits between paralogs are collapsed when instantiating group_0, so
           no problem strongly penalizing all paralogs in the scoring algorithm
@@ -81,20 +81,25 @@ class Cluster(object):
         self.taxa = {}
         self.sim_scores = sim_scores
         self.parent = parent
+
+        if not parent and not out_dir:
+            raise AttributeError("Cannot create a root Cluster object without specifying an output directory.")
+        self.out_dir = out_dir if out_dir else parent.out_dir
+
         self._subgroup_counter = 0
         self._clique_counter = 0
         self.clique = clique
         self.cliques = None
-        self._score = None
+        self.score = None
         self.collapsed_genes = {}  # If paralogs are reciprocal best hits, collapse them
         self._name = None
+        self.similarity_graphs = "%s/sim_scores/all_graphs" % self.out_dir
 
         if clique and not parent:
             raise AttributeError("A clique cannot be declared without including its parental seq_ids.")
 
         if parent:
             self.cluster_score_file = parent.cluster_score_file
-            self.similarity_graphs = parent.similarity_graphs
             self.lock = parent.lock
             for indx, genes in parent.collapsed_genes.items():
                 if indx in seq_ids:
@@ -109,7 +114,6 @@ class Cluster(object):
             # No reason to re-calculate scores, so record what's been done in a temp file to persist over subprocesses
             self.cluster_score_file = MyFuncs.TempFile()
             self.cluster_score_file.write("score,cluster")
-            self.similarity_graphs = MyFuncs.TempDir()
             self.lock = Lock()
             collapse_check_list = []
             collapsed_cluster = []
@@ -218,14 +222,14 @@ class Cluster(object):
         return scores
 
     def score(self):
-        if self._score:
-            return self._score
+        if self.score:
+            return self.score
         # Confirm that a score for this cluster has not been caluclated before
         prev_scores = pd.read_csv(self.cluster_score_file.path, index_col=False)
         seq_ids = md5_hash("".join(sorted(self.seq_ids)))
         if seq_ids in prev_scores.cluster.values:
-            self._score = float(prev_scores.score[prev_scores.cluster == seq_ids])
-            return self._score
+            self.score = float(prev_scores.score[prev_scores.cluster == seq_ids])
+            return self.score
 
         # Don't ignore the possibility of cliques, which will alter the score.
         # Note that cliques are assumed to be the smallest unit, so not containing any sub-cliques. Valid?
@@ -297,25 +301,25 @@ class Cluster(object):
         else:
             decliqued_cluster = self.seq_ids
 
-        self._score = self.raw_score(decliqued_cluster)
+        self.score = self.raw_score(decliqued_cluster)
         for clique in self.cliques:
             if not clique:
                 break
             clique_ids = md5_hash("".join(sorted(clique.seq_ids)))
             if clique_ids in prev_scores.cluster.values:
-                self._score += float(prev_scores.score[prev_scores.cluster == clique_ids])
+                self.score += float(prev_scores.score[prev_scores.cluster == clique_ids])
             else:
                 clique_score = self.raw_score(clique.seq_ids)
-                self._score += clique_score
+                self.score += clique_score
                 with self.lock:
                     self.cluster_score_file.write("\n%s,%s" % (clique_score, clique_ids))
                     sim_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique.seq_ids)) &
                                                  (self.sim_scores.seq2.isin(clique.seq_ids))]
-                    sim_scores.to_csv("%s/%s" % (self.similarity_graphs.path, clique_ids), index=False)
+                    sim_scores.to_csv("%s/%s" % (self.similarity_graphs, clique_ids), index=False)
         with self.lock:
-            self.cluster_score_file.write("\n%s,%s" % (self._score, seq_ids))
-            self.sim_scores.to_csv("%s/%s" % (self.similarity_graphs.path, seq_ids), index=False)
-        return self._score
+            self.cluster_score_file.write("\n%s,%s" % (self.score, seq_ids))
+            self.sim_scores.to_csv("%s/%s" % (self.similarity_graphs, seq_ids), index=False)
+        return self.score
 
     """The following are possible score modifier schemes to account for group size
     def gpt(self, score, taxa):  # groups per taxa
@@ -386,8 +390,8 @@ def bit_score(raw_score):
 
 
 def _psi_pred(seq_obj, args):
-    outdir = args[0]
-    if os.path.isfile("%s/psi_pred/%s.ss2" % (outdir, seq_obj.id)):
+    out_dir = args[0]
+    if os.path.isfile("%s/psi_pred/%s.ss2" % (out_dir, seq_obj.id)):
         return
     temp_dir = MyFuncs.TempDir()
     pwd = os.getcwd()
@@ -406,7 +410,7 @@ psiblast -db {0}/blastdb/pannexins -query sequence.fa -inclusion_ethresh 0.001 -
 
     Popen(command, shell=True).wait()
     os.chdir(pwd)
-    shutil.move("%s/%s.ss2" % (temp_dir.path, seq_obj.id), "%s/psi_pred/" % outdir)
+    shutil.move("%s/%s.ss2" % (temp_dir.path, seq_obj.id), "%s/psi_pred/" % out_dir)
     return
 
 
@@ -431,7 +435,7 @@ def mcmcmc_mcl(args, params):
         cluster_ids = md5_hash("".join(sorted(cluster)))
         if cluster_ids in prev_scores.cluster.values:
             with parent_cluster.lock:
-                sim_scores = pd.read_csv("%s/%s" % (parent_cluster.similarity_graphs.path, cluster_ids), index_col=False)
+                sim_scores = pd.read_csv("%s/%s" % (parent_cluster.similarity_graphs, cluster_ids), index_col=False)
                 scores = prev_scores.score[prev_scores.cluster == cluster_ids]
                 if len(scores) > 1:
                     prev_scores = prev_scores.drop_duplicates()
@@ -457,11 +461,12 @@ def mcmcmc_mcl(args, params):
     return score
 
 
-def load_cluster(group, outdir, parent=None):
+def load_cluster(group, out_dir, parent=None):
     # Make sure all the necessary files are present
-    necessary_files = ["%s/%s/%s.%s" % (outdir, subdir, group, ext) for subdir, ext in [("alignments", "aln"), ("sim_scores", "scores")]]
-    necessary_files += ["%s/mcmcmc/%s/%s" % (outdir, group, x) for x in ["best_group", "input.csv",
-                                                                         "max.txt", "mcmcmc_out.csv"]]
+    necessary_files = ["%s/%s/%s.%s" % (out_dir, subdir, group, ext) for subdir, ext in [("alignments", "aln"),
+                                                                                         ("sim_scores", "scores")]]
+    necessary_files += ["%s/mcmcmc/%s/%s" % (out_dir, group, x) for x in ["best_group", "input.csv",
+                                                                          "max.txt", "mcmcmc_out.csv"]]
     all_files_present = True
     for file in necessary_files:
         if not os.path.isfile(file):
@@ -474,14 +479,14 @@ def load_cluster(group, outdir, parent=None):
                 os.remove(file)
             except OSError:
                 pass
-        shutil.rmtree("%s/mcmcmc/%s" % (outdir, group), ignore_errors=True)
+        shutil.rmtree("%s/mcmcmc/%s" % (out_dir, group), ignore_errors=True)
         return False
 
-    alignment = Alb.AlignBuddy("%s/alignments/%s.aln" % (outdir, group))
+    alignment = Alb.AlignBuddy("%s/alignments/%s.aln" % (out_dir, group))
     seq_ids = [rec.id for rec in alignment.records_iter()]
-    sim_scores = pd.read_csv("%s/sim_scores/%s.scores" % (outdir, group), sep="\t", index_col=False)
+    sim_scores = pd.read_csv("%s/sim_scores/%s.scores" % (out_dir, group), sep="\t", index_col=False)
     sim_scores.columns = ["seq1", "seq2", "score"]
-    cluster = Cluster(seq_ids, sim_scores, parent=parent)
+    cluster = Cluster(seq_ids, sim_scores, out_dir=out_dir, parent=parent)
     return cluster
 
 
@@ -543,7 +548,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     mcl_clusters = parse_mcl_clusters("%s/best_group" % temp_dir.path)
     for sub_cluster in mcl_clusters:
         cluster_ids = md5_hash("".join(sorted(sub_cluster)))
-        sim_scores = pd.read_csv("%s/%s" % (master_cluster.similarity_graphs.path, cluster_ids), index_col=False)
+        sim_scores = pd.read_csv("%s/%s" % (master_cluster.similarity_graphs, cluster_ids), index_col=False)
         sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster)
         if len(sub_cluster) in [1, 2]:
             sub_cluster.set_name()
@@ -864,6 +869,8 @@ if __name__ == '__main__':
         if not os.path.isdir(outdir):
             logging.info("mkdir %s" % outdir)
             os.makedirs(outdir)
+    if not os.path.isdir("%s/sim_scores/all_graphs" % in_args.outdir):
+        os.makedirs("%s/sim_scores/all_graphs" % in_args.outdir)
 
     # Move log file into output directory
     logger_obj.move_log("%s/rdmcl.log" % in_args.outdir)
@@ -931,7 +938,7 @@ if __name__ == '__main__':
         logging.info("\tfinished in %s" % timer.split())
         group_0 = pd.concat([scores_data.seq1, scores_data.seq2])
         group_0 = group_0.value_counts()
-        group_0_cluster = Cluster([i for i in group_0.index], scores_data)
+        group_0_cluster = Cluster([i for i in group_0.index], scores_data, out_dir=in_args.outdir)
 
     # Base cluster score
     base_score = group_0_cluster.score()
