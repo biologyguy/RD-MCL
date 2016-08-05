@@ -416,7 +416,7 @@ def mcmcmc_mcl(args, params):
     mcl_tmp_dir = MyFuncs.TempDir()
 
     mcl_output = Popen("mcl %s/input.csv --abc -te 2 -tf 'gq(%s)' -I %s -o %s/output.groups" %
-                    (external_tmp_dir, gq, inflation, mcl_tmp_dir.path), shell=True, stderr=PIPE).communicate()
+                       (external_tmp_dir, gq, inflation, mcl_tmp_dir.path), shell=True, stderr=PIPE).communicate()
 
     mcl_output = mcl_output[1].decode()
 
@@ -455,6 +455,34 @@ def mcmcmc_mcl(args, params):
             with open("%s/max.txt" % external_tmp_dir, "w") as ofile:
                 ofile.write(str(score))
     return score
+
+
+def load_cluster(group, outdir, parent=None):
+    # Make sure all the necessary files are present
+    necessary_files = ["%s/%s/%s.%s" % (outdir, subdir, group, ext) for subdir, ext in [("alignments", "aln"), ("sim_scores", "scores")]]
+    necessary_files += ["%s/mcmcmc/%s/%s" % (outdir, group, x) for x in ["best_group", "input.csv",
+                                                                         "max.txt", "mcmcmc_out.csv"]]
+    all_files_present = True
+    for file in necessary_files:
+        if not os.path.isfile(file):
+            all_files_present = False
+            break
+
+    if not all_files_present:
+        for file in necessary_files:
+            try:
+                os.remove(file)
+            except OSError:
+                pass
+        shutil.rmtree("%s/mcmcmc/%s" % (outdir, group), ignore_errors=True)
+        return False
+
+    alignment = Alb.AlignBuddy("%s/alignments/%s.aln" % (outdir, group))
+    seq_ids = [rec.id for rec in alignment.records_iter()]
+    sim_scores = pd.read_csv("%s/sim_scores/%s.scores" % (outdir, group), sep="\t", index_col=False)
+    sim_scores.columns = ["seq1", "seq2", "score"]
+    cluster = Cluster(seq_ids, sim_scores, parent=parent)
+    return cluster
 
 
 def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=True):
@@ -726,11 +754,11 @@ def create_all_by_all_scores(alignment, quiet=False):
         for rec2 in ids2:
             all_by_all.append((rec1, rec2))
 
-    outfile = MyFuncs.TempFile()
-    outfile.write("seq1,seq2,score")
+    ofile = MyFuncs.TempFile()
+    ofile.write("seq1,seq2,score")
     printer.clear()
-    MyFuncs.run_multicore_function(all_by_all, score_sequences, [alignment, psi_pred_files, outfile.path], quiet=quiet)
-    sim_scores = pd.read_csv(outfile.path, index_col=False)
+    MyFuncs.run_multicore_function(all_by_all, score_sequences, [alignment, psi_pred_files, ofile.path], quiet=quiet)
+    sim_scores = pd.read_csv(ofile.path, index_col=False)
     return sim_scores
 
 
@@ -896,23 +924,20 @@ if __name__ == '__main__':
         alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
         logging.info("\tfinished in %s" % timer.split())
 
-    if os.path.isfile("%s/sim_scores/group_0.scores" % in_args.outdir):
-        logging.warning("RESUME: Initial all-by-all similarity scores found")
-        scores_data = pd.read_csv("%s/sim_scores/group_0.scores" % in_args.outdir, header=None,
-                                  index_col=False, sep="\t")
-        scores_data.columns = ['seq1', 'seq2', 'score']
+    group_0_cluster = load_cluster("group_0", in_args.outdir)
+    if group_0_cluster:
+        logging.warning("RESUME: group_0 cluster loaded")
     else:
         logging.warning("Generating initial all-by-all similarity graph")
         scores_data = create_all_by_all_scores(alignbuddy)
         scores_data.to_csv("%s/sim_scores/group_0.scores" % in_args.outdir, header=None, index=False, sep="\t")
         logging.info("\tfinished in %s" % timer.split())
-
-    group_0 = pd.concat([scores_data.seq1, scores_data.seq2])
-    group_0 = group_0.value_counts()
-    group_0 = Cluster([i for i in group_0.index], scores_data)
+        group_0 = pd.concat([scores_data.seq1, scores_data.seq2])
+        group_0 = group_0.value_counts()
+        group_0_cluster = Cluster([i for i in group_0.index], scores_data)
 
     # Base cluster score
-    base_score = group_0.score()
+    base_score = group_0_cluster.score()
     logging.warning("Base cluster score: %s" % round(base_score, 4))
 
     #taxa_count = [x.split("-")[0] for x in master_cluster.seq_ids]
@@ -922,7 +947,7 @@ if __name__ == '__main__':
     # Ortholog caller
     logging.warning("\n** Recursive MCL **")
     final_clusters = []
-    final_clusters = orthogroup_caller(group_0, final_clusters, seqbuddy=sequences,
+    final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences,
                                        steps=in_args.mcmcmc_steps, quiet=False)
 
     logging.info("\tfinished in %s" % timer.split())
@@ -930,7 +955,7 @@ if __name__ == '__main__':
     # Fold singletons and doublets back into groups. This can't be 'resumed', because it changes the clusters
     if not in_args.supress_singlet_folding:
         logging.warning("** Folding singletons back into clusters **")
-        final_clusters = merge_singles(final_clusters, scores_data)
+        final_clusters = merge_singles(final_clusters, group_0_cluster.sim_scores)
         logging.warning("\tfinished in %s" % timer.split())
 
     # Format the clusters and output to stdout or file
