@@ -793,44 +793,6 @@ class Logger(object):
         return
 
 
-def new_project():
-    if os.path.exists(in_args.outdir):
-        check = MyFuncs.ask("Output directory already exists, overwrite it [y]/n?") if not in_args.force else True
-        if check:
-            logging.info("Deleting all previous files from output directory.")
-            shutil.rmtree(in_args.outdir)
-            while os.path.exists(in_args.outdir):
-                pass
-        else:
-            logging.warning("Program aborted by user to prevent overwriting of pre-existing output directory.")
-            sys.exit()
-
-    # Make all the directories needed for the run
-    logging.info("mkdir %s" % in_args.outdir)
-    os.makedirs(in_args.outdir)
-    logging.info("mkdir %s/alignments" % in_args.outdir)
-    os.makedirs("%s/alignments" % in_args.outdir)
-    logging.info("mkdir %s/mcmcmc" % in_args.outdir)
-    os.makedirs("%s/mcmcmc" % in_args.outdir)
-    logging.info("mkdir %s/sim_scores" % in_args.outdir)
-    os.makedirs("%s/sim_scores" % in_args.outdir)
-    logging.info("mkdir %s/psi_pred\n" % in_args.outdir)
-    os.makedirs("%s/psi_pred" % in_args.outdir)
-    return
-
-
-def resume():
-    if not os.path.isdir(in_args.outdir):
-        confirm = MyFuncs.ask("Specified input directory does not exist but the 'resume' flag was passed in. "
-                              "Do you want to start a new whole new RD-MCL run [y]/n?: ")
-        if confirm:
-            new_project()
-        else:
-            logging.warning("Aborted... 'Resume' directory not found.")
-            sys.exit()
-    logging.info("RESUME: RD-MCL will attempt to load data.\n")
-    return
-
 if __name__ == '__main__':
 
     import argparse
@@ -872,10 +834,36 @@ if __name__ == '__main__':
     logging.info("Function call: %s" % " ".join(sys.argv))
 
     # Once passed this if/else, every step will try to read data from the output directory (i.e., attempt to 'resume').
-    if in_args.resume:  # ToDo: This breaks if empty folder is present and --resume is passed in.
-        resume()
-    else:
-        new_project()
+    new_project = True
+    if in_args.resume:
+        new_project = False
+        if not os.path.isdir(in_args.outdir):
+            confirm = MyFuncs.ask("Specified input directory does not exist but the 'resume' flag was passed in. "
+                                  "Do you want to start a new whole new RD-MCL run [y]/n?: ")
+            if confirm:
+                new_project = True
+            else:
+                logging.warning("Aborted... 'Resume' directory not found.")
+                sys.exit()
+        logging.info("RESUME: RD-MCL will attempt to load data.\n")
+
+    if new_project:
+        if os.path.exists(in_args.outdir):
+            check = MyFuncs.ask("Output directory already exists, overwrite it [y]/n?") if not in_args.force else True
+            if check:
+                logging.info("Deleting all previous files from output directory.")
+                shutil.rmtree(in_args.outdir)
+                while os.path.exists(in_args.outdir):
+                    pass
+            else:
+                logging.warning("Program aborted by user to prevent overwriting of pre-existing output directory.")
+                sys.exit()
+
+    # Make sure all the necessary directories are present
+    for outdir in ["%s%s" % (in_args.outdir, x) for x in ["", "/alignments", "/mcmcmc", "/sim_scores", "/psi_pred"]]:
+        if not os.path.isdir(outdir):
+            logging.info("mkdir %s" % outdir)
+            os.makedirs(outdir)
 
     # Move log file into output directory
     logger_obj.move_log("%s/rdmcl.log" % in_args.outdir)
