@@ -440,7 +440,7 @@ def mcmcmc_mcl(args, params):
         else:
             sb_copy = Sb.make_copy(seqbuddy)
             sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster]))
-            alb_obj = generate_mas(sb_copy)
+            alb_obj = generate_msa(sb_copy)
             sim_scores = create_all_by_all_scores(alb_obj, quiet=True)
 
         cluster = Cluster(cluster, sim_scores, parent=parent_cluster)
@@ -496,6 +496,14 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     :param quiet: Suppress StdErr
     :return: list of seq_ids objects
     """
+    def save_cluster():
+        temp_dir.save("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name()))
+        alignment = generate_msa(seqbuddy)
+        alignment.write("%s/alignments/%s.aln" % (in_args.outdir, master_cluster.name()))
+        master_cluster.sim_scores.to_csv("%s/sim_scores/%s.scores" % (in_args.outdir, master_cluster.name()),
+                                         header=None, index=False, sep="\t")
+        return
+
     temp_dir = MyFuncs.TempDir()
     master_cluster.sim_scores.to_csv("%s/input.csv" % temp_dir.path, header=None, index=False, sep="\t")
 
@@ -512,7 +520,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
 
     except RuntimeError:  # Happens when mcmcmc fails to find different initial chain parameters
         cluster_list.append(master_cluster)
-        temp_dir.save("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name()))
+        save_cluster()
         return cluster_list
 
     # Set a 'worst score' that is reasonable for the data set
@@ -526,9 +534,10 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
 
     best_score = max(mcmcmc_output["result"])
     if best_score <= master_cluster.score():
-        master_cluster.set_name()
-        cluster_list.append(master_cluster)
-        temp_dir.save("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name()))
+        if master_cluster.name() != "group_0":
+            master_cluster.set_name()
+            cluster_list.append(master_cluster)
+            save_cluster()
         return cluster_list
 
     mcl_clusters = parse_mcl_clusters("%s/best_group" % temp_dir.path)
@@ -547,7 +556,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
         # Recursion...
         cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, steps=steps, quiet=quiet,)
 
-    temp_dir.save("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name()))
+    save_cluster()
     return cluster_list
 
 
@@ -700,7 +709,7 @@ def score_sequences(seq_pair, args):
     return
 
 
-def generate_mas(seqbuddy):
+def generate_msa(seqbuddy):
     if len(seqbuddy) == 1:
         alignment = Alb.AlignBuddy(str(seqbuddy))
     else:
@@ -863,7 +872,7 @@ if __name__ == '__main__':
     logging.info("Function call: %s" % " ".join(sys.argv))
 
     # Once passed this if/else, every step will try to read data from the output directory (i.e., attempt to 'resume').
-    if in_args.resume:
+    if in_args.resume:  # ToDo: This breaks if empty folder is present and --resume is passed in.
         resume()
     else:
         new_project()
@@ -920,7 +929,7 @@ if __name__ == '__main__':
         alignbuddy = Alb.AlignBuddy("%s/alignments/group_0.aln" % in_args.outdir)
     else:
         logging.warning("Generating initial multiple sequence alignment")
-        alignbuddy = generate_mas(sequences)
+        alignbuddy = generate_msa(sequences)
         alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
         logging.info("\tfinished in %s" % timer.split())
 
