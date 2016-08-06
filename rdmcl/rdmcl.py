@@ -162,7 +162,7 @@ class Cluster(object):
         if self.name():
             pass
         elif not self.parent.name():
-            raise ValueError("Parent of current cluster has not been named.")
+            raise ValueError("Parent of current cluster has not been named.\n%s" % self)
         elif self.clique:
             self._name = "%s_c%s" % (self.parent.name(), self.parent._clique_counter)
             self.parent._clique_counter += 1
@@ -266,11 +266,13 @@ class Cluster(object):
             # Strip out any 'cliques' that contain less than 3 genes
             cliques = [clique for clique in cliques if len(clique) >= 3]
 
-            # Get the similarity scores for within cliques and between cliques-remaining sequences, then generate kernel-density
-            # functions for both. The overlap between the two functions is used to determine whether they should be separated
+            # Get the similarity scores for within cliques and between cliques-remaining sequences, then generate
+            # kernel-density functions for both. The overlap between the two functions is used to determine
+            # whether they should be separated
             self.cliques = []
             for clique in cliques:
-                clique_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique)) & (self.sim_scores.seq2.isin(clique))]
+                clique_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique)) &
+                                                (self.sim_scores.seq2.isin(clique))]
                 total_scores = self.sim_scores.drop(clique_scores.index.values)
 
                 # if a clique is found that pulls in every single gene, skip
@@ -596,6 +598,13 @@ def merge_singles(clusters, scores):
             small_group_names.append(cluster.name())
             small_clusters.append(cluster)
 
+    if not small_clusters:
+        logging.warning("No orphaned sequences present")
+        return clusters
+    else:
+        num_orphans = sum([len(cluster) for cluster in small_clusters])
+        logging.warning("%s orphaned sequences present" % num_orphans)
+
     # Convert the large_clusters list to a dict using group name as key
     large_clusters = {x: large_clusters[j] for j, x in enumerate(large_group_names)}
 
@@ -605,17 +614,17 @@ def merge_singles(clusters, scores):
         for sgene in sclust.seq_ids:
             for key, lclust in large_clusters.items():
                 for lgene in lclust.seq_ids:
-                    score = scores.loc[:][scores[0] == sgene]
-                    score = score.loc[:][score[1] == lgene]
+                    score = scores.loc[:][scores.seq1 == sgene]
+                    score = score.loc[:][score.seq2 == lgene]
 
                     if score.empty:
-                        score = scores.loc[:][scores[0] == lgene]
-                        score = score.loc[:][score[1] == sgene]
+                        score = scores.loc[:][scores.seq1 == lgene]
+                        score = score.loc[:][score.seq2 == sgene]
 
                     if score.empty:
                         score = 0.
                     else:
-                        score = float(score[2])
+                        score = float(score.score)
 
                     small_to_large_dict[sclust.name()][lclust.name()].append(score)
 
@@ -649,12 +658,20 @@ def merge_singles(clusters, scores):
         else:
             # The gene can be grouped with the max_ave group
             large_clusters[max_ave].seq_ids += small_clusters[small_group_id].seq_ids
+            logging.info("\tFolding %s into %s" % (" and ".join(small_clusters[small_group_id].seq_ids), max_ave))
             del small_clusters[small_group_id]
 
-    clusters = [value for key, value in large_clusters.items()]
-    clusters += [value for key, value in small_clusters.items()]
+    clusters = [cluster for key, cluster in large_clusters.items()]
+    clusters += [cluster for key, cluster in small_clusters.items()]
+    fostered_orphans = num_orphans - sum([len(cluster) for key, cluster in small_clusters.items()])
+    if not fostered_orphans:
+        logging.warning("No orphaned sequences were placed in orthogroups.")
+    elif fostered_orphans == 1:
+        logging.warning("1 orphaned sequence was placed in an orthogroups.")
+    else:
+        logging.warning("%s orphaned sequences have found new homes in orthogroups!" % fostered_orphans)
     return clusters
-# NOTE: There used to be a support function. Check the GitHub history if there's desire to bring parts of it back
+# NOTE: There used to be a support function. Check the workscripts GitHub history
 
 
 def score_sequences(seq_pair, args):
@@ -976,7 +993,7 @@ if __name__ == '__main__':
 
     # Fold singletons and doublets back into groups. This can't be 'resumed', because it changes the clusters
     if not in_args.supress_singlet_folding:
-        logging.warning("** Folding singletons back into clusters **")
+        logging.warning("\n** Folding orphan sequences into clusters **")
         final_clusters = merge_singles(final_clusters, group_0_cluster.sim_scores)
         logging.warning("\tfinished in %s" % timer.split())
 
