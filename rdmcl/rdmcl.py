@@ -56,7 +56,7 @@ VERSION = "0.1.alpha%s" % git_commit
 NOTICE = '''\
 Public Domain Notice
 --------------------
-This is free software; see the source for detailed copying conditions.
+This is free software; see the source for further details.
 There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE.
 Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
@@ -71,9 +71,9 @@ class Cluster(object):
 
         :param seq_ids: Sequence IDs
         :type seq_ids: list
-        :param sim_scores: All-by-all similarity matrix for everything in the seq_ids (and parental clusters)
+        :param sim_scores: All-by-all similarity matrix for everything in the sequence_ids (and parental clusters)
         :type sim_scores: pandas.DataFrame
-        :param parent: Parental seq_ids
+        :param parent: Parental sequence_ids
         :type parent: Cluster
         :param clique: Specify whether cluster is a clique or not
         :type clique: bool
@@ -96,7 +96,7 @@ class Cluster(object):
         self.similarity_graphs = "%s/sim_scores/all_graphs" % self.out_dir
 
         if clique and not parent:
-            raise AttributeError("A clique cannot be declared without including its parental seq_ids.")
+            raise AttributeError("A clique cannot be declared without including its parental sequence_ids.")
 
         if parent:
             self.cluster_score_file = parent.cluster_score_file
@@ -125,10 +125,8 @@ class Cluster(object):
                 self.taxa.setdefault(taxa, [])
                 self.taxa[taxa].append(gene)
                 collapsed_cluster.append(gene)
-                valve = MyFuncs.SafetyValve()  # ToDo: remove this when sure it is unnecessary
                 breakout = False
                 while not breakout:  # This is the primary paralog collapsing logic. Only do it once for parental group
-                    valve.step()
                     breakout = True
                     for edge in self._get_best_hits(gene).itertuples():
                         other_seq_id = edge.seq1 if edge.seq1 != gene else edge.seq2
@@ -184,8 +182,8 @@ class Cluster(object):
     def sub_cluster(self, id_list):
         sim_scores = pd.DataFrame()
         for gene in id_list:
-            if gene not in self.seq_ids:
-                raise NameError("Gene id '%s' not present in parental seq_ids" % gene)
+            if gene not in self.sequence_ids:
+                raise NameError("Gene id '%s' not present in parental sequence_ids" % gene)
             seq1_scores = self.sim_scores[self.sim_scores.seq1 == gene]
             seq1_scores = seq1_scores[seq1_scores.seq2.isin(id_list)]
             seq2_scores = self.sim_scores[self.sim_scores.seq2 == gene]
@@ -347,9 +345,9 @@ class Cluster(object):
             taxa.setdefault(taxon, [])
             taxa[taxon].append(gene)
 
-        # An entire seq_ids should never consist of a single taxa because I've stripped out reciprocal best hit paralogs
+        # An entire sequence_ids should never consist of a single taxa because I've stripped out reciprocal best hit paralogs
         if len(taxa) == 1:
-            raise ReferenceError("Only a single taxa found in seq_ids...")
+            raise ReferenceError("Only a single taxa found in sequence_ids...")
 
         unique_scores = 1
         paralog_scores = -1
@@ -463,45 +461,16 @@ def mcmcmc_mcl(args, params):
     return score
 
 
-def load_cluster(group, out_dir, parent=None):
-    # Make sure all the necessary files are present
-    necessary_files = ["%s/%s/%s.%s" % (out_dir, subdir, group, ext) for subdir, ext in [("alignments", "aln"),
-                                                                                         ("sim_scores", "scores")]]
-    necessary_files += ["%s/mcmcmc/%s/%s" % (out_dir, group, x) for x in ["best_group", "input.csv",
-                                                                          "max.txt", "mcmcmc_out.csv"]]
-    all_files_present = True
-    for file in necessary_files:
-        if not os.path.isfile(file):
-            all_files_present = False
-            break
-
-    if not all_files_present:
-        for file in necessary_files:
-            try:
-                os.remove(file)
-            except OSError:
-                pass
-        shutil.rmtree("%s/mcmcmc/%s" % (out_dir, group), ignore_errors=True)
-        return False
-
-    alignment = Alb.AlignBuddy("%s/alignments/%s.aln" % (out_dir, group))
-    seq_ids = [rec.id for rec in alignment.records_iter()]
-    sim_scores = pd.read_csv("%s/sim_scores/%s.scores" % (out_dir, group), sep="\t", index_col=False)
-    sim_scores.columns = ["seq1", "seq2", "score"]
-    cluster = Cluster(seq_ids, sim_scores, out_dir=out_dir, parent=parent)
-    return cluster
-
-
 def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=True):
     """
     Run MCMCMC on MCL to find the best orthogroups
     :param master_cluster: The group to be subdivided
     :type master_cluster: Cluster
-    :param cluster_list: When a seq_ids is finalized after recursion, it is appended to this list
-    :param seqbuddy: The sequences that are included in the master seq_ids
+    :param cluster_list: When a sequence_ids is finalized after recursion, it is appended to this list
+    :param seqbuddy: The sequences that are included in the master sequence_ids
     :param steps: How many MCMCMC iterations to run TODO: calculate this on the fly
     :param quiet: Suppress StdErr
-    :return: list of seq_ids objects
+    :return: list of sequence_ids objects
     """
     def save_cluster():
         if not os.path.isdir("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name())):
@@ -630,7 +599,7 @@ def merge_singles(clusters, scores):
 
     small_clusters = {x: small_clusters[j] for j, x in enumerate(small_group_names)}
     for small_group_id, l_clusts in small_to_large_dict.items():
-        # Convert data into list of numpy arrays that sm.stats can read, also get average scores for each seq_ids
+        # Convert data into list of numpy arrays that sm.stats can read, also get average scores for each sequence_ids
         data = [np.array(x) for x in l_clusts.values()]
         averages = pd.Series()
         for j, group in enumerate(data):
@@ -670,6 +639,7 @@ def merge_singles(clusters, scores):
         logging.warning("1 orphaned sequence was placed in an orthogroups.")
     else:
         logging.warning("%s orphaned sequences have found new homes in orthogroups!" % fostered_orphans)
+        logging.warning("\tNote that the alignment, mcmcmc, and sim_score files only include the original sequences.")
     return clusters
 # NOTE: There used to be a support function. Check the workscripts GitHub history
 
@@ -734,8 +704,7 @@ def score_sequences(seq_pair, args):
 
 def generate_msa(seqbuddy):
     seq_ids = sorted([rec.id for rec in seqbuddy.records])
-    seq_ids = "".join(seq_ids)
-    align_file = "%s/alignments/all_alignments/%s" % (in_args.outdir, md5_hash(seq_ids))
+    align_file = "%s/alignments/all_alignments/%s" % (in_args.outdir, md5_hash("".join(seq_ids)))
     if os.path.isfile(align_file):
         alignment = Alb.AlignBuddy(align_file)
     else:
@@ -852,7 +821,6 @@ if __name__ == '__main__':
                         help="Overwrite previous run")
     parser.add_argument("-q", "--quiet", action="store_true",
                         help="Suppress all output during run (only final output is returned)")
-    parser.add_argument("-r", "--resume", help="Try to resume a job", action="store_true")
 
     in_args = parser.parse_args()
 
@@ -863,37 +831,36 @@ if __name__ == '__main__':
     logging.info("Working directory: %s" % os.getcwd())
     logging.info("Function call: %s" % " ".join(sys.argv))
 
-    # Once passed this if/else, every step will try to read data from the output directory (i.e., attempt to 'resume').
-    new_project = True
-    if in_args.resume:
-        new_project = False
-        if not os.path.isdir(in_args.outdir):
-            confirm = MyFuncs.ask("Specified input directory does not exist but the 'resume' flag was passed in. "
-                                  "Do you want to start a new whole new RD-MCL run [y]/n?: ")
-            if confirm:
-                new_project = True
-            else:
-                logging.warning("Aborted... 'Resume' directory not found.")
-                sys.exit()
-        logging.info("RESUME: RD-MCL will attempt to load data.\n")
+    sequences = Sb.SeqBuddy(in_args.sequences)
+    seq_ids_hash = md5_hash("".join(sorted([rec.id for rec in sequences.records])))
+    previous_run = False
 
-    if new_project:
-        if os.path.exists(in_args.outdir):
-            check = MyFuncs.ask("Output directory already exists, overwrite it [y]/n?") if not in_args.force else True
-            if check:
-                logging.info("Deleting all previous files from output directory.")
-                shutil.rmtree(in_args.outdir)
-                while os.path.exists(in_args.outdir):
-                    pass
-            else:
-                logging.warning("Program aborted by user to prevent overwriting of pre-existing output directory.")
+    if os.path.exists("%s/.rdmcl" % in_args.outdir):
+        with open("%s/.rdmcl" % in_args.outdir, "r") as ifile:
+            previous_run = ifile.read()
+
+    if os.path.exists(in_args.outdir):
+        if previous_run == seq_ids_hash:
+            logging.warning("RESUME: This output directory was previous used for an identical RD-MCL run, any "
+                            "cached resources will be reused.")
+        else:
+            check = MyFuncs.ask("Output directory already exists, continue [y]/n?") if not in_args.force else True
+            if not check:
+                logging.warning("Program aborted by user.")
                 sys.exit()
 
-    # Make sure all the necessary directories are present
+    # Make sure all the necessary directories are present and emptied of old run files
     for outdir in ["%s%s" % (in_args.outdir, x) for x in ["", "/alignments", "/mcmcmc", "/sim_scores", "/psi_pred"]]:
         if not os.path.isdir(outdir):
             logging.info("mkdir %s" % outdir)
             os.makedirs(outdir)
+        elif "psi_pred" not in outdir:  # Delete old files
+            root, dirs, files = next(os.walk(outdir))
+            for file in files:
+                os.remove("%s/%s" % (root, file))
+
+    with open("%s/.rdmcl" % in_args.outdir, "w") as ofile:
+        ofile.write(seq_ids_hash)
 
     if not os.path.isdir("%s/sim_scores/all_graphs" % in_args.outdir):
         os.makedirs("%s/sim_scores/all_graphs" % in_args.outdir)
@@ -901,10 +868,9 @@ if __name__ == '__main__':
     if not os.path.isdir("%s/alignments/all_alignments" % in_args.outdir):
         os.makedirs("%s/alignments/all_alignments" % in_args.outdir)
 
-    for root, dirs, files in os.walk("%s/mcmcmc" % in_args.outdir):
-        for _dir in dirs:
-            if _dir != "group_0":
-                shutil.rmtree("%s/%s" % (root, _dir))
+    root, dirs, files = next(os.walk("%s/mcmcmc" % in_args.outdir))
+    for _dir in dirs:
+        shutil.rmtree("%s/%s" % (root, _dir))
 
     # Move log file into output directory
     logger_obj.move_log("%s/rdmcl.log" % in_args.outdir)
@@ -917,7 +883,6 @@ if __name__ == '__main__':
     printer = MyFuncs.DynamicPrint(quiet=in_args.quiet)
     timer = MyFuncs.Timer()
 
-    sequences = Sb.SeqBuddy(in_args.sequences)
     BLOSUM62 = make_full_mat(SeqMat(MatrixInfo.blosum62))
 
     ambiguous_X = {"A": 0, "R": -1, "N": -1, "D": -1, "C": -2, "Q": -1, "E": -1, "G": -1, "H": -1, "I": -1, "L": -1,
@@ -953,35 +918,35 @@ if __name__ == '__main__':
     gap_extend = in_args.extend_penalty
     logging.info("gap open penalty: %s\ngap extend penalty: %s" % (gap_open, gap_extend))
 
-    if os.path.isfile("%s/alignments/group_0.aln" % in_args.outdir):
+    if os.path.isfile("%s/alignments/all_alignments/%s" % (in_args.outdir, seq_ids_hash)):
         logging.warning("RESUME: Initial multiple sequence alignment found")
-        alignbuddy = Alb.AlignBuddy("%s/alignments/group_0.aln" % in_args.outdir)
+        alignbuddy = Alb.AlignBuddy("%s/alignments/all_alignments/%s" % (in_args.outdir, seq_ids_hash))
     else:
         logging.warning("Generating initial multiple sequence alignment")
         alignbuddy = generate_msa(sequences)
         alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
+        alignbuddy.write("%s/alignments/all_alignments/%s" % (in_args.outdir, seq_ids_hash))
         logging.info("\tfinished in %s" % timer.split())
 
-    group_0_cluster = load_cluster("group_0", in_args.outdir)
-    if group_0_cluster:
-        logging.warning("RESUME: group_0 cluster loaded")
+    if os.path.isfile("%s/sim_scores/all_graphs/%s" % (in_args.outdir, seq_ids_hash)):
+        logging.warning("RESUME: Initial all-by-all similarity graph found")
+        scores_data = pd.read_csv("%s/sim_scores/all_graphs/%s" % (in_args.outdir, seq_ids_hash), index_col=False)
+        group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data, out_dir=in_args.outdir)
 
     else:
         logging.warning("Generating initial all-by-all similarity graph")
         scores_data = create_all_by_all_scores(alignbuddy)
         scores_data.to_csv("%s/sim_scores/group_0.scores" % in_args.outdir, header=None, index=False, sep="\t")
+        group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data, out_dir=in_args.outdir)
         logging.info("\tfinished in %s" % timer.split())
-        group_0 = pd.concat([scores_data.seq1, scores_data.seq2])
-        group_0 = group_0.value_counts()
-        group_0_cluster = Cluster([i for i in group_0.index], scores_data, out_dir=in_args.outdir)
 
     # Base cluster score
     base_score = group_0_cluster.score()
     logging.warning("Base cluster score: %s" % round(base_score, 4))
 
-    #taxa_count = [x.split("-")[0] for x in master_cluster.seq_ids]
-    #taxa_count = pd.Series(taxa_count)
-    #taxa_count = taxa_count.value_counts()
+    # taxa_count = [x.split("-")[0] for x in master_cluster.sequence_ids]
+    # taxa_count = pd.Series(taxa_count)
+    # taxa_count = taxa_count.value_counts()
 
     # Ortholog caller
     logging.warning("\n** Recursive MCL **")
