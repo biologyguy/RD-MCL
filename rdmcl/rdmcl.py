@@ -56,7 +56,7 @@ VERSION = "0.1.alpha%s" % git_commit
 NOTICE = '''\
 Public Domain Notice
 --------------------
-This is free software; see the source for further details.
+This is free software; see the LICENSE for further details.
 There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE.
 Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
@@ -148,6 +148,7 @@ class Cluster(object):
                                 breakout = False
                                 break
             self.seq_ids = collapsed_cluster
+            self.seq_id_hash = md5_hash("".join(sorted(self.seq_ids)))
 
     def _get_best_hits(self, gene):
         best_hits = self.sim_scores[(self.sim_scores.seq1 == gene) | (self.sim_scores.seq2 == gene)]
@@ -458,6 +459,11 @@ def mcmcmc_mcl(args, params):
             write_mcl_clusters(clusters, "%s/best_group" % external_tmp_dir)
             with open("%s/max.txt" % external_tmp_dir, "w") as ofile:
                 ofile.write(str(score))
+        with open("%s/.progress" % in_args.outdir, "r") as ifile:
+            finished_clusters, mcl_runs = ifile.read().split("\n")
+
+        with open("%s/.progress" % in_args.outdir, "w") as ofile:
+            ofile.write("%s\n%s" % (finished_clusters, int(mcl_runs) + 1))
     return score
 
 
@@ -490,13 +496,18 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     try:
         with open("%s/max.txt" % temp_dir.path, "w") as ofile:
             ofile.write("-1000000000")
+        with lock:
+            with open("%s/.progress" % in_args.outdir, "r") as ifile:
+                finished_clusters, mcl_runs = ifile.read().split("\n")
+
+            with open("%s/.progress" % in_args.outdir, "w") as ofile:
+                ofile.write("%s\n%s" % (len(cluster_list), mcl_runs))
 
         mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1,
                                        params=["%s" % temp_dir.path, False, seqbuddy, master_cluster], quiet=quiet,
                                        outfile="%s/mcmcmc_out.csv" % temp_dir.path)
 
     except RuntimeError:  # Happens when mcmcmc fails to find different initial chain parameters
-        cluster_list.append(master_cluster)
         save_cluster()
         return cluster_list
 
@@ -535,6 +546,13 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
 
     save_cluster()
     return cluster_list
+
+
+def progress():
+    with lock:
+        with open("%s/.progress" % in_args.outdir, "r") as ifile:
+            finished_clusters, mcl_runs = ifile.read().split("\n")
+    return "MCL runs processed: %s. Clusters finished: %s. Run time: " % (mcl_runs, finished_clusters)
 
 
 def parse_mcl_clusters(path):
@@ -613,6 +631,8 @@ def merge_singles(clusters, scores):
         df = pd.DataFrame()
         for group in data:
             df = df.append(group)
+        if len(df.grouplabel) < 2:  # Can't to a pairwise Tukey hsd on less than two groups
+            break
         result = sm.stats.multicomp.pairwise_tukeyhsd(df.observations, df.grouplabel)
         for line in str(result).split("\n")[4:-1]:
             line = re.sub("^ *", "", line.strip())
@@ -627,7 +647,7 @@ def merge_singles(clusters, scores):
         else:
             # The gene can be grouped with the max_ave group
             large_clusters[max_ave].seq_ids += small_clusters[small_group_id].seq_ids
-            logging.info("\tFolding %s into %s" % (" and ".join(small_clusters[small_group_id].seq_ids), max_ave))
+            logging.info("\t%s added to %s" % (" and ".join(small_clusters[small_group_id].seq_ids), max_ave))
             del small_clusters[small_group_id]
 
     clusters = [cluster for key, cluster in large_clusters.items()]
@@ -639,7 +659,8 @@ def merge_singles(clusters, scores):
         logging.warning("1 orphaned sequence was placed in an orthogroups.")
     else:
         logging.warning("%s orphaned sequences have found new homes in orthogroups!" % fostered_orphans)
-        logging.warning("\tNote that the alignment, mcmcmc, and sim_score files only include the original sequences.")
+        logging.warning("\tNote that all of the saved alignment, mcmcmc, and sim_score\n"
+                        "\tfiles will only include the original sequences.")
     return clusters
 # NOTE: There used to be a support function. Check the workscripts GitHub history
 
@@ -825,9 +846,9 @@ if __name__ == '__main__':
     in_args = parser.parse_args()
 
     logger_obj = Logger("rdmcl.log")
-    logging.info("****************************** Recursive Dynamic Markov Clustering *******************************")
+    logging.info("*************************** Recursive Dynamic Markov Clustering ****************************")
     logging.warning("RD-MCL version %s\n\n%s" % (VERSION, NOTICE))
-    logging.info("**************************************************************************************************\n")
+    logging.info("********************************************************************************************\n")
     logging.info("Working directory: %s" % os.getcwd())
     logging.info("Function call: %s" % " ".join(sys.argv))
 
@@ -836,13 +857,13 @@ if __name__ == '__main__':
     previous_run = False
 
     if os.path.exists("%s/.rdmcl" % in_args.outdir):
-        with open("%s/.rdmcl" % in_args.outdir, "r") as ifile:
-            previous_run = ifile.read()
+        with open("%s/.rdmcl" % in_args.outdir, "r") as hash_file:
+            previous_run = hash_file.read()
 
     if os.path.exists(in_args.outdir):
         if previous_run == seq_ids_hash:
-            logging.warning("RESUME: This output directory was previous used for an identical RD-MCL run, any "
-                            "cached resources will be reused.")
+            logging.warning("RESUME: This output directory was previous used for an identical RD-MCL run; any\n"
+                            "        cached resources will be reused.")
         else:
             check = MyFuncs.ask("Output directory already exists, continue [y]/n?") if not in_args.force else True
             if not check:
@@ -859,8 +880,8 @@ if __name__ == '__main__':
             for file in files:
                 os.remove("%s/%s" % (root, file))
 
-    with open("%s/.rdmcl" % in_args.outdir, "w") as ofile:
-        ofile.write(seq_ids_hash)
+    with open("%s/.rdmcl" % in_args.outdir, "w") as hash_file:
+        hash_file.write(seq_ids_hash)
 
     if not os.path.isdir("%s/sim_scores/all_graphs" % in_args.outdir):
         os.makedirs("%s/sim_scores/all_graphs" % in_args.outdir)
@@ -907,7 +928,7 @@ if __name__ == '__main__':
     if records_missing_ss_files:
         logging.warning("Executing PSI-Pred on %s sequences" % len(records_missing_ss_files))
         MyFuncs.run_multicore_function(records_missing_ss_files, _psi_pred, [in_args.outdir])
-        logging.info("\tfinished in %s" % timer.split())
+        logging.info("\t-- finished in %s --" % timer.split())
         logging.info("\tfiles saved to %s\n" % "%s/psi_pred/" % in_args.outdir)
     else:
         logging.warning("RESUME: All PSI-Pred .ss2 files found in %s/psi_pred/" % in_args.outdir)
@@ -926,7 +947,7 @@ if __name__ == '__main__':
         alignbuddy = generate_msa(sequences)
         alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
         alignbuddy.write("%s/alignments/all_alignments/%s" % (in_args.outdir, seq_ids_hash))
-        logging.info("\tfinished in %s" % timer.split())
+        logging.info("\t-- finished in %s --" % timer.split())
 
     if os.path.isfile("%s/sim_scores/all_graphs/%s" % (in_args.outdir, seq_ids_hash)):
         logging.warning("RESUME: Initial all-by-all similarity graph found")
@@ -938,7 +959,7 @@ if __name__ == '__main__':
         scores_data = create_all_by_all_scores(alignbuddy)
         scores_data.to_csv("%s/sim_scores/group_0.scores" % in_args.outdir, header=None, index=False, sep="\t")
         group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data, out_dir=in_args.outdir)
-        logging.info("\tfinished in %s" % timer.split())
+        logging.info("\t-- finished in %s --" % timer.split())
 
     # Base cluster score
     base_score = group_0_cluster.score()
@@ -951,16 +972,23 @@ if __name__ == '__main__':
     # Ortholog caller
     logging.warning("\n** Recursive MCL **")
     final_clusters = []
+    with open("%s/.progress" % in_args.outdir, "w") as progress_file:
+        progress_file.write("0\n0")
+    run_time = MyFuncs.RunTime(prefix=progress, sleep=0.3)
+    run_time.start()
     final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences,
-                                       steps=in_args.mcmcmc_steps, quiet=False)
-
-    logging.info("\tfinished in %s" % timer.split())
+                                       steps=in_args.mcmcmc_steps, quiet=True)
+    run_time.end()
+    with open("%s/.progress" % in_args.outdir, "r") as progress_file:
+        progress_file = progress_file.read().split("\n")
+    logging.info("Total MCL runs: %s" % progress_file[1])
+    logging.info("\t-- finished in %s --" % timer.split())
 
     # Fold singletons and doublets back into groups. This can't be 'resumed', because it changes the clusters
     if not in_args.supress_singlet_folding:
         logging.warning("\n** Folding orphan sequences into clusters **")
         final_clusters = merge_singles(final_clusters, group_0_cluster.sim_scores)
-        logging.warning("\tfinished in %s" % timer.split())
+        logging.warning("\t-- finished in %s --" % timer.split())
 
     # Format the clusters and output to stdout or file
     logging.warning("\n** Final formatting **")
@@ -978,7 +1006,7 @@ if __name__ == '__main__':
             output += "%s\t" % seq_id
         output = "%s\n" % output.strip()
 
-    logging.warning("\tfinished in %s" % timer.split())
+    logging.warning("\t-- finished in %s --" % timer.split())
 
     logging.warning("\nTotal execution time: %s" % timer.total_elapsed())
     with open("%s/final_clusters.txt" % in_args.outdir, "w") as outfile:
