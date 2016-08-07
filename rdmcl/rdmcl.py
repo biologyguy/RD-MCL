@@ -573,52 +573,68 @@ def write_mcl_clusters(clusters, path):
     return
 
 
-def merge_singles(clusters, scores):
-    small_clusters = []
-    small_group_names = []
-    large_clusters = []
-    large_group_names = []
+def place_orphans(clusters, scores):
+    """
+    If a cluster has only one or two sequences in it, it may make sense to fold that cluster into one of the larger
+    clusters. To check if this is reasonable, compare the similarity scores between the orphan sequences and the
+    sequences in each larger cluster. Perform a Tukey HSD test among all of these comparisons and see if one cluster
+    has significantly higher similarity scores than ALL of the other clusters.
+    NOTE: Placing an orphan into a cluster obviously changes the content of that larger cluster, but this change is
+    ignored. Perhaps this function could be run repeatedly until there are no more changes, but for now it's only
+    called once.
+    :param clusters: The entire complement of clusters returned by RD-MCL (list of Cluster objects)
+    :param scores: The initial all-by-all similarity graph used for RD-MCL
+    :return: Updated clusters list
+    """
+    small_clusters = OrderedDict()
+    large_clusters = OrderedDict()
     for cluster in clusters:
         if len(cluster.seq_ids) > 2:
-            large_group_names.append(cluster.name())
-            large_clusters.append(cluster)
+            large_clusters[cluster.name()] = cluster
         else:
-            small_group_names.append(cluster.name())
-            small_clusters.append(cluster)
+            small_clusters[cluster.name()] = cluster
 
     if not small_clusters:
         logging.warning("No orphaned sequences present")
         return clusters
+    elif not large_clusters:
+        logging.warning("It appears that all of your sequences are orphaned... This is not normal.")
+        return clusters
+    elif len(large_clusters) == 1:
+        logging.warning("Only a single orthogroup with > 2 sequences present. All orphans merged into this group.")
+        for sgroup, sclust in small_clusters.items():
+            large_clusters.items()[0].seq_ids += sclust.seq_ids
+        clusters = [cluster for key, cluster in large_clusters.items()]
+        return clusters
     else:
-        num_orphans = sum([len(cluster) for cluster in small_clusters])
+        num_orphans = sum([len(cluster) for group_name, cluster in small_clusters.items()])
         logging.warning("%s orphaned sequences present" % num_orphans)
 
-    # Convert the large_clusters list to a dict using group name as key
-    large_clusters = [(x, large_clusters[j]) for j, x in enumerate(large_group_names)]
-    large_clusters = OrderedDict(large_clusters)
+    # Create lists of similarity scores for each orphan cluster against each larger cluster
+    def get_score(seq1, seq2):
+        sim_score = scores.loc[:][scores.seq1 == seq1]
+        sim_score = sim_score.loc[:][sim_score.seq2 == seq2]
 
-    small_to_large_dict = OrderedDict()
-    for sclust in small_clusters:
-        small_to_large_dict[sclust.name()] = OrderedDict([(key, []) for key, value in large_clusters.items()])
-        for sgene in sclust.seq_ids:
-            for key, lclust in large_clusters.items():
-                for lgene in lclust.seq_ids:
-                    score = scores.loc[:][scores.seq1 == sgene]
-                    score = score.loc[:][score.seq2 == lgene]
+        if sim_score.empty:
+            sim_score = scores.loc[:][scores.seq1 == seq2]
+            sim_score = sim_score.loc[:][sim_score.seq2 == seq1]
 
-                    if score.empty:
-                        score = scores.loc[:][scores.seq1 == lgene]
-                        score = score.loc[:][score.seq2 == sgene]
+        if sim_score.empty:
+            sim_score = 0.
+        else:
+            sim_score = float(sim_score.score)
+        return sim_score
 
-                    if score.empty:
-                        score = 0.
-                    else:
-                        score = float(score.score)
+    large_clusters_ordered_dict = OrderedDict([(group_name, []) for group_name in large_clusters])
+    small_to_large_map = [(group_name, large_clusters_ordered_dict.copy()) for group_name in small_clusters]
+    small_to_large_map = OrderedDict(small_to_large_map)
+    for sgroup, sclust in small_clusters.items():           # Get small cluster
+        for sgene in sclust.seq_ids:                        # Get gene id from small cluster
+            for lgroup, lclust in large_clusters.items():   # Get large cluster
+                for lgene in lclust.seq_ids:                # Get gene id from large cluster
+                    small_to_large_map[sgroup][lgroup].append(get_score(sgene, lgene))  # Update appropriate list
 
-                    small_to_large_dict[sclust.name()][lclust.name()].append(score)
-
-    small_clusters = OrderedDict([(x, small_clusters[j]) for j, x in enumerate(small_group_names)])
-    for small_group_id, l_clusts in small_to_large_dict.items():
+    for sgroup, l_clusts in small_to_large_map.items():
         # Convert data into list of numpy arrays that sm.stats can read, also get average scores for each sequence_ids
         data = [np.array(x) for x in l_clusts.values()]
         averages = pd.Series()
@@ -633,11 +649,9 @@ def merge_singles(clusters, scores):
         df = pd.DataFrame()
         for group in data:
             df = df.append(group)
-        try:
-            result = sm.stats.multicomp.pairwise_tukeyhsd(df.observations, df.grouplabel)
-        except ValueError:
-            print("df.observations:\n%s\n\ndf.grouplabel\n%s" % (df.observations, df.grouplabel))
-            break
+
+        result = sm.stats.multicomp.pairwise_tukeyhsd(df.observations, df.grouplabel)
+
         for line in str(result).split("\n")[4:-1]:
             line = re.sub("^ *", "", line.strip())
             line = re.sub(" +", "\t", line)
@@ -650,9 +664,9 @@ def merge_singles(clusters, scores):
                     break
         else:
             # The gene can be grouped with the max_ave group
-            large_clusters[max_ave].seq_ids += small_clusters[small_group_id].seq_ids
-            logging.info("\t%s added to %s" % (" and ".join(small_clusters[small_group_id].seq_ids), max_ave))
-            del small_clusters[small_group_id]
+            large_clusters[max_ave].seq_ids += small_clusters[sgroup].seq_ids
+            logging.info("\t%s added to %s" % (" and ".join(small_clusters[sgroup].seq_ids), max_ave))
+            del small_clusters[sgroup]
 
     clusters = [cluster for key, cluster in large_clusters.items()]
     clusters += [cluster for key, cluster in small_clusters.items()]
@@ -729,14 +743,18 @@ def score_sequences(seq_pair, args):
 
 def generate_msa(seqbuddy):
     seq_ids = sorted([rec.id for rec in seqbuddy.records])
-    align_file = "%s/alignments/all_alignments/%s" % (in_args.outdir, md5_hash("".join(seq_ids)))
+    seq_id_hash = md5_hash("".join(seq_ids))
+    align_file = "%s/alignments/all_alignments/%s" % (in_args.outdir, seq_id_hash)
     if os.path.isfile(align_file):
         alignment = Alb.AlignBuddy(align_file)
     else:
         if len(seqbuddy) == 1:
             alignment = Alb.AlignBuddy(str(seqbuddy))
         else:
+            mafft_time = round(time())
             alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -1", quiet=True)
+            logging.info("NEW MAFFT: %s seqs, %s, %s" % (len(alignment.records()),
+                                                         MyFuncs.pretty_time(round(time()) - mafft_time), seq_id_hash))
         alignment.write(align_file)
     return alignment
 
@@ -993,7 +1011,7 @@ if __name__ == '__main__':
     # Fold singletons and doublets back into groups. This can't be 'resumed', because it changes the clusters
     if not in_args.supress_singlet_folding:
         logging.warning("\n** Folding orphan sequences into clusters **")
-        final_clusters = merge_singles(final_clusters, group_0_cluster.sim_scores)
+        final_clusters = place_orphans(final_clusters, group_0_cluster.sim_scores)
         logging.warning("\t-- finished in %s --" % timer.split())
 
     # Format the clusters and output to stdout or file
