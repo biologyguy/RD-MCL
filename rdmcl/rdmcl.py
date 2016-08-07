@@ -36,6 +36,7 @@ from multiprocessing import Lock
 from random import random
 from math import log
 from hashlib import md5
+from collections import OrderedDict
 
 # 3rd party
 import pandas as pd
@@ -78,7 +79,7 @@ class Cluster(object):
         :param clique: Specify whether cluster is a clique or not
         :type clique: bool
         """
-        self.taxa = {}
+        self.taxa = OrderedDict()
         self.sim_scores = sim_scores
         self.parent = parent
 
@@ -91,7 +92,7 @@ class Cluster(object):
         self.clique = clique
         self.cliques = None
         self.cluster_score = None
-        self.collapsed_genes = {}  # If paralogs are reciprocal best hits, collapse them
+        self.collapsed_genes = OrderedDict()  # If paralogs are reciprocal best hits, collapse them
         self._name = None
         self.similarity_graphs = "%s/sim_scores/all_graphs" % self.out_dir
 
@@ -340,15 +341,15 @@ class Cluster(object):
         if len(id_list) == 1:
             return 0
 
-        taxa = {}
+        taxa = OrderedDict()
         for gene in id_list:
             taxon = gene.split("-")[0]
             taxa.setdefault(taxon, [])
             taxa[taxon].append(gene)
 
-        # An entire sequence_ids should never consist of a single taxa because I've stripped out reciprocal best hit paralogs
+        # sequence_ids should never consist of a single taxa because reciprocal best hit paralogs have been removed
         if len(taxa) == 1:
-            raise ReferenceError("Only a single taxa found in sequence_ids...")
+            raise ReferenceError("Only a single taxa found in sequence_ids...\n%s" % taxa)
 
         unique_scores = 1
         paralog_scores = -1
@@ -390,7 +391,7 @@ def bit_score(raw_score):
     return bits
 
 
-def _psi_pred(seq_obj, args):
+def psi_pred(seq_obj, args):
     out_dir = args[0]
     if os.path.isfile("%s/psi_pred/%s.ss2" % (out_dir, seq_obj.id)):
         return
@@ -423,8 +424,13 @@ def mcmcmc_mcl(args, params):
     mcl_output = Popen("mcl %s/input.csv --abc -te 2 -tf 'gq(%s)' -I %s -o %s/output.groups" %
                        (external_tmp_dir, gq, inflation, mcl_tmp_dir.path), shell=True, stderr=PIPE).communicate()
 
-    mcl_output = mcl_output[1].decode()
+    with lock:
+        with open("%s/.progress" % in_args.outdir, "r") as ifile:
+            finished_clusters, mcl_runs = ifile.read().split("\n")
+        with open("%s/.progress" % in_args.outdir, "w") as ofile:
+            ofile.write("%s\n%s" % (finished_clusters, int(mcl_runs) + 1))
 
+    mcl_output = mcl_output[1].decode()
     if re.search("\[mclvInflate\] warning", mcl_output) and min_score:
         return min_score
 
@@ -459,11 +465,6 @@ def mcmcmc_mcl(args, params):
             write_mcl_clusters(clusters, "%s/best_group" % external_tmp_dir)
             with open("%s/max.txt" % external_tmp_dir, "w") as ofile:
                 ofile.write(str(score))
-        with open("%s/.progress" % in_args.outdir, "r") as ifile:
-            finished_clusters, mcl_runs = ifile.read().split("\n")
-
-        with open("%s/.progress" % in_args.outdir, "w") as ofile:
-            ofile.write("%s\n%s" % (finished_clusters, int(mcl_runs) + 1))
     return score
 
 
@@ -593,11 +594,12 @@ def merge_singles(clusters, scores):
         logging.warning("%s orphaned sequences present" % num_orphans)
 
     # Convert the large_clusters list to a dict using group name as key
-    large_clusters = {x: large_clusters[j] for j, x in enumerate(large_group_names)}
+    large_clusters = [(x, large_clusters[j]) for j, x in enumerate(large_group_names)]
+    large_clusters = OrderedDict(large_clusters)
 
-    small_to_large_dict = {}
+    small_to_large_dict = OrderedDict()
     for sclust in small_clusters:
-        small_to_large_dict[sclust.name()] = {key: [] for key, value in large_clusters.items()}
+        small_to_large_dict[sclust.name()] = OrderedDict([(key, []) for key, value in large_clusters.items()])
         for sgene in sclust.seq_ids:
             for key, lclust in large_clusters.items():
                 for lgene in lclust.seq_ids:
@@ -615,7 +617,7 @@ def merge_singles(clusters, scores):
 
                     small_to_large_dict[sclust.name()][lclust.name()].append(score)
 
-    small_clusters = {x: small_clusters[j] for j, x in enumerate(small_group_names)}
+    small_clusters = OrderedDict([(x, small_clusters[j]) for j, x in enumerate(small_group_names)])
     for small_group_id, l_clusts in small_to_large_dict.items():
         # Convert data into list of numpy arrays that sm.stats can read, also get average scores for each sequence_ids
         data = [np.array(x) for x in l_clusts.values()]
@@ -631,9 +633,11 @@ def merge_singles(clusters, scores):
         df = pd.DataFrame()
         for group in data:
             df = df.append(group)
-        if len(df.grouplabel) < 2:  # Can't to a pairwise Tukey hsd on less than two groups
+        try:
+            result = sm.stats.multicomp.pairwise_tukeyhsd(df.observations, df.grouplabel)
+        except ValueError:
+            print("df.observations:\n%s\n\ndf.grouplabel\n%s" % (df.observations, df.grouplabel))
             break
-        result = sm.stats.multicomp.pairwise_tukeyhsd(df.observations, df.grouplabel)
         for line in str(result).split("\n")[4:-1]:
             line = re.sub("^ *", "", line.strip())
             line = re.sub(" +", "\t", line)
@@ -752,7 +756,7 @@ def create_all_by_all_scores(alignment, quiet=False):
     alignment = Alb.make_copy(alignment)
 
     # Need to specify what columns the PsiPred files map to now that there are gaps.
-    psi_pred_files = {}
+    psi_pred_files = OrderedDict()
     for rec in alignment.records_iter():
         ss_file = pd.read_csv("%s/psi_pred/%s.ss2" % (in_args.outdir, rec.id), comment="#",
                               header=None, delim_whitespace=True)
@@ -927,7 +931,7 @@ if __name__ == '__main__':
 
     if records_missing_ss_files:
         logging.warning("Executing PSI-Pred on %s sequences" % len(records_missing_ss_files))
-        MyFuncs.run_multicore_function(records_missing_ss_files, _psi_pred, [in_args.outdir])
+        MyFuncs.run_multicore_function(records_missing_ss_files, psi_pred, [in_args.outdir])
         logging.info("\t-- finished in %s --" % timer.split())
         logging.info("\tfiles saved to %s\n" % "%s/psi_pred/" % in_args.outdir)
     else:
@@ -943,7 +947,7 @@ if __name__ == '__main__':
         logging.warning("RESUME: Initial multiple sequence alignment found")
         alignbuddy = Alb.AlignBuddy("%s/alignments/all_alignments/%s" % (in_args.outdir, seq_ids_hash))
     else:
-        logging.warning("Generating initial multiple sequence alignment")
+        logging.warning("Generating initial multiple sequence alignment with MAFFT")
         alignbuddy = generate_msa(sequences)
         alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
         alignbuddy.write("%s/alignments/all_alignments/%s" % (in_args.outdir, seq_ids_hash))
@@ -952,12 +956,14 @@ if __name__ == '__main__':
     if os.path.isfile("%s/sim_scores/all_graphs/%s" % (in_args.outdir, seq_ids_hash)):
         logging.warning("RESUME: Initial all-by-all similarity graph found")
         scores_data = pd.read_csv("%s/sim_scores/all_graphs/%s" % (in_args.outdir, seq_ids_hash), index_col=False)
+        scores_data.columns = ["seq1", "seq2", "score"]
         group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data, out_dir=in_args.outdir)
 
     else:
         logging.warning("Generating initial all-by-all similarity graph")
         scores_data = create_all_by_all_scores(alignbuddy)
         scores_data.to_csv("%s/sim_scores/group_0.scores" % in_args.outdir, header=None, index=False, sep="\t")
+        scores_data.to_csv("%s/sim_scores/all_graphs/%s" % (in_args.outdir, seq_ids_hash), header=None, index=False)
         group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data, out_dir=in_args.outdir)
         logging.info("\t-- finished in %s --" % timer.split())
 
@@ -965,7 +971,7 @@ if __name__ == '__main__':
     base_score = group_0_cluster.score()
     logging.warning("Base cluster score: %s" % round(base_score, 4))
 
-    # taxa_count = [x.split("-")[0] for x in master_cluster.sequence_ids]
+    # taxa_count = [x.split("-")[0] for x in group_0_cluster.seq_ids]
     # taxa_count = pd.Series(taxa_count)
     # taxa_count = taxa_count.value_counts()
 
