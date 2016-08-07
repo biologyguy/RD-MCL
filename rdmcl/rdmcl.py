@@ -29,6 +29,7 @@ import os
 import re
 import shutil
 import logging
+import json
 from time import time
 from copy import copy
 from subprocess import Popen, PIPE, check_output
@@ -95,6 +96,10 @@ class Cluster(object):
         self.collapsed_genes = OrderedDict()  # If paralogs are reciprocal best hits, collapse them
         self._name = None
         self.similarity_graphs = "%s/sim_scores/all_graphs" % self.out_dir
+        for next_seq_id in seq_ids:
+            taxa = next_seq_id.split("-")[0]
+            self.taxa.setdefault(taxa, [])
+            self.taxa[taxa].append(next_seq_id)
 
         if clique and not parent:
             raise AttributeError("A clique cannot be declared without including its parental sequence_ids.")
@@ -106,49 +111,43 @@ class Cluster(object):
                 if indx in seq_ids:
                     self.collapsed_genes[indx] = genes
             self.seq_ids = seq_ids
-            for gene in seq_ids:
-                taxa = gene.split("-")[0]
-                self.taxa.setdefault(taxa, [])
-                self.taxa[taxa].append(gene)
+
         else:
             self._name = "group_0"
             # No reason to re-calculate scores, so record what's been done in a temp file to persist over subprocesses
             self.cluster_score_file = MyFuncs.TempFile()
             self.cluster_score_file.write("score,cluster")
             self.lock = Lock()
-            collapse_check_list = []
-            collapsed_cluster = []
-            for gene in seq_ids:
-                if gene in collapse_check_list:
-                    continue
 
-                taxa = gene.split("-")[0]
-                self.taxa.setdefault(taxa, [])
-                self.taxa[taxa].append(gene)
-                collapsed_cluster.append(gene)
-                breakout = False
-                while not breakout:  # This is the primary paralog collapsing logic. Only do it once for parental group
-                    breakout = True
-                    for edge in self._get_best_hits(gene).itertuples():
-                        other_seq_id = edge.seq1 if edge.seq1 != gene else edge.seq2
-                        if other_seq_id.split("-")[0] == taxa:
-                            other_seq_best_hits = self._get_best_hits(other_seq_id)
-                            if gene in other_seq_best_hits.seq1.values or gene in other_seq_best_hits.seq2.values:
-                                self.collapsed_genes.setdefault(gene, [])
-                                self.collapsed_genes[gene].append(other_seq_id)
-                                collapse_check_list.append(other_seq_id)
-                                # Strip collapsed paralogs from the all-by-all graph
-                                self.sim_scores = self.sim_scores[(self.sim_scores.seq1 != other_seq_id) &
-                                                                  (self.sim_scores.seq2 != other_seq_id)]
-                                if other_seq_id in collapsed_cluster:
-                                    del collapsed_cluster[collapsed_cluster.index(other_seq_id)]
-                                    del self.taxa[taxa][self.taxa[taxa].index(other_seq_id)]
-                                    if other_seq_id in self.collapsed_genes:
-                                        collapse_check_list += self.collapsed_genes[other_seq_id]
-                                        del self.collapsed_genes[other_seq_id]
-                                breakout = False
-                                break
-            self.seq_ids = collapsed_cluster
+            # This next bit collapses all paralog reciprocal best-hit cliques so they don't gum up MCL
+            breakout = False
+            while not breakout:
+                breakout = True
+                for seq1_id in seq_ids:
+                    seq1_taxa = seq1_id.split("-")[0]
+                    paralog_best_hits = []
+                    for hit in self._get_best_hits(seq1_id).itertuples():
+                        seq2_id = hit.seq1 if hit.seq1 != seq1_id else hit.seq2
+                        if seq2_id.split("-")[0] != seq1_taxa:
+                            paralog_best_hits = []
+                            break
+                        paralog_best_hits.append(seq2_id)
+
+                    if not paralog_best_hits:
+                        continue
+
+                    breakout = False
+                    self.collapsed_genes.setdefault(seq1_id, [])
+                    self.collapsed_genes[seq1_id] += paralog_best_hits
+                    for paralog in paralog_best_hits:
+                        self.sim_scores = self.sim_scores[(self.sim_scores.seq1 != paralog) &
+                                                          (self.sim_scores.seq2 != paralog)]
+                        del seq_ids[seq_ids.index(paralog)]
+                        if paralog in self.collapsed_genes:
+                            self.collapsed_genes[seq1_id] += self.collapsed_genes[paralog]
+                            del self.collapsed_genes[paralog]
+
+            self.seq_ids = seq_ids
             self.seq_id_hash = md5_hash("".join(sorted(self.seq_ids)))
 
     def _get_best_hits(self, gene):
@@ -550,10 +549,12 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
 
 
 def progress():
-    with lock:
+    try:
         with open("%s/.progress" % in_args.outdir, "r") as ifile:
             finished_clusters, mcl_runs = ifile.read().split("\n")
-    return "MCL runs processed: %s. Clusters finished: %s. Run time: " % (mcl_runs, finished_clusters)
+        return "MCL runs processed: %s. Clusters finished: %s. Run time: " % (mcl_runs, finished_clusters)
+    except ValueError:  # In case the file is being written while trying to read
+        return "MCL runs processed: ?. Clusters finished: ?. Run time: "
 
 
 def parse_mcl_clusters(path):
@@ -598,13 +599,12 @@ def place_orphans(clusters, scores):
         logging.warning("No orphaned sequences present")
         return clusters
     elif not large_clusters:
-        logging.warning("It appears that all of your sequences are orphaned... This is not normal.")
+        logging.warning("All clusters have only 1 or 2 sequences present, suggesting there are issues with your data")
+        logging.info(" Are there a large number of paralogs and only a small number of taxa present?")
         return clusters
     elif len(large_clusters) == 1:
-        logging.warning("Only a single orthogroup with > 2 sequences present. All orphans merged into this group.")
-        for sgroup, sclust in small_clusters.items():
-            large_clusters.items()[0].seq_ids += sclust.seq_ids
-        clusters = [cluster for key, cluster in large_clusters.items()]
+        logging.warning("Only one orthogroup with >2 sequences present, suggesting there are issues with your data")
+        logging.info(" Are there a large number of taxa and only a small number of orthologs present?")
         return clusters
     else:
         num_orphans = sum([len(cluster) for group_name, cluster in small_clusters.items()])
@@ -637,33 +637,29 @@ def place_orphans(clusters, scores):
     for sgroup, l_clusts in small_to_large_map.items():
         # Convert data into list of numpy arrays that sm.stats can read, also get average scores for each sequence_ids
         data = [np.array(x) for x in l_clusts.values()]
+
+        # Only need to test the cluster with the highest average similarity scores, so find which cluster that is.
         averages = pd.Series()
         for j, group in enumerate(data):
             key = list(l_clusts.keys())[j]
             averages = averages.append(pd.Series(np.mean(group), index=[key]))
             data[j] = pd.DataFrame(group, columns=['observations'])
             data[j]['grouplabel'] = key
-
         max_ave = averages.argmax()
-
         df = pd.DataFrame()
         for group in data:
             df = df.append(group)
 
+        # Run pairwise Tukey HSD and parse the results
         result = sm.stats.multicomp.pairwise_tukeyhsd(df.observations, df.grouplabel)
-
         for line in str(result).split("\n")[4:-1]:
             line = re.sub("^ *", "", line.strip())
             line = re.sub(" +", "\t", line)
             line = line.split("\t")
-            if max_ave in line:
-                if line[5] == 'True':
-                    continue
-                else:
-                    # Insufficient support to group the gene with max_ave group
-                    break
-        else:
-            # The gene can be grouped with the max_ave group
+            if max_ave in line and 'False' in line:
+                break  # Insufficient support to group the gene with max_ave group
+
+        else:  # If the 'break' command is not encountered, the gene can be grouped with the max_ave cluster
             large_clusters[max_ave].seq_ids += small_clusters[sgroup].seq_ids
             logging.info("\t%s added to %s" % (" and ".join(small_clusters[sgroup].seq_ids), max_ave))
             del small_clusters[sgroup]
@@ -988,6 +984,14 @@ if __name__ == '__main__':
     # Base cluster score
     base_score = group_0_cluster.score()
     logging.warning("Base cluster score: %s" % round(base_score, 4))
+    if group_0_cluster.collapsed_genes:
+        logging.warning("Reciprocal best-hit cliques of paralogs have been identified in the input sequences.")
+        logging.info(" A representative sequence has been selected from each clique, and the remaining")
+        logging.info(" sequences will be placed in the final clusters at the end of the run.")
+        with open("%s/paralog_cliques.json" % in_args.outdir, "w") as outfile:
+            json.dump(group_0_cluster.collapsed_genes, outfile)
+            logging.warning(" Cliques written to: %s/paralog_cliques.json" % in_args.outdir)
+
 
     # taxa_count = [x.split("-")[0] for x in group_0_cluster.seq_ids]
     # taxa_count = pd.Series(taxa_count)
@@ -1014,8 +1018,16 @@ if __name__ == '__main__':
         final_clusters = place_orphans(final_clusters, group_0_cluster.sim_scores)
         logging.warning("\t-- finished in %s --" % timer.split())
 
-    # Format the clusters and output to stdout or file
+    # Format the clusters and output to file
     logging.warning("\n** Final formatting **")
+    if group_0_cluster.collapsed_genes:
+        logging.warning("Placing collapsed paralogs into their respective clusters")
+        for clust in final_clusters:
+            for gene_id, paralogs in group_0_cluster.collapsed_genes.items():
+                if gene_id in clust.seq_ids:
+                    clust.seq_ids += paralogs
+
+    logging.warning("Preparing final_clusters.txt")
     output = ""
     while len(final_clusters) > 0:
         _max = (0, 0)
@@ -1025,7 +1037,7 @@ if __name__ == '__main__':
 
         ind, max_clust = _max[0], final_clusters[_max[0]]
         del final_clusters[ind]
-        output += "group_%s\t%s\t" % (max_clust.name(), max_clust.score())
+        output += "group_%s\t%s\t" % (max_clust.name(), round(max_clust.score(), 4))
         for seq_id in max_clust.seq_ids:
             output += "%s\t" % seq_id
         output = "%s\n" % output.strip()
