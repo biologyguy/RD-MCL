@@ -764,6 +764,14 @@ def create_all_by_all_scores(alignment, quiet=False):
         sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "score"])
         return sim_scores
 
+    # Only calculate if not previously calculated
+    seq_ids = sorted([rec.id for rec in alignment.records_iter()])
+    sim_scores_file = "%s/sim_scores/all_graphs/%s" % (in_args.outdir, md5_hash("".join(seq_ids)))
+    if os.path.isfile(sim_scores_file):
+        sim_scores = pd.read_csv(sim_scores_file, index_col=False)
+        sim_scores.columns = ["seq1", "seq2", "score"]
+        return sim_scores
+
     # Don't want to modify the alignbuddy object in place
     alignment = Alb.make_copy(alignment)
 
