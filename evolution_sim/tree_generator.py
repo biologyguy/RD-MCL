@@ -11,7 +11,7 @@ from random import Random
 from Bio.Phylo.BaseTree import Tree
 
 
-def generate_perfect_tree(num_taxa, groups):
+def generate_perfect_tree(num_taxa, groups):  # Generates a perfect bipartition tree
     tree_str = "[&R] "
     lefts = 0
     for group in range(groups-1):
@@ -43,23 +43,23 @@ class TreeGenerator:
         self.num_genes = num_genes
         self.num_taxa = num_taxa
 
-        self.rand_gen = Random(seed)
+        self.rand_gen = Random(seed)  # Random seed for the hashing
 
-        self.genes = list()
+        self.genes = list()  # Lists of hashes to prevent collisions
         self.taxa = list()
 
         for x in range(num_taxa):
             self._generate_taxa_name()
-        labels = ["%s-GENE_NAME" % self.taxa[x] for x in range(num_taxa)]
+        labels = ["%s-GENE_NAME" % self.taxa[x] for x in range(num_taxa)]  # Generates a list of taxa
 
         self.gene_tree = Tree.randomized(num_genes, branch_length=branch_length, branch_stdev=branch_stdev)
         self.species_tree = Tree.randomized(labels, branch_length=branch_length)
         self.root = self.gene_tree.clade
 
-        self._assemble()
+        self._recursive_build(self.root)  # Assembles the tree
 
     def _generate_gene_name(self):
-        hash_length = int(math.log(self.num_genes, len(string.ascii_uppercase)))
+        hash_length = int(math.log(self.num_genes, len(string.ascii_uppercase)) + .5)
         hash_length = hash_length if hash_length > 2 else 3
 
         while True:
@@ -72,7 +72,7 @@ class TreeGenerator:
                 return new_hash
 
     def _generate_taxa_name(self):
-        hash_length = int(math.log(self.num_taxa, len(string.ascii_uppercase)))
+        hash_length = int(math.log(self.num_taxa, len(string.ascii_uppercase)) + .5)
         hash_length = hash_length if hash_length > 2 else 2
 
         while True:
@@ -84,34 +84,33 @@ class TreeGenerator:
                 self.taxa.append(new_hash)
                 return new_hash
 
-    def _recursive_rename(self, node, gene):
+    def _recursive_rename(self, node, gene):  # Helper method for _copy_species_tree that renames nodes recursively
         for indx, child in enumerate(node):
             if child.is_terminal():
                 node.clades[indx].name = re.sub("GENE_NAME", gene, node.clades[indx].name)
             else:
                 self._recursive_rename(child, gene)
 
-    def _copy_species_tree(self, gene):
+    def _copy_species_tree(self, gene):  # Returns a copy of the species tree with a unique gene name
         tree = copy.deepcopy(self.species_tree.clade)
         self._recursive_rename(tree, gene)
         return tree
 
-    def _recursive_build(self, node):
+    def _recursive_build(self, node):  # Recursively replaces the terminal nodes of the gene tree with species trees
         for indx, child in enumerate(node):
             if child.is_terminal():
                 node.clades[indx] = self._copy_species_tree(self._generate_gene_name())
             else:
                 self._recursive_build(child)
 
-    def _assemble(self):
-        self._recursive_build(self.root)
-
     def __str__(self):
         tree_string = self.gene_tree.format("newick")
-        return re.sub("\)n[0-9]*", ")", tree_string)
+        return re.sub("\)n[0-9]*", ")", tree_string)  # Removes strange node IDs that biopython includes
 
 
 def main():
+
+    # Argument Parsing #
     parser = argparse.ArgumentParser(prog="PhyloBuddy.py", usage=argparse.SUPPRESS,
                                      description='A tool for generating random ortholog trees.\nUsage:'
                                                  '\n./tree_generator.py -nt <#> -ng <#>')
@@ -136,6 +135,7 @@ def main():
     else:
         branch_stdev = None
 
+    # Tree Generation #
     generator = TreeGenerator(groups, ntaxa, branch_length=branch_length, branch_stdev=branch_stdev)
     tree_string = str(generator)
     print(tree_string)
