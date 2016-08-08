@@ -114,29 +114,23 @@ def main():
     parser = argparse.ArgumentParser(prog="PhyloBuddy.py", usage=argparse.SUPPRESS,
                                      description='A tool for generating random ortholog trees.\nUsage:'
                                                  '\n./tree_generator.py -nt <#> -ng <#>')
-    parser.add_argument('-nt', '--num_taxa', help='Specifies the number of taxa to be generated', nargs=1,
+    parser.add_argument('-nt', '--num_taxa', help='Specifies the number of taxa to be generated',
                         action='store', type=int, required=True)
-    parser.add_argument('-ng', '--num_groups', help='Specifies the number of orthogroups to be generated', nargs=1,
+    parser.add_argument('-ng', '--num_groups', help='Specifies the number of orthogroups to be generated',
                         action='store', type=int, required=True)
-    parser.add_argument('-bl', '--branch_length', help='Specifies the gene tree branch length', nargs=1,
-                        action='store', type=float, required=False)
+    parser.add_argument('-bl', '--branch_length', help='Specifies the gene tree branch length',
+                        action='store', type=float, default=None)
     parser.add_argument('-bs', '--branch_stdev', help='Specifies the standard deviation of the gene tree branch length',
-                        nargs=1, action='store', type=float, required=False)
+                        action='store', type=float, default=None)
 
     in_args = parser.parse_args()
-    groups = in_args.num_groups[0]
-    ntaxa = in_args.num_taxa[0]
-    if in_args.branch_length:
-        branch_length = in_args.branch_length[0]
-    else:
-        branch_length = None
-    if in_args.branch_stdev and in_args.branch_length:
-        branch_stdev = in_args.branch_stdev[0]
-    else:
-        branch_stdev = None
+    groups = in_args.num_groups
+    ntaxa = in_args.num_taxa
+
+    in_args.branch_stdev = None if not in_args.branch_length else in_args.branch_stdev
 
     # Tree Generation #
-    generator = TreeGenerator(groups, ntaxa, branch_length=branch_length, branch_stdev=branch_stdev)
+    generator = TreeGenerator(groups, ntaxa, branch_length=in_args.branch_length, branch_stdev=in_args.branch_stdev)
     tree_string = str(generator)
     print(tree_string)
 
