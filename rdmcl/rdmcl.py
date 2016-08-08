@@ -223,7 +223,7 @@ class Cluster(object):
     def score(self):
         if self.cluster_score:
             return self.cluster_score
-        # Confirm that a score for this cluster has not been caluclated before
+        # Confirm that a score for this cluster has not been calculated before
         prev_scores = pd.read_csv(self.cluster_score_file.path, index_col=False)
         seq_ids = md5_hash("".join(sorted(self.seq_ids)))
         if seq_ids in prev_scores.cluster.values:
@@ -347,8 +347,9 @@ class Cluster(object):
             taxa[taxon].append(gene)
 
         # sequence_ids should never consist of a single taxa because reciprocal best hit paralogs have been removed
-        if len(taxa) == 1:
-            raise ReferenceError("Only a single taxa found in sequence_ids...\n%s" % taxa)
+        # Update: Apparently not true. New paralog best hit cliques can form after the group is broken up some.
+        # if len(taxa) == 1:
+        #    raise ReferenceError("Only a single taxa found in sequence_ids...\n%s" % taxa)
 
         unique_scores = 1
         paralog_scores = -1
@@ -747,10 +748,7 @@ def generate_msa(seqbuddy):
         if len(seqbuddy) == 1:
             alignment = Alb.AlignBuddy(str(seqbuddy))
         else:
-            mafft_time = round(time())
             alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -1", quiet=True)
-            logging.info("NEW MAFFT: %s seqs, %s, %s" % (len(alignment.records()),
-                                                         MyFuncs.pretty_time(round(time()) - mafft_time), seq_id_hash))
         alignment.write(align_file)
     return alignment
 
@@ -991,7 +989,6 @@ if __name__ == '__main__':
         with open("%s/paralog_cliques.json" % in_args.outdir, "w") as outfile:
             json.dump(group_0_cluster.collapsed_genes, outfile)
             logging.warning(" Cliques written to: %s/paralog_cliques.json" % in_args.outdir)
-
 
     # taxa_count = [x.split("-")[0] for x in group_0_cluster.seq_ids]
     # taxa_count = pd.Series(taxa_count)
