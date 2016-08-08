@@ -9,7 +9,7 @@ import re
 import string
 from random import Random
 from Bio.Phylo.BaseTree import Tree
-
+from Bio.Phylo.BaseTree import TreeMixin
 
 def generate_perfect_tree(num_taxa, groups):  # Generates a perfect bipartition tree
     tree_str = "[&R] "
@@ -39,11 +39,14 @@ def generate_perfect_tree(num_taxa, groups):  # Generates a perfect bipartition 
 
 
 class TreeGenerator:
-    def __init__(self, num_genes, num_taxa, seed=12345, branch_length=1.0, branch_stdev=None):
+    def __init__(self, num_genes, num_taxa, seed=12345, branch_length=1.0, branch_stdev=None, drop_chance=0.0,
+                 num_drops=0):
         self.num_genes = num_genes
         self.num_taxa = num_taxa
 
         self.rand_gen = Random(seed)  # Random seed for the hashing
+        self.drop_chance = drop_chance
+        self.num_drops = num_drops
 
         self.genes = list()  # Lists of hashes to prevent collisions
         self.taxa = list()
@@ -94,6 +97,13 @@ class TreeGenerator:
     def _copy_species_tree(self, gene):  # Returns a copy of the species tree with a unique gene name
         tree = copy.deepcopy(self.species_tree.clade)
         self._recursive_rename(tree, gene)
+        leaves = tree.get_terminals()
+        for x in range(self.num_drops):
+            drop = self.rand_gen.random()
+            if drop <= self.drop_chance:
+                drop = self.rand_gen.choice(leaves)
+                tree.prune(drop)
+
         return tree
 
     def _recursive_build(self, node):  # Recursively replaces the terminal nodes of the gene tree with species trees
@@ -114,23 +124,29 @@ def main():
     parser = argparse.ArgumentParser(prog="PhyloBuddy.py", usage=argparse.SUPPRESS,
                                      description='A tool for generating random ortholog trees.\nUsage:'
                                                  '\n./tree_generator.py -nt <#> -ng <#>')
-    parser.add_argument('-nt', '--num_taxa', help='Specifies the number of taxa to be generated',
+    parser.add_argument('-nt', '--num_taxa', help='The number of taxa to be generated',
                         action='store', type=int, required=True)
-    parser.add_argument('-ng', '--num_groups', help='Specifies the number of orthogroups to be generated',
+    parser.add_argument('-ng', '--num_groups', help='The number of orthogroups to be generated',
                         action='store', type=int, required=True)
-    parser.add_argument('-bl', '--branch_length', help='Specifies the gene tree branch length',
+    parser.add_argument('-bl', '--branch_length', help='The gene tree branch length',
                         action='store', type=float, default=None)
-    parser.add_argument('-bs', '--branch_stdev', help='Specifies the standard deviation of the gene tree branch length',
+    parser.add_argument('-bs', '--branch_stdev', help='The standard deviation of the gene tree branch length',
                         action='store', type=float, default=None)
+    parser.add_argument('-dc', '--drop_chance', help='The probability of losing a species in each species tree',
+                        action='store', type=float, default=0)
+    parser.add_argument('-nd', '--num_drops', help='The number of times to try dropping a species from the tree',
+                        action='store', type=int, default=0)
 
     in_args = parser.parse_args()
     groups = in_args.num_groups
     ntaxa = in_args.num_taxa
 
     in_args.branch_stdev = None if not in_args.branch_length else in_args.branch_stdev
+    in_args.num_drops = 0 if in_args.drop_chance <= 0 else max(in_args.num_drops, 1)
 
     # Tree Generation #
-    generator = TreeGenerator(groups, ntaxa, branch_length=in_args.branch_length, branch_stdev=in_args.branch_stdev)
+    generator = TreeGenerator(groups, ntaxa, branch_length=in_args.branch_length, branch_stdev=in_args.branch_stdev,
+                              drop_chance=in_args.drop_chance, num_drops=in_args.num_drops)
     tree_string = str(generator)
     print(tree_string)
 
