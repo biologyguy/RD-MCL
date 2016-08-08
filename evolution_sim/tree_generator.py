@@ -53,7 +53,7 @@ class TreeGenerator:
         labels = ["%s-GENE_NAME" % self.taxa[x] for x in range(num_taxa)]  # Generates a list of taxa
 
         self.gene_tree = Tree.randomized(num_genes, branch_length=branch_length, branch_stdev=branch_stdev)
-        self.species_tree = Tree.randomized(labels, branch_length=branch_length)
+        self.species_tree = Tree.randomized(labels, branch_length=branch_length, branch_stdev=branch_stdev)
         self.root = self.gene_tree.clade
 
         self._recursive_build(self.root)  # Assembles the tree

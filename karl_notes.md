@@ -1,8 +1,8 @@
 # Generating mock sequences for testing on OrthoMCL
 
 ## Tools
-We are using the evolver tool in [PAML 4.8](http://abacus.gene.ucl.ac.uk/software/paml.html) to generate amino acid
-sequences off of a mock tree.
+We first tried using the evolver tool in [PAML 4.8](http://abacus.gene.ucl.ac.uk/software/paml.html) to generate amino
+acid sequences off of a base tree.
 
 We called evolver with the following:
 
@@ -49,3 +49,11 @@ does not simulate indels, because Spielman claims:
 ```
 At this time, I'm not convinced we understand how to model subs+indels together cohesively. Til then, sims are 2 unrealistic
 ```
+
+Upon testing pyvolve with a Ctenophore tree, we got back sequence alignments that were very similar, and when run
+through FastTree, produced a tree with very high similarity to the original tree.
+
+## Generating trees for sequence evolution simulation
+Using biopython's Phylo package, we wrote a script that generates a random species tree, and a random gene tree, then
+replaces all of the gene tree's leaf nodes with copies of the species tree, allowing us to simulate "perfect"
+orthogroups.
