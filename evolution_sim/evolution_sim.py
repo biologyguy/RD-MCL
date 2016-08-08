@@ -2,8 +2,12 @@
 # -*- coding: utf-8 -*-
 # Created on: Aug 04 2016
 from pyvolve import newick, evolver, model, partition
+from tree_generator import TreeGenerator
 
-tree_file = 'Ctenophores.newick'
+tree_file = 'tmp.nwk' #'Ctenophores.newick'
+with open(tree_file, 'w') as tree_writer:
+    tree_writer.write(str(TreeGenerator(10, 10, branch_length=.1)))
+
 seed_file = 'seed_seq.raw'
 with open(seed_file, 'r') as seed_io:
     seed_seq = seed_io.read()
