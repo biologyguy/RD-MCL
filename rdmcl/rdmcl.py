@@ -426,9 +426,10 @@ def mcmcmc_mcl(args, params):
 
     with lock:
         with open("%s/.progress" % in_args.outdir, "r") as ifile:
-            finished_clusters, mcl_runs = ifile.read().split("\n")
+            _progress = json.load(ifile)
+            _progress['mcl_runs'] += 1
         with open("%s/.progress" % in_args.outdir, "w") as ofile:
-            ofile.write("%s\n%s" % (finished_clusters, int(mcl_runs) + 1))
+            json.dump(_progress, ofile)
 
     mcl_output = mcl_output[1].decode()
     if re.search("\[mclvInflate\] warning", mcl_output) and min_score:
@@ -499,10 +500,10 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
             ofile.write("-1000000000")
         with lock:
             with open("%s/.progress" % in_args.outdir, "r") as ifile:
-                finished_clusters, mcl_runs = ifile.read().split("\n")
-
+                _progress = json.load(ifile)
+                _progress["placed"] = sum([len(cluster.seq_ids) for cluster in cluster_list])
             with open("%s/.progress" % in_args.outdir, "w") as ofile:
-                ofile.write("%s\n%s" % (len(cluster_list), mcl_runs))
+                json.dump(_progress, ofile)
 
         mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1,
                                        params=["%s" % temp_dir.path, False, seqbuddy, master_cluster], quiet=quiet,
@@ -550,12 +551,12 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
 
 
 def progress():
-    try:
+    with lock:
         with open("%s/.progress" % in_args.outdir, "r") as ifile:
-            finished_clusters, mcl_runs = ifile.read().split("\n")
-        return "MCL runs processed: %s. Clusters finished: %s. Run time: " % (mcl_runs, finished_clusters)
-    except ValueError:  # In case the file is being written while trying to read
-        return "MCL runs processed: ?. Clusters finished: ?. Run time: "
+            _progress = json.load(ifile)
+        return "MCL runs processed: %s. Sequences placed: %s/%s. Run time: " % (_progress['mcl_runs'],
+                                                                                _progress['placed'],
+                                                                                _progress['total'])
 
 
 def parse_mcl_clusters(path):
@@ -1025,16 +1026,17 @@ if __name__ == '__main__':
     logging.warning("\n** Recursive MCL **")
     final_clusters = []
     with open("%s/.progress" % in_args.outdir, "w") as progress_file:
-        progress_file.write("0\n0")
-    run_time = MyFuncs.RunTime(prefix=progress, sleep=0.3)
+        progress_dict = {"mcl_runs": 0, "placed": 0, "total": len(group_0_cluster)}
+        json.dump(progress_dict, progress_file)
+    run_time = MyFuncs.RunTime(prefix=progress, _sleep=0.3, final_clear=True)
     run_time.start()
     final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences,
                                        steps=in_args.mcmcmc_steps, quiet=True)
     run_time.end()
     with open("%s/.progress" % in_args.outdir, "r") as progress_file:
-        progress_file = progress_file.read().split("\n")
-    logging.info("Total MCL runs: %s" % progress_file[1])
-    logging.info("\t-- finished in %s --" % timer.split())
+        progress_dict = json.load(progress_file)
+    logging.warning("Total MCL runs: %s" % progress_dict["mcl_runs"])
+    logging.warning("\t-- finished in %s --" % timer.split())
 
     # Fold singletons and doublets back into groups. This can't be 'resumed', because it changes the clusters
     if not in_args.supress_singlet_folding:
