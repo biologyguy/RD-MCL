@@ -873,8 +873,27 @@ if __name__ == '__main__':
     logging.info("*************************** Recursive Dynamic Markov Clustering ****************************")
     logging.warning("RD-MCL version %s\n\n%s" % (VERSION, NOTICE))
     logging.info("********************************************************************************************\n")
-    logging.info("Working directory: %s" % os.getcwd())
     logging.info("Function call: %s" % " ".join(sys.argv))
+    logging.info("Working directory: %s" % os.getcwd())
+    if not shutil.which("mcl"):
+        logging.error("The 'mcl' program is not detected on your system (see http://micans.org/mcl/).")
+        sys.exit()
+    mcl = Popen("mcl --version", stdout=PIPE, shell=True).communicate()[0].decode()
+    logging.info("MCL version: %s" % re.search("mcl (.*)", mcl).group(1))
+
+    if not shutil.which("mafft"):
+        logging.error("The 'MAFFT' program is not detected "
+                      "on your system (see http://mafft.cbrc.jp/alignment/software/).")
+        sys.exit()
+    mafft = Popen("mafft --version", stderr=PIPE, shell=True).communicate()[1].decode()
+    logging.info("MAFFT version: %s" % mafft.strip())
+
+    if not shutil.which("psiblast"):
+        logging.error("The 'PSI-BLAST' program is not detected on your system.")
+        logging.error("Please install NCBI blast+ tools (ftp://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/LATEST).")
+        sys.exit()
+    psiblast = Popen("psiblast -version", stdout=PIPE, shell=True).communicate()[0].decode()
+    logging.info("PSI-BLAST version: %s\n" % re.search("psiblast: (.*)", psiblast).group(1))
 
     sequences = Sb.SeqBuddy(in_args.sequences)
     seq_ids_hash = md5_hash("".join(sorted([rec.id for rec in sequences.records])))
