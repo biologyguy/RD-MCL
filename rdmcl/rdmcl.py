@@ -546,7 +546,10 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
         # Recursion...
         cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, steps=steps, quiet=quiet,)
 
-    save_cluster()
+    if master_cluster.name() != "group_0":
+        master_cluster.set_name()
+        cluster_list.append(master_cluster)
+        save_cluster()
     return cluster_list
 
 
