@@ -114,7 +114,7 @@ class TreeGenerator:
             drop = self.rand_gen.random()
             if drop <= self.drop_chance:
                 drop = self.rand_gen.choice(leaves)
-                tree.prune(drop)
+                tree.collapse_all(drop)
 
         return tree
 
