@@ -403,9 +403,7 @@ def psi_pred(seq_obj, args):
         ofile.write(seq_obj.format("fasta"))
 
     command = '''\
-psiblast -db {0}/blastdb/pannexins -query sequence.fa -inclusion_ethresh 0.001 -out_pssm {1}/{2}.chk \
--num_iterations 3 -num_alignments 0 >& {1}/{2}.blast;
-{0}/bin/chkparse {1}/{2}.chk > {1}/{2}.mtx;
+{0}/bin/seq2mtx sequence.fa > {1}/{2}.mtx;
 {0}/bin/psipred {1}/{2}.mtx {0}/data/weights.dat {0}/data/weights.dat2 {0}/data/weights.dat3 > {1}/{2}.ss;
 {0}/bin/psipass2 {0}/data/weights_p2.dat 1 1.0 1.0 {1}/{2}.ss2 {1}/{2}.ss > {1}/{2}.horiz;
 '''.format(psipred_dir, temp_dir.path, seq_obj.id)
@@ -850,8 +848,6 @@ if __name__ == '__main__':
     parser.add_argument("sequences", help="Location of sequence file", action="store")
     parser.add_argument("outdir", action="store", default="%s/rd-mcd" % os.getcwd(),
                         help="Where should results be written?")
-    parser.add_argument("-sz", "--sample_size", type=float, default=0.632,
-                        help="Proportion of total population to use in each jackknife replicate")
     parser.add_argument("-mcs", "--mcmcmc_steps", default=1000, type=int,
                         help="Specify how deeply to sample MCL parameters")
     parser.add_argument("-sr", "--supress_recursion", action="store_true",
