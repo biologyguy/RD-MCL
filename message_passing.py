@@ -7,7 +7,7 @@ import os
 import re
 from MyFuncs import pretty_time, DynamicPrint, usable_cpu_count
 import multiprocessing
-from multiprocessing import cpu_count, Process, SimpleQueue
+from multiprocessing import cpu_count, Process, SimpleQueue, Pipe
 import sys
 import random
 from time import time, sleep
@@ -22,17 +22,30 @@ def broker_func(queue):
     connection = sqlite3.connect(sqlite_file)
     cursor = connection.cursor()
 
-    cursor.execute("CREATE TABLE data_table (hash TEXT PRIMARY KEY, species TEXT, gene TEXT, alignment TEXT, graph TEXT, "
-                   "cluster_score REAL)")
+    cursor.execute("CREATE TABLE data_table (hash TEXT PRIMARY KEY, species TEXT, gene TEXT, alignment TEXT, "
+                   "graph TEXT, cluster_score REAL)")
     while True:
         if not queue.empty():
-            hash_id, field, data = queue.get()
-            cursor.execute("INSERT INTO data_table (hash, {0}) VALUES ('{1}', {2})".format(field, hash_id, data))
-            connection.commit()
+            output = queue.get()
+            if output[0] == 'put':
+                hash_id, field, data = output[1:4]
+                cursor.execute("INSERT INTO data_table (hash, {0}) VALUES ('{1}', {2})".format(field, hash_id, data))
+                connection.commit()
+            elif output[0] == 'fetch':
+                hash_id, field, pipe = output[1:4]
+                cursor.execute("SELECT ({0}) FROM data_table WHERE hash='{1}'".format(field, hash_id))
+                response = cursor.fetchone()[0]
+                pipe.send(response)
+            else:
+                raise RuntimeError("Invalid instruction for broker. Must be either put or fetch, not %s." % output[0])
 
 def database_populator(taxid, queue):
     queue = queue[0]
-    queue.put((taxid, 'cluster_score', random.random()))
+    queue.put(('put', taxid, 'cluster_score', random.random()))
+    recvpipe, sendpipe = Pipe(False)
+    queue.put(('fetch', taxid, 'cluster_score', sendpipe))
+    response = recvpipe.recv()
+    print(response)
 
 def run_multicore_function(iterable, function, func_args=False, max_processes=0, quiet=False, out_type=sys.stdout):
     d_print = DynamicPrint(out_type)
