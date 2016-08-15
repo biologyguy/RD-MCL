@@ -13,6 +13,9 @@ Connect to sqlite database (file can be stored anywhere on disk)
 Cursor executes commands on the database
 '''
 sqlite_file = "sqlite_db.sqlite"
+if os.path.exists(sqlite_file):
+    os.remove(sqlite_file)
+
 connection = sqlite3.connect(sqlite_file)
 cursor = connection.cursor()
 
@@ -79,6 +82,21 @@ for ps_filename in psipred_files:
             data = psi_data.read()
         cursor.execute("INSERT INTO psipred_table (seq_id, species, gene, data) VALUES ('{0}', '{1}', '{2}', '{3}')"
                        .format(seq_name, species, gene, data))
+
+cursor.execute("SELECT (gene) FROM psipred_table WHERE seq_id='Bfo-PanxαI'")
+result = cursor.fetchall()
+#print(result[0][0])
+
+cursor.execute("SELECT (seq_id) FROM psipred_table WHERE species='Bfo'")
+result = cursor.fetchall()
+#print(result)
+
+cursor.execute("SELECT * FROM psipred_table WHERE species='Bfo'")
+result = cursor.fetchall()
+
+cursor.execute("SELECT (seq_id) FROM psipred_table WHERE species='ABCDEFGHIJKLMNOPQRSTUVWXYZ'")
+result = cursor.fetchall()
+
 
 connection.commit()  # All changes must be committed to the database before they appear
 connection.close()  # Must close the database before exiting the program
