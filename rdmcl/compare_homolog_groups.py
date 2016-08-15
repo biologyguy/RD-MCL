@@ -23,7 +23,7 @@ import MyFuncs
 import os
 
 
-class Clusters():
+class Clusters(object):
     def __init__(self, path, group_split="\n", taxa_split=" "):
         with open(path, "r") as ifile:
             self.input = ifile.read()
@@ -106,4 +106,4 @@ if __name__ == '__main__':
     groups1 = Clusters(in_args.subject, in_args.group_split, in_args.taxa_split)
     groups2 = Clusters(in_args.query, in_args.group_split, in_args.taxa_split)
 
-    print("Score: %s\n%s" % (groups1.compare(groups2, ofile), timer.end()))
+    print("Score: %s\n%s" % (groups1.compare(groups2, ofile), timer.total_elapsed()))
