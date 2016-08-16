@@ -15,7 +15,7 @@ from buddysuite import SeqBuddy as Sb
 
 
 def broker_func(queue):
-    sqlite_file = "{0}.sqlite".format(run_name)
+    sqlite_file = "{0}/{0}.sqlite".format(run_name)
     if os.path.exists(sqlite_file):
         os.remove(sqlite_file)
     connection = sqlite3.connect(sqlite_file)
@@ -104,7 +104,7 @@ def rd_mcl():
         tmp_file = TempFile()
         msa = fetch("SELECT (alignment) FROM data_table WHERE runid='{0}'".format(run))
         tmp_file.write(msa)
-        outdir = "{0}_{1:05d}".format(run_name, run)
+        outdir = "{0}/rdmcl_{1:05d}".format(run_name, run)
         printer.write("Processing run {0} of {1}...".format(run, num_runs-1))
         subprocess.run("../rdmcl/rdmcl.py {0} {1} {2}".format(tmp_file.path, outdir, rdmcl_flags), shell=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -241,6 +241,8 @@ if __name__ == '__main__':
     broker_queue = SimpleQueue()
     broker = Process(target=broker_func, args=[broker_queue])
     broker.start()
+
+    os.makedirs(run_name, exist_ok=True)
 
     run_multicore_function(arguments, generate)
 
