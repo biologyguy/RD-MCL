@@ -11,6 +11,7 @@ import json
 import os
 import re
 import sqlite3
+from buddysuite import SeqBuddy as Sb
 
 
 def broker_func(queue):
@@ -215,6 +216,7 @@ if __name__ == '__main__':
 
     with open(seed_file, 'r') as seed_io:
         seed_seq = seed_io.read()
+    seed_seq = str(Sb.clean_seq(Sb.SeqBuddy(seed_seq, out_format='raw')))
     seed_seq = seed_seq.upper().strip()
 
     # ugly-ass loop
