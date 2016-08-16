@@ -6,9 +6,9 @@ from tree_generator import TreeGenerator
 from MyFuncs import run_multicore_function
 import os
 
-group_range = [5]  # range(2, 13)
+group_range = [5] # range(2, 13)
 taxa_range = [5]  # range(2, 13)
-models = ['WAG']  # , 'JTT', 'LG']
+models = ['WAG'] # , 'JTT', 'LG']
 
 val = .05
 branch_lengths = [.1]
@@ -27,14 +27,19 @@ num_drops_range = [0]
 duplication_chances = [0]
 num_duplications_range = [0]
 
-directory = 'DIRECTORY NAME HERE'  # Please name your run
+directory = None  # Please name your run
+assert type(directory) is str
+
 os.makedirs('{0}_inputs'.format(directory), exist_ok=True)
 os.makedirs('{0}_outputs'.format(directory), exist_ok=True)
+os.makedirs('{0}_groups'.format(directory), exist_ok=True)
+
 with open("{0}_runs.txt".format(directory), "w") as runs_file:
-    runs_file.write("runid\tgroup\ttaxa\tmodel\tbranch\tstdv\talpha\tcat#\tdrop\tdrop#\tdup\t"
-                    "dup#\n")
+    runs_file.write("runid\tgroup\ttaxa\tmodel\tbranch\tstdv\talpha\tcat#\tdrop\tdrop#\tdup\tdup#\n")
 
 seed_file = 'seed_seq.raw'
+assert os.path.exists(seed_file)
+
 with open(seed_file, 'r') as seed_io:
     seed_seq = seed_io.read()
 seed_seq = seed_seq.upper().strip()
@@ -64,19 +69,30 @@ def generate(args, dirname):
         duplication_chance, num_duplications, run_id = args
     out_file = "{0}_outputs/run{1:04d}.fa".format(dirname, run_id)
 
-    tree_file = "{0}_inputs/run{1:04d}.fa".format(dirname, run_id)
+    tree_file = "{0}_inputs/run{1:04d}.nwk".format(dirname, run_id)
 
-    with open("{0}_inputs/runs.txt".format(dirname), "a") as runs_file:
+    groups_file = "{0}_groups/run{1:04d}.txt".format(dirname, run_id)
+
+    with open("{0}_runs.txt".format(dirname), "a") as runs_file:
         runs_file.write("run{0:04d}\t{1:02d}\t{2:02d}\t{3}\t{4:.2f}\t{5:.2f}\t{6}\t{7}\t"
                         "{8:.2f}\t{9:02d}\t{10:.2f}\t{11:02d}\n".format(run_id, groups, taxa, model_type, branch_length,
                                                                         branch_stdev, alpha, categories, drop_chance,
                                                                         num_drops, duplication_chance,
                                                                         num_duplications))
 
+    generator = TreeGenerator(taxa, groups, branch_length=branch_length, branch_stdev=branch_stdev,
+                                  drop_chance=drop_chance, num_drops=num_drops, duplication_chance=duplication_chance,
+                                  num_duplications=num_duplications)
+
     with open(tree_file, 'w') as tree_writer:
-        tree_writer.write(str(TreeGenerator(taxa, groups, branch_length=branch_length, branch_stdev=branch_stdev,
-                                            drop_chance=drop_chance, num_drops=num_drops,
-                                            duplication_chance=duplication_chance, num_duplications=num_duplications)))
+        tree_writer.write(str(generator))
+
+    with open(groups_file, 'w') as groups_writer:
+        for group in generator.groups():
+            for seq in group:
+                groups_writer.write(seq + '\t')
+            groups_writer.write('\n')
+
     model_tree = newick.read_tree(file=tree_file)
     my_model = model.Model(model_type=model_type, alpha=alpha, num_categories=categories)
     my_partition = partition.Partition(models=my_model, root_sequence=seed_seq)

@@ -7,6 +7,7 @@ import copy
 import math
 import re
 import string
+import sys
 from random import Random
 from Bio.Phylo.BaseTree import Tree
 from Bio.Phylo.BaseTree import TreeMixin
@@ -53,6 +54,8 @@ class TreeGenerator:
 
         self.genes = list()  # Lists of hashes to prevent collisions
         self.taxa = list()
+
+        self._groups = list()
 
         for x in range(num_taxa):
             self._generate_taxa_name()
@@ -116,6 +119,11 @@ class TreeGenerator:
                 drop = self.rand_gen.choice(leaves)
                 tree.collapse_all(drop)
 
+        leaf_names = tree.get_terminals()
+        for x in range(len(leaf_names)):
+            leaf_names[x] = leaf_names[x].name
+        self._groups.append(leaf_names)
+
         return tree
 
     def _recursive_build(self, node):  # Recursively replaces the terminal nodes of the gene tree with species trees
@@ -124,6 +132,9 @@ class TreeGenerator:
                 node.clades[indx] = self._copy_species_tree(self._generate_gene_name())
             else:
                 self._recursive_build(child)
+
+    def groups(self):
+        return self._groups
 
     def __str__(self):
         tree_string = self.gene_tree.format("newick")
@@ -166,8 +177,16 @@ def main():
                               drop_chance=in_args.drop_chance, num_drops=in_args.num_drops,
                               duplication_chance=in_args.duplication_chance,
                               num_duplications=in_args.num_duplications)
+
+    for group in generator.groups():
+        for seq in group:
+            sys.stderr.write(seq + '\t')
+        sys.stderr.write('\n')
+    sys.stderr.write('\n')
+
     tree_string = str(generator)
     print(tree_string)
+
 
 if __name__ == '__main__':
     main()
