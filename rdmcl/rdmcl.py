@@ -30,10 +30,12 @@ import re
 import shutil
 import logging
 import json
+import sqlite3
+from io import StringIO
 from time import time
 from copy import copy
 from subprocess import Popen, PIPE, check_output
-from multiprocessing import Lock
+from multiprocessing import Lock, Process, SimpleQueue, Pipe
 from random import random
 from math import log
 from hashlib import md5
@@ -64,6 +66,47 @@ PARTICULAR PURPOSE.
 Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
 '''
 
+
+def broker_func(queue):
+    sqlite_file = "{0}/sqlite_db.sqlite".format(in_args.outdir)
+    connection = sqlite3.connect(sqlite_file)
+    cursor = connection.cursor()
+    if not previous_run:
+        cursor.execute("CREATE TABLE data_table (hash TEXT PRIMARY KEY, alignment TEXT, graph TEXT, "
+                       "cluster_score REAL)")
+    while True:
+        if not queue.empty():
+            output = queue.get()
+            if output[0] == 'push':
+                hash_id, field, data = output[1:4]
+                try:
+                    cursor.execute("INSERT INTO data_table (hash, {0}) VALUES ('{1}', '{2}')"
+                                   .format(field, hash_id, data))
+                except sqlite3.IntegrityError:
+                    cursor.execute("UPDATE data_table SET {0}=('{1}') WHERE hash=('{2}')"
+                                   .format(field, data, hash_id))
+                connection.commit()
+            elif output[0] == 'fetch':
+                hash_id, field, pipe = output[1:4]
+                cursor.execute("SELECT ({0}) FROM data_table WHERE hash='{1}'".format(field, hash_id))
+                response = cursor.fetchone()
+                if not response or not response[0]:
+                    response = None
+                else:
+                    response = response[0]
+                pipe.send(response)
+            else:
+                raise RuntimeError("Invalid instruction for broker. Must be either put or fetch, not %s." % output[0])
+        connection.commit()
+
+def push(hash_id, field, data):
+    broker_queue.put(('push', hash_id, field, data))
+
+def fetch(hash_id, field):
+    recvpipe, sendpipe = Pipe(False)
+    broker_queue.put(('fetch', hash_id, field, sendpipe))
+    response = recvpipe.recv()
+    return response
 
 class Cluster(object):
     def __init__(self, seq_ids, sim_scores, out_dir=None, parent=None, clique=False):
@@ -316,10 +359,10 @@ class Cluster(object):
                     self.cluster_score_file.write("\n%s,%s" % (clique_score, clique_ids))
                     sim_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique.seq_ids)) &
                                                  (self.sim_scores.seq2.isin(clique.seq_ids))]
-                    sim_scores.to_csv("%s/%s" % (self.similarity_graphs, clique_ids), index=False)
+                    push(clique_ids, 'graph', sim_scores.to_csv(index=False))
         with self.lock:
             self.cluster_score_file.write("\n%s,%s" % (self.cluster_score, seq_ids))
-            self.sim_scores.to_csv("%s/%s" % (self.similarity_graphs, seq_ids), index=False)
+            push(seq_ids, 'graph', self.sim_scores.to_csv(index=False))
         return self.cluster_score
 
     """The following are possible score modifier schemes to account for group size
@@ -439,9 +482,10 @@ def mcmcmc_mcl(args, params):
 
     for indx, cluster in enumerate(clusters):
         cluster_ids = md5_hash("".join(sorted(cluster)))
-        if cluster_ids in prev_scores.cluster.values:
+        cluster_data = fetch(cluster_ids, 'graph')
+        if cluster_data:
             with parent_cluster.lock:
-                sim_scores = pd.read_csv("%s/%s" % (parent_cluster.similarity_graphs, cluster_ids), index_col=False)
+                sim_scores = pd.read_csv(StringIO(cluster_data), index_col=False)
                 scores = prev_scores.score[prev_scores.cluster == cluster_ids]
                 if len(scores) > 1:
                     prev_scores = prev_scores.drop_duplicates()
@@ -531,7 +575,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     mcl_clusters = parse_mcl_clusters("%s/best_group" % temp_dir.path)
     for sub_cluster in mcl_clusters:
         cluster_ids = md5_hash("".join(sorted(sub_cluster)))
-        sim_scores = pd.read_csv("%s/%s" % (master_cluster.similarity_graphs, cluster_ids), index_col=False)
+        sim_scores = pd.read_csv(StringIO(fetch(cluster_ids, 'graph')), index_col=False)
         sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster)
         if len(sub_cluster) in [1, 2]:
             sub_cluster.set_name()
@@ -542,7 +586,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
         seqbuddy_copy = Sb.pull_recs(seqbuddy_copy, ["^%s$" % rec_id for rec_id in sub_cluster.seq_ids])
 
         # Recursion...
-        cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, steps=steps, quiet=quiet,)
+        cluster_list += orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, steps=steps, quiet=quiet,)
 
     if master_cluster.name() != "group_0":
         master_cluster.set_name()
@@ -743,15 +787,16 @@ def score_sequences(seq_pair, args):
 def generate_msa(seqbuddy):
     seq_ids = sorted([rec.id for rec in seqbuddy.records])
     seq_id_hash = md5_hash("".join(seq_ids))
-    align_file = "%s/alignments/all_alignments/%s" % (in_args.outdir, seq_id_hash)
-    if os.path.isfile(align_file):
-        alignment = Alb.AlignBuddy(align_file)
+    alignment = fetch(seq_id_hash, 'alignment')
+    if alignment:
+        alignment = Alb.AlignBuddy(alignment)
+        pass
     else:
         if len(seqbuddy) == 1:
             alignment = Alb.AlignBuddy(str(seqbuddy))
         else:
             alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -1", quiet=True)
-        alignment.write(align_file)
+        push(seq_id_hash, 'alignment', str(alignment))
     return alignment
 
 
@@ -768,9 +813,9 @@ def create_all_by_all_scores(alignment, quiet=False):
 
     # Only calculate if not previously calculated
     seq_ids = sorted([rec.id for rec in alignment.records_iter()])
-    sim_scores_file = "%s/sim_scores/all_graphs/%s" % (in_args.outdir, md5_hash("".join(seq_ids)))
-    if os.path.isfile(sim_scores_file):
-        sim_scores = pd.read_csv(sim_scores_file, index_col=False)
+    graph = fetch(md5_hash("".join(seq_ids)), 'graph')
+    if graph:
+        sim_scores = pd.read_csv(StringIO(graph), index_col=False)
         sim_scores.columns = ["seq1", "seq2", "score"]
         return sim_scores
 
@@ -913,6 +958,10 @@ if __name__ == '__main__':
                 logging.warning("Program aborted by user.")
                 sys.exit()
 
+    broker_queue = SimpleQueue()
+    broker = Process(target=broker_func, args=[broker_queue])
+    broker.start()
+
     # Make sure all the necessary directories are present and emptied of old run files
     for outdir in ["%s%s" % (in_args.outdir, x) for x in ["", "/alignments", "/mcmcmc", "/sim_scores", "/psi_pred"]]:
         if not os.path.isdir(outdir):
@@ -921,7 +970,8 @@ if __name__ == '__main__':
         elif "psi_pred" not in outdir:  # Delete old files
             root, dirs, files = next(os.walk(outdir))
             for file in files:
-                os.remove("%s/%s" % (root, file))
+                if file != 'sqlite_db.sqlite':
+                    os.remove("%s/%s" % (root, file))
 
     with open("%s/.rdmcl" % in_args.outdir, "w") as hash_file:
         hash_file.write(seq_ids_hash)
@@ -982,19 +1032,21 @@ if __name__ == '__main__':
     gap_extend = in_args.extend_penalty
     logging.info("gap open penalty: %s\ngap extend penalty: %s" % (gap_open, gap_extend))
 
-    if os.path.isfile("%s/alignments/all_alignments/%s" % (in_args.outdir, seq_ids_hash)):
+    align_data = fetch(seq_ids_hash, 'alignment')
+    if align_data:
         logging.warning("RESUME: Initial multiple sequence alignment found")
-        alignbuddy = Alb.AlignBuddy("%s/alignments/all_alignments/%s" % (in_args.outdir, seq_ids_hash))
+        alignbuddy = Alb.AlignBuddy(align_data)
     else:
         logging.warning("Generating initial multiple sequence alignment with MAFFT")
         alignbuddy = generate_msa(sequences)
         alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
-        alignbuddy.write("%s/alignments/all_alignments/%s" % (in_args.outdir, seq_ids_hash))
+        push(seq_ids_hash, 'alignment', str(alignbuddy))
         logging.info("\t-- finished in %s --" % timer.split())
 
-    if os.path.isfile("%s/sim_scores/all_graphs/%s" % (in_args.outdir, seq_ids_hash)):
+    graph_data = fetch(seq_ids_hash, 'graph')
+    if graph_data:
         logging.warning("RESUME: Initial all-by-all similarity graph found")
-        scores_data = pd.read_csv("%s/sim_scores/all_graphs/%s" % (in_args.outdir, seq_ids_hash), index_col=False)
+        scores_data = pd.read_csv(StringIO(graph_data), index_col=False)
         scores_data.columns = ["seq1", "seq2", "score"]
         group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data, out_dir=in_args.outdir)
 
@@ -1002,7 +1054,7 @@ if __name__ == '__main__':
         logging.warning("Generating initial all-by-all similarity graph")
         scores_data = create_all_by_all_scores(alignbuddy)
         scores_data.to_csv("%s/sim_scores/group_0.scores" % in_args.outdir, header=None, index=False, sep="\t")
-        scores_data.to_csv("%s/sim_scores/all_graphs/%s" % (in_args.outdir, seq_ids_hash), header=None, index=False)
+        push(seq_ids_hash, 'graph', scores_data.to_csv(header=None, index=False))
         group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data, out_dir=in_args.outdir)
         logging.info("\t-- finished in %s --" % timer.split())
 
@@ -1073,3 +1125,7 @@ if __name__ == '__main__':
     with open("%s/final_clusters.txt" % in_args.outdir, "w") as outfile:
         outfile.write(output)
         logging.warning("Final clusters written to: %s/final_clusters.txt" % in_args.outdir)
+
+    while not broker_queue.empty():
+        pass
+    broker.terminate()

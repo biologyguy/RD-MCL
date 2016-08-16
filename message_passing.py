@@ -39,6 +39,10 @@ def broker_func(queue):
             else:
                 raise RuntimeError("Invalid instruction for broker. Must be either put or fetch, not %s." % output[0])
 
+broker_queue = SimpleQueue()
+broker = Process(target=broker_func, args=[broker_queue])
+broker.start()
+
 def database_populator(taxid, queue):
     queue = queue[0]
     queue.put(('put', taxid, 'cluster_score', random.random()))
@@ -47,7 +51,8 @@ def database_populator(taxid, queue):
     response = recvpipe.recv()
     print(response)
 
-def run_multicore_function(iterable, function, func_args=False, max_processes=0, quiet=False, out_type=sys.stdout):
+def run_multicore_function(iterable, function, queue, func_args=False, max_processes=0, quiet=False,
+                           out_type=sys.stdout):
     d_print = DynamicPrint(out_type)
 
     if max_processes == 0:
@@ -64,9 +69,7 @@ def run_multicore_function(iterable, function, func_args=False, max_processes=0,
 
     running_processes = 0
     child_list = []
-    queue = SimpleQueue()  # Queue of tuples (hash_id, field, data)
-    broker = Process(target=broker_func, args=[queue])
-    broker.start()
+
     start_time = round(time())
     elapsed = 0
     counter = 0
@@ -137,8 +140,6 @@ def run_multicore_function(iterable, function, func_args=False, max_processes=0,
                 elapsed = round(time()) - start_time
                 d_print.write("\t%s total jobs (%s, %s jobs remaining)" % (len(iterable), pretty_time(elapsed),
                                                                            len(child_list)))
-    if queue.empty():
-        broker.terminate()
 
     if not quiet:
         d_print.write("\tDONE: %s jobs in %s\n" % (len(iterable), pretty_time(elapsed)))
@@ -158,4 +159,8 @@ for x in range(10):
             hashes.append(new_hash)
             break
 
-run_multicore_function(hashes, database_populator)
+run_multicore_function(hashes, database_populator, broker_queue)
+
+while not broker_queue.empty():
+    pass
+broker.terminate()

@@ -96,7 +96,7 @@ result = cursor.fetchall()
 
 cursor.execute("SELECT (seq_id) FROM psipred_table WHERE species='ABCDEFGHIJKLMNOPQRSTUVWXYZ'")
 result = cursor.fetchall()
-
+print(result)
 
 connection.commit()  # All changes must be committed to the database before they appear
 connection.close()  # Must close the database before exiting the program
