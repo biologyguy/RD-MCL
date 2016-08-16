@@ -73,7 +73,7 @@ def broker_func(queue):
     cursor = connection.cursor()
     if not previous_run:
         cursor.execute("CREATE TABLE data_table (hash TEXT PRIMARY KEY, alignment TEXT, graph TEXT, "
-                       "cluster_score REAL)")
+                       "cluster_score TEXT)")
     while True:
         if not queue.empty():
             output = queue.get()
@@ -90,11 +90,17 @@ def broker_func(queue):
                 hash_id, field, pipe = output[1:4]
                 cursor.execute("SELECT ({0}) FROM data_table WHERE hash='{1}'".format(field, hash_id))
                 response = cursor.fetchone()
-                if not response or not response[0]:
+                if response is None or len(response) == 0:
                     response = None
                 else:
                     response = response[0]
                 pipe.send(response)
+            elif output[0] == 'scored':
+                pipe = output[1]
+                cursor.execute("SELECT (hash) FROM data_table WHERE cluster_score IS NOT NULL")
+                response = cursor.fetchall()
+                response = [x[0] for x in response]
+                pipe.send(json.dumps(response))
             else:
                 raise RuntimeError("Invalid instruction for broker. Must be either put or fetch, not %s." % output[0])
         connection.commit()
@@ -106,6 +112,12 @@ def fetch(hash_id, field):
     recvpipe, sendpipe = Pipe(False)
     broker_queue.put(('fetch', hash_id, field, sendpipe))
     response = recvpipe.recv()
+    return response
+
+def scored_clusters():
+    recvpipe, sendpipe = Pipe(False)
+    broker_queue.put(('scored', sendpipe))
+    response = json.loads(recvpipe.recv())
     return response
 
 class Cluster(object):
@@ -267,10 +279,10 @@ class Cluster(object):
         if self.cluster_score:
             return self.cluster_score
         # Confirm that a score for this cluster has not been calculated before
-        prev_scores = pd.read_csv(self.cluster_score_file.path, index_col=False)
+        prev_scores = scored_clusters()
         seq_ids = md5_hash("".join(sorted(self.seq_ids)))
-        if seq_ids in prev_scores.cluster.values:
-            self.cluster_score = float(prev_scores.score[prev_scores.cluster == seq_ids])
+        if seq_ids in prev_scores:
+            self.cluster_score = float(fetch(seq_ids, 'cluster_score'))
             return self.cluster_score
 
         # Don't ignore the possibility of cliques, which will alter the score.
@@ -350,18 +362,18 @@ class Cluster(object):
             if not clique:
                 break
             clique_ids = md5_hash("".join(sorted(clique.seq_ids)))
-            if clique_ids in prev_scores.cluster.values:
-                self.cluster_score += float(prev_scores.score[prev_scores.cluster == clique_ids])
+            if clique_ids in prev_scores:
+                self.cluster_score += float(fetch(clique_ids, 'cluster_score'))
             else:
                 clique_score = self.raw_score(clique.seq_ids)
                 self.cluster_score += clique_score
                 with self.lock:
-                    self.cluster_score_file.write("\n%s,%s" % (clique_score, clique_ids))
+                    push(clique_ids, 'cluster_score', str(clique_score))
                     sim_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique.seq_ids)) &
                                                  (self.sim_scores.seq2.isin(clique.seq_ids))]
                     push(clique_ids, 'graph', sim_scores.to_csv(index=False))
         with self.lock:
-            self.cluster_score_file.write("\n%s,%s" % (self.cluster_score, seq_ids))
+            push(seq_ids, 'cluster_score', str(self.cluster_score))
             push(seq_ids, 'graph', self.sim_scores.to_csv(index=False))
         return self.cluster_score
 
@@ -478,7 +490,6 @@ def mcmcmc_mcl(args, params):
 
     clusters = parse_mcl_clusters("%s/output.groups" % mcl_tmp_dir.path)
     score = 0
-    prev_scores = pd.read_csv(parent_cluster.cluster_score_file.path, index_col=False)
 
     for indx, cluster in enumerate(clusters):
         cluster_ids = md5_hash("".join(sorted(cluster)))
@@ -486,10 +497,6 @@ def mcmcmc_mcl(args, params):
         if cluster_data:
             with parent_cluster.lock:
                 sim_scores = pd.read_csv(StringIO(cluster_data), index_col=False)
-                scores = prev_scores.score[prev_scores.cluster == cluster_ids]
-                if len(scores) > 1:
-                    prev_scores = prev_scores.drop_duplicates()
-                    prev_scores.to_csv(parent_cluster.cluster_score_file.path, index=False)
             score += float()
         else:
             sb_copy = Sb.make_copy(seqbuddy)
