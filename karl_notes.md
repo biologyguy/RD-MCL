@@ -85,3 +85,15 @@ the sequence evolution. In addition to the tree generation parameters, the scrip
 - Number of gamma categories
 
 Using the script we generated thousands of sequences with various combinations of parameters to run with RD-MCL.
+
+# SQLite for RD-MCL
+Previously, RD-MCL would store reusable data like alignments, graphs, and cluster scores in a series of directories for
+reuse in subsequent or resumed runs. However, this produced a large and messy directory structure. In order to address
+this, we replaced the file reading/writing with a SQLite database.
+
+Since sqlite3 in python cannot be run on multiple threads, we achieved this by spawning a "broker" process which has
+exclusive access to the database. The broker would be fed commands from a multiprocessing Queue, and then act
+accordingly. The broker has 3 functions at the moment. It can a single field to the database, fetch a single field from
+the database, or return a list of all the groups with cluster scores. In order to return data, the broker is fed a
+unidirectional multiprocessing Pipe, which sends data directly to the thread that made the request. This allows all the
+threads to talk to the broker without there being confusion over which thread it is responding to.

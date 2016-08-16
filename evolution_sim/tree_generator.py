@@ -144,7 +144,7 @@ class TreeGenerator:
 def main():
 
     # Argument Parsing #
-    parser = argparse.ArgumentParser(prog="PhyloBuddy.py", usage=argparse.SUPPRESS,
+    parser = argparse.ArgumentParser(prog="tree_generator.py", usage=argparse.SUPPRESS,
                                      description='A tool for generating random ortholog trees.\nUsage:'
                                                  '\n./tree_generator.py -nt <#> -ng <#>')
     parser.add_argument('-nt', '--num_taxa', help='The number of taxa to be generated',
