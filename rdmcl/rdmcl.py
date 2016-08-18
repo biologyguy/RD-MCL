@@ -72,7 +72,7 @@ def broker_func(queue):
     connection = sqlite3.connect(sqlite_file)
     cursor = connection.cursor()
     if not previous_run:
-        cursor.execute("CREATE TABLE data_table (hash TEXT PRIMARY KEY, alignment TEXT, graph TEXT, "
+        cursor.execute("CREATE TABLE data_table (hash TEXT PRIMARY KEY, seq_ids TEXT, alignment TEXT, graph TEXT, "
                        "cluster_score TEXT)")
     while True:
         if not queue.empty():
@@ -154,7 +154,6 @@ class Cluster(object):
         self.cluster_score = None
         self.collapsed_genes = OrderedDict()  # If paralogs are reciprocal best hits, collapse them
         self._name = None
-        self.similarity_graphs = "%s/sim_scores/all_graphs" % self.out_dir
         for next_seq_id in seq_ids:
             taxa = next_seq_id.split("-")[0]
             self.taxa.setdefault(taxa, [])
@@ -580,7 +579,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
         if master_cluster.name() != "group_0":
             master_cluster.set_name()
             cluster_list.append(master_cluster)
-            save_cluster()
+        save_cluster()
         return cluster_list
 
     mcl_clusters = parse_mcl_clusters("%s/best_group" % temp_dir.path)
@@ -602,7 +601,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     if master_cluster.name() != "group_0":
         master_cluster.set_name()
         cluster_list.append(master_cluster)
-        save_cluster()
+    save_cluster()
     return cluster_list
 
 
@@ -808,6 +807,7 @@ def generate_msa(seqbuddy):
         else:
             alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -1", quiet=True)
         push(seq_id_hash, 'alignment', str(alignment))
+        push(seq_id_hash, 'seq_ids', str(", ".join(seq_ids)))
     return alignment
 
 
@@ -986,12 +986,6 @@ if __name__ == '__main__':
 
     with open("%s/.rdmcl" % in_args.outdir, "w") as hash_file:
         hash_file.write(seq_ids_hash)
-
-    if not os.path.isdir("%s/sim_scores/all_graphs" % in_args.outdir):
-        os.makedirs("%s/sim_scores/all_graphs" % in_args.outdir)
-
-    if not os.path.isdir("%s/alignments/all_alignments" % in_args.outdir):
-        os.makedirs("%s/alignments/all_alignments" % in_args.outdir)
 
     root, dirs, files = next(os.walk("%s/mcmcmc" % in_args.outdir))
     for _dir in dirs:
