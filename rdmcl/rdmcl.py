@@ -76,9 +76,9 @@ def broker_func(queue):
                        "cluster_score TEXT)")
     while True:
         if not queue.empty():
-            output = queue.get()
-            if output[0] == 'push':
-                hash_id, field, data = output[1:4]
+            broker_output = queue.get()
+            if broker_output[0] == 'push':
+                hash_id, field, data = broker_output[1:4]
                 try:
                     cursor.execute("INSERT INTO data_table (hash, {0}) VALUES ('{1}', '{2}')"
                                    .format(field, hash_id, data))
@@ -86,8 +86,8 @@ def broker_func(queue):
                     cursor.execute("UPDATE data_table SET {0}=('{1}') WHERE hash=('{2}')"
                                    .format(field, data, hash_id))
                 connection.commit()
-            elif output[0] == 'fetch':
-                hash_id, field, pipe = output[1:4]
+            elif broker_output[0] == 'fetch':
+                hash_id, field, pipe = broker_output[1:4]
                 cursor.execute("SELECT ({0}) FROM data_table WHERE hash='{1}'".format(field, hash_id))
                 response = cursor.fetchone()
                 if response is None or len(response) == 0:
@@ -95,18 +95,20 @@ def broker_func(queue):
                 else:
                     response = response[0]
                 pipe.send(response)
-            elif output[0] == 'scored':
-                pipe = output[1]
+            elif broker_output[0] == 'scored':
+                pipe = broker_output[1]
                 cursor.execute("SELECT (hash) FROM data_table WHERE cluster_score IS NOT NULL")
                 response = cursor.fetchall()
                 response = [x[0] for x in response]
                 pipe.send(json.dumps(response))
             else:
-                raise RuntimeError("Invalid instruction for broker. Must be either put or fetch, not %s." % output[0])
+                raise RuntimeError("Broker instruction must be either 'put' or 'fetch', not %s." % broker_output[0])
         connection.commit()
+
 
 def push(hash_id, field, data):
     broker_queue.put(('push', hash_id, field, data))
+
 
 def fetch(hash_id, field):
     recvpipe, sendpipe = Pipe(False)
@@ -114,11 +116,13 @@ def fetch(hash_id, field):
     response = recvpipe.recv()
     return response
 
+
 def scored_clusters():
     recvpipe, sendpipe = Pipe(False)
     broker_queue.put(('scored', sendpipe))
     response = json.loads(recvpipe.recv())
     return response
+
 
 class Cluster(object):
     def __init__(self, seq_ids, sim_scores, out_dir=None, parent=None, clique=False):
@@ -592,8 +596,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
         seqbuddy_copy = Sb.make_copy(seqbuddy)
         seqbuddy_copy = Sb.pull_recs(seqbuddy_copy, ["^%s$" % rec_id for rec_id in sub_cluster.seq_ids])
 
-        # Recursion...
-        cluster_list += orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, steps=steps, quiet=quiet,)
+        # Recursion... Reassign cluster_list, as all clusters are returned at the end of a call to orthogroup_caller
+        cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, steps=steps, quiet=quiet,)
 
     if master_cluster.name() != "group_0":
         master_cluster.set_name()
