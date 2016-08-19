@@ -69,6 +69,7 @@ Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
 
 def broker_func(queue):
     sqlite_file = "{0}/sqlite_db.sqlite".format(in_args.outdir)
+    previous_run = True if os.path.isfile(sqlite_file) else False
     connection = sqlite3.connect(sqlite_file)
     cursor = connection.cursor()
     if not previous_run:
@@ -163,8 +164,6 @@ class Cluster(object):
             raise AttributeError("A clique cannot be declared without including its parental sequence_ids.")
 
         if parent:
-            self.cluster_score_file = parent.cluster_score_file
-            self.lock = parent.lock
             for indx, genes in parent.collapsed_genes.items():
                 if indx in seq_ids:
                     self.collapsed_genes[indx] = genes
@@ -172,11 +171,6 @@ class Cluster(object):
 
         else:
             self._name = "group_0"
-            # No reason to re-calculate scores, so record what's been done in a temp file to persist over subprocesses
-            self.cluster_score_file = MyFuncs.TempFile()
-            self.cluster_score_file.write("score,cluster")
-            self.lock = Lock()
-
             # This next bit collapses all paralog reciprocal best-hit cliques so they don't gum up MCL
             breakout = False
             while not breakout:
@@ -370,12 +364,12 @@ class Cluster(object):
             else:
                 clique_score = self.raw_score(clique.seq_ids)
                 self.cluster_score += clique_score
-                with self.lock:
+                with lock:
                     push(clique_ids, 'cluster_score', str(clique_score))
                     sim_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique.seq_ids)) &
                                                  (self.sim_scores.seq2.isin(clique.seq_ids))]
                     push(clique_ids, 'graph', sim_scores.to_csv(index=False))
-        with self.lock:
+        with lock:
             push(seq_ids, 'cluster_score', str(self.cluster_score))
             push(seq_ids, 'graph', self.sim_scores.to_csv(index=False))
         return self.cluster_score
@@ -498,7 +492,7 @@ def mcmcmc_mcl(args, params):
         cluster_ids = md5_hash("".join(sorted(cluster)))
         cluster_data = fetch(cluster_ids, 'graph')
         if cluster_data:
-            with parent_cluster.lock:
+            with lock:
                 sim_scores = pd.read_csv(StringIO(cluster_data), index_col=False)
             score += float()
         else:
@@ -944,34 +938,21 @@ if __name__ == '__main__':
     mafft = Popen("mafft --version", stderr=PIPE, shell=True).communicate()[1].decode()
     logging.info("MAFFT version: %s" % mafft.strip())
 
-    if not shutil.which("psiblast"):
-        logging.error("The 'PSI-BLAST' program is not detected on your system.")
-        logging.error("Please install NCBI blast+ tools (ftp://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/LATEST).")
-        sys.exit()
-    psiblast = Popen("psiblast -version", stdout=PIPE, shell=True).communicate()[0].decode()
-    logging.info("PSI-BLAST version: %s\n" % re.search("psiblast: (.*)", psiblast).group(1))
+    if not os.path.isdir(in_args.outdir):
+        logging.info("Creating output directory: %s" % in_args.outdir)
+        os.makedirs(in_args.outdir)
 
-    sequences = Sb.SeqBuddy(in_args.sequences)
-    seq_ids_hash = md5_hash("".join(sorted([rec.id for rec in sequences.records])))
-    previous_run = False
-
-    if os.path.exists("%s/.rdmcl" % in_args.outdir):
-        with open("%s/.rdmcl" % in_args.outdir, "r") as hash_file:
-            previous_run = hash_file.read()
-
-    if os.path.exists(in_args.outdir):
-        if previous_run == seq_ids_hash:
-            logging.warning("RESUME: This output directory was previous used for an identical RD-MCL run; any\n"
-                            "        cached resources will be reused.")
-        else:
-            check = MyFuncs.ask("Output directory already exists, continue [y]/n?") if not in_args.force else True
-            if not check:
-                logging.warning("Program aborted by user.")
-                sys.exit()
-
+    logging.warning("Launching SQLite Daemon")
     broker_queue = SimpleQueue()
     broker = Process(target=broker_func, args=[broker_queue], daemon=True)
     broker.start()
+
+    sequences = Sb.SeqBuddy(in_args.sequences)
+    seq_ids_hash = md5_hash("".join(sorted([rec.id for rec in sequences.records])))
+
+    if fetch(seq_ids_hash, 'hash') == seq_ids_hash:
+        logging.warning("RESUME: This output directory was previous used for an identical RD-MCL run; any\n"
+                        "        cached resources will be reused.")
 
     # Make sure all the necessary directories are present and emptied of old run files
     for outdir in ["%s%s" % (in_args.outdir, x) for x in ["", "/alignments", "/mcmcmc", "/sim_scores", "/psi_pred"]]:
