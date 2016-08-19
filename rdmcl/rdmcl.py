@@ -966,7 +966,7 @@ if __name__ == '__main__':
                 sys.exit()
 
     broker_queue = SimpleQueue()
-    broker = Process(target=broker_func, args=[broker_queue])
+    broker = Process(target=broker_func, args=[broker_queue], daemon=True)
     broker.start()
 
     # Make sure all the necessary directories are present and emptied of old run files
