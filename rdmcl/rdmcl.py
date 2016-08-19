@@ -149,8 +149,8 @@ class Cluster(object):
             raise AttributeError("Cannot create a root Cluster object without specifying an output directory.")
         self.out_dir = out_dir if out_dir else parent.out_dir
 
-        self._subgroup_counter = 0
-        self._clique_counter = 0
+        self.subgroup_counter = 0
+        self.clique_counter = 0
         self.clique = clique
         self.cliques = None
         self.cluster_score = None
@@ -216,11 +216,11 @@ class Cluster(object):
         elif not self.parent.name():
             raise ValueError("Parent of current cluster has not been named.\n%s" % self)
         elif self.clique:
-            self._name = "%s_c%s" % (self.parent.name(), self.parent._clique_counter)
-            self.parent._clique_counter += 1
+            self._name = "%s_c%s" % (self.parent.name(), self.parent.clique_counter)
+            self.parent.clique_counter += 1
         else:
-            self._name = "%s_%s" % (self.parent.name(), self.parent._subgroup_counter)
-            self.parent._subgroup_counter += 1
+            self._name = "%s_%s" % (self.parent.name(), self.parent.subgroup_counter)
+            self.parent.subgroup_counter += 1
             if self.cliques and self.cliques[0]:
                 for clique in self.cliques:
                     clique.set_name()
@@ -528,7 +528,6 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     :return: list of sequence_ids objects
     """
     def save_cluster():
-        master_cluster.set_name()
         cluster_list.append(master_cluster)
         if not os.path.isdir("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name())):
             temp_dir.save("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name()))
@@ -536,10 +535,17 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
         alignment.write("%s/alignments/%s.aln" % (in_args.outdir, master_cluster.name()))
         master_cluster.sim_scores.to_csv("%s/sim_scores/%s.scores" % (in_args.outdir, master_cluster.name()),
                                          header=None, index=False, sep="\t")
+
+        with open("%s/.progress" % in_args.outdir, "r") as ifile:
+            _progress = json.load(ifile)
+            _progress["placed"] += len(master_cluster.seq_ids) if not master_cluster.subgroup_counter else 0
+        with open("%s/.progress" % in_args.outdir, "w") as _ofile:
+            json.dump(_progress, _ofile)
         return
 
     temp_dir = MyFuncs.TempDir()
     master_cluster.sim_scores.to_csv("%s/input.csv" % temp_dir.path, header=None, index=False, sep="\t")
+    master_cluster.set_name()
 
     inflation_var = mcmcmc.Variable("I", 1.1, 20)
     gq_var = mcmcmc.Variable("gq", min(master_cluster.sim_scores.score), max(master_cluster.sim_scores.score))
@@ -547,12 +553,6 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     try:
         with open("%s/max.txt" % temp_dir.path, "w") as ofile:
             ofile.write("-1000000000")
-        with lock:
-            with open("%s/.progress" % in_args.outdir, "r") as ifile:
-                _progress = json.load(ifile)
-                _progress["placed"] = sum([len(cluster.seq_ids) for cluster in cluster_list])
-            with open("%s/.progress" % in_args.outdir, "w") as ofile:
-                json.dump(_progress, ofile)
 
         mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1,
                                        params=["%s" % temp_dir.path, False, seqbuddy, master_cluster], quiet=quiet,
