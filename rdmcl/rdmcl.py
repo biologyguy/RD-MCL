@@ -72,13 +72,13 @@ def broker_func(queue):
     connection = sqlite3.connect(sqlite_file)
     cursor = connection.cursor()
     if not previous_run:
-        cursor.execute("CREATE TABLE data_table (hash TEXT PRIMARY KEY, alignment TEXT, graph TEXT, "
+        cursor.execute("CREATE TABLE data_table (hash TEXT PRIMARY KEY, seq_ids TEXT, alignment TEXT, graph TEXT, "
                        "cluster_score TEXT)")
     while True:
         if not queue.empty():
-            output = queue.get()
-            if output[0] == 'push':
-                hash_id, field, data = output[1:4]
+            broker_output = queue.get()
+            if broker_output[0] == 'push':
+                hash_id, field, data = broker_output[1:4]
                 try:
                     cursor.execute("INSERT INTO data_table (hash, {0}) VALUES ('{1}', '{2}')"
                                    .format(field, hash_id, data))
@@ -86,8 +86,8 @@ def broker_func(queue):
                     cursor.execute("UPDATE data_table SET {0}=('{1}') WHERE hash=('{2}')"
                                    .format(field, data, hash_id))
                 connection.commit()
-            elif output[0] == 'fetch':
-                hash_id, field, pipe = output[1:4]
+            elif broker_output[0] == 'fetch':
+                hash_id, field, pipe = broker_output[1:4]
                 cursor.execute("SELECT ({0}) FROM data_table WHERE hash='{1}'".format(field, hash_id))
                 response = cursor.fetchone()
                 if response is None or len(response) == 0:
@@ -95,18 +95,20 @@ def broker_func(queue):
                 else:
                     response = response[0]
                 pipe.send(response)
-            elif output[0] == 'scored':
-                pipe = output[1]
+            elif broker_output[0] == 'scored':
+                pipe = broker_output[1]
                 cursor.execute("SELECT (hash) FROM data_table WHERE cluster_score IS NOT NULL")
                 response = cursor.fetchall()
                 response = [x[0] for x in response]
                 pipe.send(json.dumps(response))
             else:
-                raise RuntimeError("Invalid instruction for broker. Must be either put or fetch, not %s." % output[0])
+                raise RuntimeError("Broker instruction must be either 'put' or 'fetch', not %s." % broker_output[0])
         connection.commit()
+
 
 def push(hash_id, field, data):
     broker_queue.put(('push', hash_id, field, data))
+
 
 def fetch(hash_id, field):
     recvpipe, sendpipe = Pipe(False)
@@ -114,11 +116,13 @@ def fetch(hash_id, field):
     response = recvpipe.recv()
     return response
 
+
 def scored_clusters():
     recvpipe, sendpipe = Pipe(False)
     broker_queue.put(('scored', sendpipe))
     response = json.loads(recvpipe.recv())
     return response
+
 
 class Cluster(object):
     def __init__(self, seq_ids, sim_scores, out_dir=None, parent=None, clique=False):
@@ -150,7 +154,6 @@ class Cluster(object):
         self.cluster_score = None
         self.collapsed_genes = OrderedDict()  # If paralogs are reciprocal best hits, collapse them
         self._name = None
-        self.similarity_graphs = "%s/sim_scores/all_graphs" % self.out_dir
         for next_seq_id in seq_ids:
             taxa = next_seq_id.split("-")[0]
             self.taxa.setdefault(taxa, [])
@@ -576,7 +579,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
         if master_cluster.name() != "group_0":
             master_cluster.set_name()
             cluster_list.append(master_cluster)
-            save_cluster()
+        save_cluster()
         return cluster_list
 
     mcl_clusters = parse_mcl_clusters("%s/best_group" % temp_dir.path)
@@ -592,13 +595,13 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
         seqbuddy_copy = Sb.make_copy(seqbuddy)
         seqbuddy_copy = Sb.pull_recs(seqbuddy_copy, ["^%s$" % rec_id for rec_id in sub_cluster.seq_ids])
 
-        # Recursion...
-        cluster_list += orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, steps=steps, quiet=quiet,)
+        # Recursion... Reassign cluster_list, as all clusters are returned at the end of a call to orthogroup_caller
+        cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, steps=steps, quiet=quiet,)
 
     if master_cluster.name() != "group_0":
         master_cluster.set_name()
         cluster_list.append(master_cluster)
-        save_cluster()
+    save_cluster()
     return cluster_list
 
 
@@ -804,6 +807,7 @@ def generate_msa(seqbuddy):
         else:
             alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -1", quiet=True)
         push(seq_id_hash, 'alignment', str(alignment))
+        push(seq_id_hash, 'seq_ids', str(", ".join(seq_ids)))
     return alignment
 
 
@@ -982,12 +986,6 @@ if __name__ == '__main__':
 
     with open("%s/.rdmcl" % in_args.outdir, "w") as hash_file:
         hash_file.write(seq_ids_hash)
-
-    if not os.path.isdir("%s/sim_scores/all_graphs" % in_args.outdir):
-        os.makedirs("%s/sim_scores/all_graphs" % in_args.outdir)
-
-    if not os.path.isdir("%s/alignments/all_alignments" % in_args.outdir):
-        os.makedirs("%s/alignments/all_alignments" % in_args.outdir)
 
     root, dirs, files = next(os.walk("%s/mcmcmc" % in_args.outdir))
     for _dir in dirs:
