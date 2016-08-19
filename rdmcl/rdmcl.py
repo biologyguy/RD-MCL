@@ -37,7 +37,7 @@ from copy import copy
 from subprocess import Popen, PIPE, check_output
 from multiprocessing import Lock, Process, SimpleQueue, Pipe
 from random import random
-from math import log
+from math import log, floor
 from hashlib import md5
 from collections import OrderedDict
 
@@ -49,7 +49,7 @@ import scipy.stats
 from Bio.SubsMat import SeqMat, MatrixInfo
 
 # My packages
-import mcmcmc  # Note: This is in ../utilities and sym-linked to python3.5/site-packages
+import mcmcmc
 import MyFuncs
 from buddysuite import SeqBuddy as Sb
 from buddysuite import AlignBuddy as Alb
@@ -727,61 +727,62 @@ def place_orphans(clusters, scores):
 # NOTE: There used to be a support function. Check the workscripts GitHub history
 
 
-def score_sequences(seq_pair, args):
+def score_sequences(seq_pairs, args):
     # Calculate the best possible scores, and divide by the observed scores
-    id1, id2 = seq_pair
-    alb_obj, psi_pred_files, putput_file = args
-    id_regex = "^%s$|^%s$" % (id1, id2)
-    alb_copy = Alb.make_copy(alb_obj)
-    Alb.pull_records(alb_copy, id_regex)
-    observed_score = 0
-    seq1_best = 0
-    seq2_best = 0
-    seq1, seq2 = alb_copy.records()
-    prev_aa1 = "-"
-    prev_aa2 = "-"
+    for seq_pair in seq_pairs:
+        id1, id2 = seq_pair
+        alb_obj, psi_pred_files, putput_file = args
+        id_regex = "^%s$|^%s$" % (id1, id2)
+        alb_copy = Alb.make_copy(alb_obj)
+        Alb.pull_records(alb_copy, id_regex)
+        observed_score = 0
+        seq1_best = 0
+        seq2_best = 0
+        seq1, seq2 = alb_copy.records()
+        prev_aa1 = "-"
+        prev_aa2 = "-"
 
-    for aa_pos in range(alb_copy.lengths()[0]):
-        aa1 = seq1.seq[aa_pos]
-        aa2 = seq2.seq[aa_pos]
+        for aa_pos in range(alb_copy.lengths()[0]):
+            aa1 = seq1.seq[aa_pos]
+            aa2 = seq2.seq[aa_pos]
 
-        if aa1 != "-":
-            seq1_best += BLOSUM62[aa1, aa1]
-        if aa2 != "-":
-            seq2_best += BLOSUM62[aa2, aa2]
+            if aa1 != "-":
+                seq1_best += BLOSUM62[aa1, aa1]
+            if aa2 != "-":
+                seq2_best += BLOSUM62[aa2, aa2]
 
-        if aa1 == "-" or aa2 == "-":
-            if prev_aa1 == "-" or prev_aa2 == "-":
-                observed_score += gap_extend
+            if aa1 == "-" or aa2 == "-":
+                if prev_aa1 == "-" or prev_aa2 == "-":
+                    observed_score += gap_extend
+                else:
+                    observed_score += gap_open
             else:
-                observed_score += gap_open
-        else:
-            observed_score += BLOSUM62[aa1, aa2]
-        prev_aa1 = str(aa1)
-        prev_aa2 = str(aa2)
+                observed_score += BLOSUM62[aa1, aa2]
+            prev_aa1 = str(aa1)
+            prev_aa2 = str(aa2)
 
-    subs_mat_score = ((observed_score / seq1_best) + (observed_score / seq1_best)) / 2
+        subs_mat_score = ((observed_score / seq1_best) + (observed_score / seq1_best)) / 2
 
-    # PSI PRED comparison
-    num_gaps = 0
-    ss_score = 0
-    for row1 in psi_pred_files[id1].itertuples():
-        if (psi_pred_files[id2]["indx"] == row1.indx).any():
-            row2 = psi_pred_files[id2].loc[psi_pred_files[id2]["indx"] == row1.indx]
-            row_score = 0
-            row_score += 1 - abs(float(row1.coil_prob) - float(row2.coil_prob))
-            row_score += 1 - abs(float(row1.helix_prob) - float(row2.helix_prob))
-            row_score += 1 - abs(float(row1.sheet_prob) - float(row2.sheet_prob))
-            ss_score += row_score / 3
-        else:
-            num_gaps += 1
+        # PSI PRED comparison
+        num_gaps = 0
+        ss_score = 0
+        for row1 in psi_pred_files[id1].itertuples():
+            if (psi_pred_files[id2]["indx"] == row1.indx).any():
+                row2 = psi_pred_files[id2].loc[psi_pred_files[id2]["indx"] == row1.indx]
+                row_score = 0
+                row_score += 1 - abs(float(row1.coil_prob) - float(row2.coil_prob))
+                row_score += 1 - abs(float(row1.helix_prob) - float(row2.helix_prob))
+                row_score += 1 - abs(float(row1.sheet_prob) - float(row2.sheet_prob))
+                ss_score += row_score / 3
+            else:
+                num_gaps += 1
 
-    align_len = len(psi_pred_files[id2]) + num_gaps
-    ss_score /= align_len
-    final_score = (ss_score * 0.3) + (subs_mat_score * 0.7)
-    with lock:
-        with open(putput_file, "a") as ofile:
-            ofile.write("\n%s,%s,%s" % (id1, id2, final_score))
+        align_len = len(psi_pred_files[id2]) + num_gaps
+        ss_score /= align_len
+        final_score = (ss_score * 0.3) + (subs_mat_score * 0.7)
+        with lock:
+            with open(putput_file, "a") as ofile:
+                ofile.write("\n%s,%s,%s" % (id1, id2, final_score))
     return
 
 
@@ -858,8 +859,11 @@ def create_all_by_all_scores(alignment, quiet=False):
 
     ofile = MyFuncs.TempFile()
     ofile.write("seq1,seq2,score")
-    printer.clear()
-    MyFuncs.run_multicore_function(all_by_all, score_sequences, [alignment, psi_pred_files, ofile.path], quiet=quiet)
+    if all_by_all:
+        n = floor(len(all_by_all) / cpus)
+        n = 1 if not n else n
+        all_by_all = [all_by_all[i:i + n] for i in range(0, len(all_by_all), n)] if all_by_all else []
+        MyFuncs.run_multicore_function(all_by_all, score_sequences, [alignment, psi_pred_files, ofile.path], quiet=quiet)
     sim_scores = pd.read_csv(ofile.path, index_col=False)
     return sim_scores
 
@@ -993,7 +997,7 @@ if __name__ == '__main__':
     best = None
     best_clusters = None
     lock = Lock()
-    printer = MyFuncs.DynamicPrint(quiet=in_args.quiet)
+    cpus = MyFuncs.cpu_count()
     timer = MyFuncs.Timer()
 
     BLOSUM62 = make_full_mat(SeqMat(MatrixInfo.blosum62))
@@ -1113,11 +1117,12 @@ if __name__ == '__main__':
                 _max = (ind, len(clust.seq_ids))
 
         ind, max_clust = _max[0], final_clusters[_max[0]]
+        if max_clust.subgroup_counter == 0:  # Don't want to include parents of subgroups
+            output += "group_%s\t%s\t" % (max_clust.name(), round(max_clust.score(), 4))
+            for seq_id in max_clust.seq_ids:
+                output += "%s\t" % seq_id
+            output = "%s\n" % output.strip()
         del final_clusters[ind]
-        output += "group_%s\t%s\t" % (max_clust.name(), round(max_clust.score(), 4))
-        for seq_id in max_clust.seq_ids:
-            output += "%s\t" % seq_id
-        output = "%s\n" % output.strip()
 
     logging.warning("\t-- finished in %s --" % timer.split())
 
