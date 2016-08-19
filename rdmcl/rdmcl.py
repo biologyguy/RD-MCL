@@ -19,8 +19,8 @@ repository: https://github.com/biologyguy/RD-MCL
 © license: None, this work is public domain
 
 Description:
-Convert an all-by-all scores matrix into groups. MCMCMC-driven MCL is the basic work horse for clustering, and then
-the groups are refined further to include singletons and doublets and/or be broken up into cliques, where appropriate.
+Identify 'orthogroup' from a collection of sequences. MCMCMC-driven MCL is the basic workhorse for clustering, and then
+the groups are refined further to include orphan sequences and/or be broken up into RBH-cliques, where appropriate.
 """
 
 # Std library
@@ -157,7 +157,7 @@ class Cluster(object):
         self.collapsed_genes = OrderedDict()  # If paralogs are reciprocal best hits, collapse them
         self._name = None
         for next_seq_id in seq_ids:
-            taxa = next_seq_id.split("-")[0]
+            taxa = next_seq_id.split(in_args.taxa_separator)[0]
             self.taxa.setdefault(taxa, [])
             self.taxa[taxa].append(next_seq_id)
 
@@ -177,11 +177,11 @@ class Cluster(object):
             while not breakout:
                 breakout = True
                 for seq1_id in seq_ids:
-                    seq1_taxa = seq1_id.split("-")[0]
+                    seq1_taxa = seq1_id.split(in_args.taxa_separator)[0]
                     paralog_best_hits = []
                     for hit in self._get_best_hits(seq1_id).itertuples():
                         seq2_id = hit.seq1 if hit.seq1 != seq1_id else hit.seq2
-                        if seq2_id.split("-")[0] != seq1_taxa:
+                        if seq2_id.split(in_args.taxa_separator)[0] != seq1_taxa:
                             paralog_best_hits = []
                             break
                         paralog_best_hits.append(seq2_id)
@@ -395,7 +395,7 @@ class Cluster(object):
 
         taxa = OrderedDict()
         for gene in id_list:
-            taxon = gene.split("-")[0]
+            taxon = gene.split(in_args.taxa_separator)[0]
             taxa.setdefault(taxon, [])
             taxa[taxon].append(gene)
 
@@ -796,7 +796,7 @@ def generate_msa(seqbuddy):
         if len(seqbuddy) == 1:
             alignment = Alb.AlignBuddy(str(seqbuddy))
         else:
-            alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -1", quiet=True)
+            alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -2", quiet=True)
         push(seq_id_hash, 'alignment', str(alignment))
         push(seq_id_hash, 'seq_ids', str(", ".join(seq_ids)))
     return alignment
@@ -886,6 +886,21 @@ class Logger(object):
         return
 
 
+def check_sequences(seqbuddy):
+    logging.warning("Checking that the format of all sequence ids matches 'taxa%sgene'" % in_args.taxa_separator)
+    failures = []
+    for rec in seqbuddy.records:
+        rec_id = rec.id.split(in_args.taxa_separator)
+        if len(rec_id) != 2:
+            failures.append(rec.id)
+    if failures:
+        logging.error("Malformed sequence id(s): '%s'\nThe taxa separator character is currently set to '%s',\n"
+                      " which can be changed with the '-ts' flag" % (", ".join(failures), in_args.taxa_separator))
+        sys.exit()
+    else:
+        logging.warning("    %s sequences PASSED" % len(seqbuddy))
+    return
+
 if __name__ == '__main__':
 
     import argparse
@@ -903,12 +918,14 @@ if __name__ == '__main__':
                         help="Do not check for or break up cliques. For testing.")
     parser.add_argument("-ssf", "--supress_singlet_folding", action="store_true",
                         help="Do not check for or merge singlets. For testing.")
+    parser.add_argument("-nt", "--no_msa_trim", action="store_true",
+                        help="Don't apply the gappyout algorithm to MSAs before scoring")
     parser.add_argument("-op", "--open_penalty", help="Penalty for opening a gap in pairwise alignment scoring",
                         type=float, default=-5)
     parser.add_argument("-ep", "--extend_penalty", help="Penalty for extending a gap in pairwise alignment scoring",
                         type=float, default=0)
-    parser.add_argument("-nt", "--no_msa_trim", action="store_true",
-                        help="Don't apply the gappyout algorithm to MSAs before scoring")
+    parser.add_argument("-ts", "--taxa_separator", action="store", default="-",
+                        help="Specify a string that separates taxa ids from gene names")
     parser.add_argument("-f", "--force", action="store_true",
                         help="Overwrite previous run")
     parser.add_argument("-q", "--quiet", action="store_true",
@@ -942,10 +959,12 @@ if __name__ == '__main__':
 
     logging.warning("\nLaunching SQLite Daemon")
     broker_queue = SimpleQueue()
-    broker = Process(target=broker_func, args=[broker_queue], daemon=True)
+    broker = Process(target=broker_func, args=[broker_queue])
+    broker.daemon = True
     broker.start()
 
     sequences = Sb.SeqBuddy(in_args.sequences)
+    check_sequences(sequences)
     seq_ids_hash = md5_hash("".join(sorted([rec.id for rec in sequences.records])))
 
     if fetch(seq_ids_hash, 'hash') == seq_ids_hash:
@@ -1049,7 +1068,7 @@ if __name__ == '__main__':
             json.dump(group_0_cluster.collapsed_genes, outfile)
             logging.warning(" Cliques written to: %s/paralog_cliques.json" % in_args.outdir)
 
-    # taxa_count = [x.split("-")[0] for x in group_0_cluster.seq_ids]
+    # taxa_count = [x.split(in_args.taxa_separator)[0] for x in group_0_cluster.seq_ids]
     # taxa_count = pd.Series(taxa_count)
     # taxa_count = taxa_count.value_counts()
 
