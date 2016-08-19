@@ -56,7 +56,7 @@ from buddysuite import AlignBuddy as Alb
 
 git_commit = check_output(['git', 'rev-parse', '--short', 'HEAD']).decode().strip()
 git_commit = " (git %s)" % git_commit if git_commit else ""
-VERSION = "0.1.alpha%s" % git_commit
+VERSION = "1.alpha%s" % git_commit
 NOTICE = '''\
 Public Domain Notice
 --------------------
@@ -69,6 +69,7 @@ Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
 
 def broker_func(queue):
     sqlite_file = "{0}/sqlite_db.sqlite".format(in_args.outdir)
+    logging.info("SQLite database saved to %s" % sqlite_file)
     previous_run = True if os.path.isfile(sqlite_file) else False
     connection = sqlite3.connect(sqlite_file)
     cursor = connection.cursor()
@@ -527,6 +528,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     :return: list of sequence_ids objects
     """
     def save_cluster():
+        master_cluster.set_name()
+        cluster_list.append(master_cluster)
         if not os.path.isdir("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name())):
             temp_dir.save("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name()))
         alignment = generate_msa(seqbuddy)
@@ -570,9 +573,6 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
 
     best_score = max(mcmcmc_output["result"])
     if best_score <= master_cluster.score():
-        if master_cluster.name() != "group_0":
-            master_cluster.set_name()
-            cluster_list.append(master_cluster)
         save_cluster()
         return cluster_list
 
@@ -592,9 +592,6 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
         # Recursion... Reassign cluster_list, as all clusters are returned at the end of a call to orthogroup_caller
         cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, steps=steps, quiet=quiet,)
 
-    if master_cluster.name() != "group_0":
-        master_cluster.set_name()
-        cluster_list.append(master_cluster)
     save_cluster()
     return cluster_list
 
@@ -924,6 +921,7 @@ if __name__ == '__main__':
     logging.warning("RD-MCL version %s\n\n%s" % (VERSION, NOTICE))
     logging.info("********************************************************************************************\n")
     logging.info("Function call: %s" % " ".join(sys.argv))
+    logging.info("\n** Environment setup **")
     logging.info("Working directory: %s" % os.getcwd())
     if not shutil.which("mcl"):
         logging.error("The 'mcl' program is not detected on your system (see http://micans.org/mcl/).")
@@ -942,7 +940,7 @@ if __name__ == '__main__':
         logging.info("Creating output directory: %s" % in_args.outdir)
         os.makedirs(in_args.outdir)
 
-    logging.warning("Launching SQLite Daemon")
+    logging.warning("\nLaunching SQLite Daemon")
     broker_queue = SimpleQueue()
     broker = Process(target=broker_func, args=[broker_queue], daemon=True)
     broker.start()
@@ -951,26 +949,22 @@ if __name__ == '__main__':
     seq_ids_hash = md5_hash("".join(sorted([rec.id for rec in sequences.records])))
 
     if fetch(seq_ids_hash, 'hash') == seq_ids_hash:
-        logging.warning("RESUME: This output directory was previous used for an identical RD-MCL run; any\n"
-                        "        cached resources will be reused.")
+        logging.warning("RESUME: This output directory was previous used for an identical RD-MCL run.\n"
+                        "        All cached resources will be reused.")
 
     # Make sure all the necessary directories are present and emptied of old run files
     for outdir in ["%s%s" % (in_args.outdir, x) for x in ["", "/alignments", "/mcmcmc", "/sim_scores", "/psi_pred"]]:
         if not os.path.isdir(outdir):
             logging.info("mkdir %s" % outdir)
             os.makedirs(outdir)
-        elif "psi_pred" not in outdir:  # Delete old files
-            root, dirs, files = next(os.walk(outdir))
-            for file in files:
-                if file != 'sqlite_db.sqlite':
-                    os.remove("%s/%s" % (root, file))
-
-    with open("%s/.rdmcl" % in_args.outdir, "w") as hash_file:
-        hash_file.write(seq_ids_hash)
-
-    root, dirs, files = next(os.walk("%s/mcmcmc" % in_args.outdir))
-    for _dir in dirs:
-        shutil.rmtree("%s/%s" % (root, _dir))
+        # Delete old 'group' files/directories
+        root, dirs, files = next(os.walk(outdir))
+        for _file in files:
+            if "group" in _file:
+                os.remove("%s/%s" % (root, _file))
+        for _dir in dirs:
+            if "group" in _dir:
+                shutil.rmtree("%s/%s" % (root, _dir))
 
     # Move log file into output directory
     logger_obj.move_log("%s/rdmcl.log" % in_args.outdir)
@@ -1070,6 +1064,7 @@ if __name__ == '__main__':
     final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences,
                                        steps=in_args.mcmcmc_steps, quiet=True)
     run_time.end()
+
     with open("%s/.progress" % in_args.outdir, "r") as progress_file:
         progress_dict = json.load(progress_file)
     logging.warning("Total MCL runs: %s" % progress_dict["mcl_runs"])
