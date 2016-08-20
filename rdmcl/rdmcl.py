@@ -544,9 +544,19 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
             json.dump(_progress, _ofile)
         return
 
+    master_cluster.set_name()
     temp_dir = MyFuncs.TempDir()
     master_cluster.sim_scores.to_csv("%s/input.csv" % temp_dir.path, header=None, index=False, sep="\t")
-    master_cluster.set_name()
+
+    # If there are no paralogs in the cluster, then it is already at its highest score and MCL is unnecessary
+    keep_going = False
+    for taxon, genes in master_cluster.taxa.items():
+        if len(genes) > 1:
+            keep_going = True
+            break
+    if not keep_going:
+        save_cluster()
+        return cluster_list
 
     inflation_var = mcmcmc.Variable("I", 1.1, 20)
     gq_var = mcmcmc.Variable("gq", min(master_cluster.sim_scores.score), max(master_cluster.sim_scores.score))
