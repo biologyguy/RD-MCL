@@ -37,7 +37,7 @@ from copy import copy
 from subprocess import Popen, PIPE, check_output
 from multiprocessing import Lock, Process, SimpleQueue, Pipe
 from random import random
-from math import log, floor
+from math import log, ceil
 from hashlib import md5
 from collections import OrderedDict
 
@@ -68,6 +68,7 @@ Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
 
 
 def broker_func(queue):
+    # Good SQLite tutorial: http://sebastianraschka.com/Articles/2014_sqlite_in_python_tutorial.html
     sqlite_file = "{0}/sqlite_db.sqlite".format(in_args.outdir)
     logging.info("SQLite database saved to %s" % sqlite_file)
     previous_run = True if os.path.isfile(sqlite_file) else False
@@ -599,10 +600,13 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
 def progress():
     with lock:
         with open("%s/.progress" % in_args.outdir, "r") as ifile:
-            _progress = json.load(ifile)
-        return "MCL runs processed: %s. Sequences placed: %s/%s. Run time: " % (_progress['mcl_runs'],
-                                                                                _progress['placed'],
-                                                                                _progress['total'])
+            try:
+                _progress = json.load(ifile)
+                return "MCL runs processed: %s. Sequences placed: %s/%s. Run time: " % (_progress['mcl_runs'],
+                                                                                        _progress['placed'],
+                                                                                        _progress['total'])
+            except json.decoder.JSONDecodeError:
+                pass
 
 
 def parse_mcl_clusters(path):
@@ -860,8 +864,7 @@ def create_all_by_all_scores(alignment, quiet=False):
     ofile = MyFuncs.TempFile()
     ofile.write("seq1,seq2,score")
     if all_by_all:
-        n = floor(len(all_by_all) / cpus)
-        n = 1 if not n else n
+        n = ceil(len(all_by_all) / cpus)
         all_by_all = [all_by_all[i:i + n] for i in range(0, len(all_by_all), n)] if all_by_all else []
         MyFuncs.run_multicore_function(all_by_all, score_sequences, [alignment, psi_pred_files, ofile.path], quiet=quiet)
     sim_scores = pd.read_csv(ofile.path, index_col=False)
@@ -942,7 +945,7 @@ if __name__ == '__main__':
     logging.warning("RD-MCL version %s\n\n%s" % (VERSION, NOTICE))
     logging.info("********************************************************************************************\n")
     logging.info("Function call: %s" % " ".join(sys.argv))
-    logging.info("\n** Environment setup **")
+    logging.warning("\n** Environment setup **")
     logging.info("Working directory: %s" % os.getcwd())
     if not shutil.which("mcl"):
         logging.error("The 'mcl' program is not detected on your system (see http://micans.org/mcl/).")
@@ -961,7 +964,8 @@ if __name__ == '__main__':
         logging.info("Creating output directory: %s" % in_args.outdir)
         os.makedirs(in_args.outdir)
 
-    logging.warning("\nLaunching SQLite Daemon")
+    logging.info("")  # Just want to insert an extra line break for asthetics
+    logging.warning("Launching SQLite Daemon")
     broker_queue = SimpleQueue()
     broker = Process(target=broker_func, args=[broker_queue])
     broker.daemon = True
@@ -997,7 +1001,7 @@ if __name__ == '__main__':
     best = None
     best_clusters = None
     lock = Lock()
-    cpus = MyFuncs.cpu_count()
+    cpus = MyFuncs.usable_cpu_count()
     timer = MyFuncs.Timer()
 
     BLOSUM62 = make_full_mat(SeqMat(MatrixInfo.blosum62))
