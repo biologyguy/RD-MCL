@@ -233,23 +233,6 @@ class Cluster(object):
         print("name: %s, matches: %s, weighted_match: %s" % (self.name(), len(matches), weighted_match))
         return weighted_match
 
-    ''' Delete this or refactor to do a new alignment for a proper subcluster (probably better to refactor).
-    def sub_cluster(self, id_list):
-        sim_scores = pd.DataFrame()
-        for gene in id_list:
-            if gene not in self.sequence_ids:
-                raise NameError("Gene id '%s' not present in parental sequence_ids" % gene)
-            seq1_scores = self.sim_scores[self.sim_scores.seq1 == gene]
-            seq1_scores = seq1_scores[seq1_scores.seq2.isin(id_list)]
-            seq2_scores = self.sim_scores[self.sim_scores.seq2 == gene]
-            seq2_scores = seq2_scores[seq2_scores.seq1.isin(id_list)]
-            scores = pd.concat([seq1_scores, seq2_scores])
-            sim_scores = sim_scores.append(scores)
-        sim_scores = sim_scores.drop_duplicates()
-        subcluster = Cluster(id_list, sim_scores, _parent=self)
-        return subcluster
-    '''
-
     def name(self):
         return self._name
 
@@ -795,8 +778,8 @@ def score_sequences(seq_pairs, args):
 
         align_len = len(psi_pred_files[id2]) + num_gaps
         ss_score /= align_len
-        final_score = (ss_score * 0.3) + (subs_mat_score * 0.7)
-        ofile.write("\n%s,%s,%s" % (id1, id2, final_score))
+        pair_score = (ss_score * 0.3) + (subs_mat_score * 0.7)
+        ofile.write("\n%s,%s,%s" % (id1, id2, pair_score))
     ofile.close()
     return
 
@@ -1076,8 +1059,10 @@ if __name__ == '__main__':
 
     else:
         logging.warning("Generating initial all-by-all similarity graph")
+        logging.info(" written to: %s/sim_scores/complete_all_by_all.scores" % in_args.outdir)
         scores_data = create_all_by_all_scores(alignbuddy)
-        scores_data.to_csv("%s/sim_scores/group_0.scores" % in_args.outdir, header=None, index=False, sep="\t")
+        scores_data.to_csv("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir,
+                           header=None, index=False, sep="\t")
         push(seq_ids_hash, 'graph', scores_data.to_csv(header=None, index=False))
         group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data, out_dir=in_args.outdir)
         logging.info("\t-- finished in %s --" % timer.split())
