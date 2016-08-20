@@ -733,9 +733,11 @@ def place_orphans(clusters, scores):
 
 def score_sequences(seq_pairs, args):
     # Calculate the best possible scores, and divide by the observed scores
+    alb_obj, psi_pred_files, output_dir = args
+    file_name = md5_hash(str(seq_pairs))
+    ofile = open("%s/%s" % (output_dir, file_name), "w")
     for seq_pair in seq_pairs:
         id1, id2 = seq_pair
-        alb_obj, psi_pred_files, putput_file = args
         id_regex = "^%s$|^%s$" % (id1, id2)
         alb_copy = Alb.make_copy(alb_obj)
         Alb.pull_records(alb_copy, id_regex)
@@ -784,9 +786,8 @@ def score_sequences(seq_pairs, args):
         align_len = len(psi_pred_files[id2]) + num_gaps
         ss_score /= align_len
         final_score = (ss_score * 0.3) + (subs_mat_score * 0.7)
-        with lock:
-            with open(putput_file, "a") as ofile:
-                ofile.write("\n%s,%s,%s" % (id1, id2, final_score))
+        ofile.write("\n%s,%s,%s" % (id1, id2, final_score))
+    ofile.close()
     return
 
 
@@ -861,13 +862,19 @@ def create_all_by_all_scores(alignment, quiet=False):
         for rec2 in ids2:
             all_by_all.append((rec1, rec2))
 
-    ofile = MyFuncs.TempFile()
-    ofile.write("seq1,seq2,score")
+    all_by_all_outdir = MyFuncs.TempDir()
     if all_by_all:
         n = ceil(len(all_by_all) / cpus)
         all_by_all = [all_by_all[i:i + n] for i in range(0, len(all_by_all), n)] if all_by_all else []
-        MyFuncs.run_multicore_function(all_by_all, score_sequences, [alignment, psi_pred_files, ofile.path], quiet=quiet)
-    sim_scores = pd.read_csv(ofile.path, index_col=False)
+        MyFuncs.run_multicore_function(all_by_all, score_sequences, [alignment, psi_pred_files, all_by_all_outdir.path],
+                                       quiet=quiet)
+    sim_scores_file = MyFuncs.TempFile()
+    sim_scores_file.write("seq1,seq2,score")
+    aba_root, aba_dirs, aba_files = next(os.walk(all_by_all_outdir.path))
+    for aba_file in aba_files:
+        with open("%s/%s" % (aba_root, aba_file), "r") as ifile:
+            sim_scores_file.write(ifile.read())
+    sim_scores = pd.read_csv(sim_scores_file.get_handle("r"), index_col=False)
     return sim_scores
 
 
