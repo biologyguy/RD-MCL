@@ -1130,6 +1130,7 @@ if __name__ == '__main__':
                     clust.seq_ids += paralogs
 
     logging.warning("Preparing final_clusters.txt")
+    final_score = 0
     output = ""
     while len(final_clusters) > 0:
         _max = (0, 0)
@@ -1140,7 +1141,8 @@ if __name__ == '__main__':
         ind, max_clust = _max[0], final_clusters[_max[0]]
         if max_clust.subgroup_counter == 0:  # Don't want to include parents of subgroups
             output += "group_%s\t%s\t" % (max_clust.name(), round(max_clust.score(), 4))
-            for seq_id in max_clust.seq_ids:
+            final_score += max_clust.score()
+            for seq_id in sorted(max_clust.seq_ids):
                 output += "%s\t" % seq_id
             output = "%s\n" % output.strip()
         del final_clusters[ind]
@@ -1150,7 +1152,8 @@ if __name__ == '__main__':
     logging.warning("\nTotal execution time: %s" % timer.total_elapsed())
     with open("%s/final_clusters.txt" % in_args.outdir, "w") as outfile:
         outfile.write(output)
-        logging.warning("Final clusters written to: %s/final_clusters.txt" % in_args.outdir)
+        logging.warning("Final score: %s" % round(final_score, 4))
+        logging.warning("Clusters written to: %s/final_clusters.txt" % in_args.outdir)
 
     while not broker_queue.empty():
         pass
