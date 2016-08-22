@@ -151,9 +151,9 @@ class Cluster(object):
         self.out_dir = out_dir if out_dir else parent.out_dir
 
         self.subgroup_counter = 0
-        self.clique_counter = 0
-        self.clique = clique
-        self.cliques = None
+        #self.clique_counter = 0
+        #self.clique = clique
+        #self.cliques = []
         self.cluster_score = None
         self.collapsed_genes = OrderedDict()  # If paralogs are reciprocal best hits, collapse them
         self._name = None
@@ -162,8 +162,8 @@ class Cluster(object):
             self.taxa.setdefault(taxa, [])
             self.taxa[taxa].append(next_seq_id)
 
-        if clique and not parent:
-            raise AttributeError("A clique cannot be declared without including its parental sequence_ids.")
+        #if clique and not parent:
+        #    raise AttributeError("A clique cannot be declared without including its parental sequence_ids.")
 
         if parent:
             for indx, genes in parent.collapsed_genes.items():
@@ -176,7 +176,7 @@ class Cluster(object):
             # This next bit collapses all paralog reciprocal best-hit cliques so they don't gum up MCL
             # Set the full cluster score first though, in case it's needed
             self.seq_ids = seq_ids
-            self.score()
+
             breakout = False
             while not breakout:
                 breakout = True
@@ -204,8 +204,8 @@ class Cluster(object):
                             self.collapsed_genes[seq1_id] += self.collapsed_genes[paralog]
                             del self.collapsed_genes[paralog]
 
-            self.seq_ids = seq_ids
-            self.seq_id_hash = md5_hash("".join(sorted(self.seq_ids)))
+        self.seq_ids = seq_ids
+        self.seq_id_hash = md5_hash("".join(sorted(self.seq_ids)))
 
     def _get_best_hits(self, gene):
         best_hits = self.sim_scores[(self.sim_scores.seq1 == gene) | (self.sim_scores.seq2 == gene)]
@@ -215,19 +215,18 @@ class Cluster(object):
         return best_hits
 
     def set_name(self):
-        if self.name():
+        if self._name:
             pass
         elif not self.parent.name():
             raise ValueError("Parent of current cluster has not been named.\n%s" % self)
-        elif self.clique:
-            self._name = "%s_c%s" % (self.parent.name(), self.parent.clique_counter)
-            self.parent.clique_counter += 1
+        #elif self.clique:
+        #    self._name = "%s_c%s" % (self.parent.name(), self.parent.clique_counter)
+        #    self.parent.clique_counter += 1
         else:
             self._name = "%s_%s" % (self.parent.name(), self.parent.subgroup_counter)
             self.parent.subgroup_counter += 1
-            if self.cliques and self.cliques[0]:
-                for clique in self.cliques:
-                    clique.set_name()
+            #for clique in self.cliques:
+            #    clique.set_name()
         return
 
     def compare(self, query):
@@ -237,6 +236,8 @@ class Cluster(object):
         return weighted_match
 
     def name(self):
+        if not self._name:
+            raise AttributeError("Cluster has not been named.")
         return self._name
 
     def _recursive_best_hits(self, gene, global_best_hits, tested_ids):
@@ -261,14 +262,22 @@ class Cluster(object):
         return scores
 
     def score(self, force=False):
-        if self.cluster_score and not force:
-            return self.cluster_score
+        seq_id_hash = md5_hash("".join(sorted(self.seq_ids)))
+        self.cluster_score = self.raw_score(self.seq_ids)
+        with lock:
+            push(self.seq_id_hash, 'cluster_score', str(self.cluster_score))
+            push(self.seq_id_hash, 'graph', self.sim_scores.to_csv(index=False))
+        return self.cluster_score
+
+    def score_bak(self, force=False):
+        # if self.cluster_score and not force:
+        #    return self.cluster_score
         # Confirm that a score for this cluster has not been calculated before
         prev_scores = scored_clusters()
         seq_ids = md5_hash("".join(sorted(self.seq_ids)))
-        if seq_ids in prev_scores and not force:
-            self.cluster_score = float(fetch(seq_ids, 'cluster_score'))
-            return self.cluster_score
+        # if seq_ids in prev_scores and not force:
+        #    self.cluster_score = float(fetch(seq_ids, 'cluster_score'))
+        #    return self.cluster_score
 
         # Don't ignore the possibility of cliques, which will alter the score.
         # Note that cliques are assumed to be the smallest unit, so not containing any sub-cliques. Valid?
@@ -308,7 +317,6 @@ class Cluster(object):
             # Get the similarity scores for within cliques and between cliques-remaining sequences, then generate
             # kernel-density functions for both. The overlap between the two functions is used to determine
             # whether they should be separated
-            self.cliques = []
             for clique in cliques:
                 clique_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique)) &
                                                 (self.sim_scores.seq2.isin(clique))]
@@ -330,9 +338,8 @@ class Cluster(object):
                 if integrated < 0.05:
                     clique = Cluster(clique, sim_scores=clique_scores, parent=self, clique=True)
                     self.cliques.append(clique)
-            self.cliques = [None] if not self.cliques else self.cliques
 
-        if self.cliques[0]:
+        if self.cliques:
             clique_list = [i for j in self.cliques for i in j.seq_ids]
             decliqued_cluster = []
             for gene in self.seq_ids:
@@ -344,19 +351,22 @@ class Cluster(object):
 
         self.cluster_score = self.raw_score(decliqued_cluster)
         for clique in self.cliques:
-            if not clique:
-                break
             clique_ids = md5_hash("".join(sorted(clique.seq_ids)))
-            if clique_ids in prev_scores:
-                self.cluster_score += float(fetch(clique_ids, 'cluster_score'))
-            else:
-                clique_score = self.raw_score(clique.seq_ids)
-                self.cluster_score += clique_score
-                with lock:
-                    push(clique_ids, 'cluster_score', str(clique_score))
-                    sim_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique.seq_ids)) &
-                                                 (self.sim_scores.seq2.isin(clique.seq_ids))]
-                    push(clique_ids, 'graph', sim_scores.to_csv(index=False))
+            sb_copy = Sb.make_copy(seqbuddy)
+            sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in clique.seq_ids]))
+            alb_obj = generate_msa(sb_copy)
+
+            #if clique_ids in prev_scores:
+            #    self.cluster_score += float(fetch(clique_ids, 'cluster_score'))
+            #else:
+
+            clique_score = self.raw_score(clique.seq_ids)
+            self.cluster_score += clique_score
+            with lock:
+                push(clique_ids, 'cluster_score', str(clique_score))
+                sim_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique.seq_ids)) &
+                                             (self.sim_scores.seq2.isin(clique.seq_ids))]
+                push(clique_ids, 'graph', sim_scores.to_csv(index=False))
         with lock:
             push(seq_ids, 'cluster_score', str(self.cluster_score))
             push(seq_ids, 'graph', self.sim_scores.to_csv(index=False))
@@ -395,9 +405,9 @@ class Cluster(object):
         paralog_scores = -1
         for taxon, genes in taxa.items():
             if len(genes) == 1:
-                unique_scores *= 2 * (1 + (len(self.taxa[taxon]) / len(self)))
+                unique_scores *= 2 * (1 + (len(group_0_cluster.taxa[taxon]) / len(group_0_cluster)))
             else:
-                paralog_scores *= len(genes) * (len(genes) / len(self.taxa[taxon]))
+                paralog_scores *= len(genes) * (len(genes) / len(group_0_cluster.taxa[taxon]))
         return unique_scores + paralog_scores
 
     def __len__(self):
@@ -574,15 +584,29 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
         return cluster_list
 
     mcl_clusters = parse_mcl_clusters("%s/best_group" % temp_dir.path)
+    recursion_clusters = []
     for sub_cluster in mcl_clusters:
         cluster_ids = md5_hash("".join(sorted(sub_cluster)))
         sim_scores = pd.read_csv(StringIO(fetch(cluster_ids, 'graph')), index_col=False)
         sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster)
+        if sub_cluster.seq_id_hash == master_cluster.seq_id_hash:
+            raise ArithmeticError("The sub_cluster and master_cluster are the same, but are returning different scores")
+        sub_cluster.score()
+        sub_cluster.set_name()
         if len(sub_cluster) in [1, 2]:
-            sub_cluster.set_name()
             cluster_list.append(sub_cluster)
             continue
+        #if sub_cluster.cliques:
+        #    for clique in sub_cluster.cliques:
+        #        clique.clique = True
+        #        clique.set_name()
+        #        for _seq_id in clique.seq_ids:
+        #            sub_cluster.seq_ids.remove(_seq_id)
+        #    recursion_clusters += sub_cluster.cliques
+        #    sub_cluster.cliques = []
+        recursion_clusters.append(sub_cluster)
 
+    for sub_cluster in recursion_clusters:
         seqbuddy_copy = Sb.make_copy(seqbuddy)
         seqbuddy_copy = Sb.pull_recs(seqbuddy_copy, ["^%s$" % rec_id for rec_id in sub_cluster.seq_ids])
 
@@ -709,6 +733,9 @@ def place_orphans(clusters, scores):
 
         else:  # If the 'break' command is not encountered, the gene can be grouped with the max_ave cluster
             large_clusters[max_ave].seq_ids += small_clusters[sgroup].seq_ids
+            for taxon, seq_ids in small_clusters[sgroup].taxa.items:
+                large_clusters[max_ave].taxa.setdefault(taxon, [])
+                large_clusters[max_ave].taxa[taxon] += seq_ids
             logging.info("\t%s added to %s" % (" and ".join(small_clusters[sgroup].seq_ids), max_ave))
             del small_clusters[sgroup]
 
@@ -1104,6 +1131,21 @@ if __name__ == '__main__':
     logging.warning("Total MCL runs: %s" % progress_dict["mcl_runs"])
     logging.warning("\t-- finished in %s --" % timer.split())
 
+    '''
+    # Sort out reciprocal best hit cliques
+    logging.warning("\n** Processing best-hit-cliques among clustered paralogs **")
+    final_cliques = []
+    for clstr in final_clusters:
+        if clstr.cliques and clstr.subgroup_counter == 0:
+            for next_clique in clstr.cliques:
+                next_clique.set_name()
+                final_cliques.append(next_clique)
+                for seq_id in next_clique.seq_ids:
+                    clstr.seq_ids.remove(seq_id)
+            clstr.cliques = None
+    final_clusters += final_cliques
+    logging.warning("\t%s cliques extracted" % len(final_cliques))
+    '''
     # Fold singletons and doublets back into groups. This can't be 'resumed', because it changes the clusters
     if not in_args.supress_singlet_folding:
         logging.warning("\n** Folding orphan sequences into clusters **")
@@ -1130,7 +1172,7 @@ if __name__ == '__main__':
 
         ind, max_clust = _max[0], final_clusters[_max[0]]
         if max_clust.subgroup_counter == 0:  # Don't want to include parents of subgroups
-            output += "group_%s\t%s\t" % (max_clust.name(), round(max_clust.score(force=True), 4))
+            output += "%s\t%s\t" % (max_clust.name(), round(max_clust.score(force=True), 4))
             final_score += max_clust.score()
             for seq_id in sorted(max_clust.seq_ids):
                 output += "%s\t" % seq_id
