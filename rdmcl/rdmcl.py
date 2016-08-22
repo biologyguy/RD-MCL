@@ -174,6 +174,9 @@ class Cluster(object):
         else:
             self._name = "group_0"
             # This next bit collapses all paralog reciprocal best-hit cliques so they don't gum up MCL
+            # Set the full cluster score first though, in case it's needed
+            self.seq_ids = seq_ids
+            self.score()
             breakout = False
             while not breakout:
                 breakout = True
@@ -257,13 +260,13 @@ class Cluster(object):
                 scores.set_value(indx, "score", random.gauss(score, (score * 0.0000001)))
         return scores
 
-    def score(self):
-        if self.cluster_score:
+    def score(self, force=False):
+        if self.cluster_score and not force:
             return self.cluster_score
         # Confirm that a score for this cluster has not been calculated before
         prev_scores = scored_clusters()
         seq_ids = md5_hash("".join(sorted(self.seq_ids)))
-        if seq_ids in prev_scores:
+        if seq_ids in prev_scores and not force:
             self.cluster_score = float(fetch(seq_ids, 'cluster_score'))
             return self.cluster_score
 
@@ -1050,10 +1053,10 @@ if __name__ == '__main__':
         push(seq_ids_hash, 'alignment', str(alignbuddy))
         logging.info("\t-- finished in %s --" % timer.split())
 
-    graph_data = fetch(seq_ids_hash, 'graph')
-    if graph_data:
+    if os.path.isfile("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir):
         logging.warning("RESUME: Initial all-by-all similarity graph found")
-        scores_data = pd.read_csv(StringIO(graph_data), index_col=False)
+        scores_data = pd.read_csv("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir,
+                                  index_col=False, sep="\t")
         scores_data.columns = ["seq1", "seq2", "score"]
         group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data, out_dir=in_args.outdir)
 
@@ -1070,6 +1073,8 @@ if __name__ == '__main__':
     # Base cluster score
     base_score = group_0_cluster.score()
     logging.warning("Base cluster score: %s" % round(base_score, 4))
+    # Reset the score of group_0 to account for possible collapse of paralogs
+    group_0_cluster.score(force=True)
     if group_0_cluster.collapsed_genes:
         logging.warning("Reciprocal best-hit cliques of paralogs have been identified in the input sequences.")
         logging.info(" A representative sequence has been selected from each clique, and the remaining")
@@ -1125,7 +1130,7 @@ if __name__ == '__main__':
 
         ind, max_clust = _max[0], final_clusters[_max[0]]
         if max_clust.subgroup_counter == 0:  # Don't want to include parents of subgroups
-            output += "group_%s\t%s\t" % (max_clust.name(), round(max_clust.score(), 4))
+            output += "group_%s\t%s\t" % (max_clust.name(), round(max_clust.score(force=True), 4))
             final_score += max_clust.score()
             for seq_id in sorted(max_clust.seq_ids):
                 output += "%s\t" % seq_id
@@ -1138,6 +1143,9 @@ if __name__ == '__main__':
     with open("%s/final_clusters.txt" % in_args.outdir, "w") as outfile:
         outfile.write(output)
         logging.warning("Final score: %s" % round(final_score, 4))
+        if final_score < base_score:
+            logging.warning("    This is lower than the initial base score after"
+                            " the inclusion of collapsed paralogs")
         logging.warning("Clusters written to: %s/final_clusters.txt" % in_args.outdir)
 
     while not broker_queue.empty():
