@@ -14,10 +14,11 @@ import re
 import sys
 import sqlite3
 from buddysuite import SeqBuddy as Sb
+import numpy as np
 
 
 def broker_func(queue):
-    sqlite_file = "{0}/{0}.sqlite".format(run_name)
+    sqlite_file = "{0}/{0}.sqlite".format(output_dir)
     if os.path.exists(sqlite_file):
         os.remove(sqlite_file)
     connection = sqlite3.connect(sqlite_file)
@@ -106,7 +107,7 @@ def rd_mcl():
         tmp_file = TempFile()
         msa = fetch("SELECT (alignment) FROM data_table WHERE runid='{0}'".format(run))
         tmp_file.write(msa)
-        outdir = "{0}/rdmcl_{1:05d}".format(run_name, run)
+        outdir = "{0}/rdmcl_{1:05d}".format(output_dir, run)
         printer.write("Processing run {0} of {1}...".format(run, num_runs-1))
         subprocess.run("../rdmcl/rdmcl.py {0} {1} {2}".format(tmp_file.path, outdir, rdmcl_flags), shell=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -122,71 +123,50 @@ def make_range(lower, upper, step):
     return range_list
 
 
-def parse_input(input_str, datatype):
-    if input_str is None or input_str is [None]:
+def make_range_from_inargs(_input):
+    if not _input:
         return [None]
-    input_str = re.split(' ', input_str)
-    if len(input_str) == 1:
-        return [datatype(input_str[0])]
-    elif len(input_str) == 2:
-        return make_range(datatype(input_str[0]), datatype(input_str[1]), 1)
-    elif len(input_str) == 3:
-        return make_range(datatype(input_str[0]), datatype(input_str[1]), datatype(input_str[2]))
+    if len(_input) in [1, 2]:
+        return _input
+    elif len(_input) == 3:
+        _range = np.arange(_input[0], _input[1] + 0.0000001, _input[2])  # The added value is to force 'inclusive'
+        return list(_range)
     else:
-        raise AttributeError("Too many arguments provided: %s" % input_str)
+        raise AttributeError("Too many arguments provided: %s" % _input)
 
 
 if __name__ == '__main__':
     # Argument Parsing #
     parser = argparse.ArgumentParser(prog="evolution_sim.py", usage=argparse.SUPPRESS,
                                      description='A tool for generating orthogroups and running RD-MCL on them.\nUsage:'
-                                                 '\n./evolution_sim.py seed_file run_name -nt <#> -ng <#> ...')
-    parser.add_argument('seed_file', metavar='seqfile', type=str, help="The seed sequence file")
-    parser.add_argument('run_name', metavar='name', type=str, help="A name for your run")
-    parser.add_argument('-nt', '--num_taxa',
-                        help='The number of taxa to be generated. '
-                             '1-3 args: "value" or "lower_bound upper_bound step")',
-                        action='store', required=True)
-    parser.add_argument('-ng', '--num_groups',
-                        help='The number of orthogroups to be generated. '
-                             '1-3 args: "value" or "lower_bound upper_bound step"',
-                        action='store', required=True)
-    parser.add_argument('-bl', '--branch_length',
-                        help='The gene tree branch length. '
-                             '1-3 args: "value" or "lower_bound upper_bound step"',
-                        action='store')
-    parser.add_argument('-bs', '--branch_stdev',
-                        help='The standard deviation of the gene tree branch length. '
-                             '1-3 args: "value" or "lower_bound upper_bound step"',
-                        action='store')
-    parser.add_argument('-drp', '--drop_chance',
-                        help='The probability of losing a species in each species tree. '
-                             '1-3 args: "value" or "lower_bound upper_bound step"',
-                        action='store', default='0')
-    parser.add_argument('-ndr', '--num_drops',
-                        help='The number of times to try dropping a species from the tree. '
-                             '1-3 args: "value" or "lower_bound upper_bound step"',
-                        action='store', default='0')
-    parser.add_argument('-dup', '--duplication_chance',
-                        help='The probability of losing a species in each species tree. '
-                             '1-3 args: "value" or "lower_bound upper_bound step"',
-                        action='store', default='0')
-    parser.add_argument('-ndp', '--num_duplications',
-                        help='The number of times to try adding a species from the tree. '
-                             '1-3 args: "value" or "lower_bound upper_bound step"',
-                        action='store', default='0')
-    parser.add_argument('-mdl', '--models',
-                        help='The number of times to try adding a species from the tree. '
-                             'args: list of model names "mdl1 mdl2 mdl3". Options: WAG, JTT, LG',
-                        action='store', default='WAG')
-    parser.add_argument('-alp', '--alpha',
-                        help='The shape parameter of the gamma distribution.'
-                             '1-3 args: "value" or "lower_bound upper_bound step"',
-                        action='store')
-    parser.add_argument('-cat', '--categories',
-                        help='The number of gamma categories.'
-                             '1-3 args: "value" or "lower_bound upper_bound step"',
-                        action='store')
+                                                 '\n./evolution_sim.py seed_file output_dir -nt <#> -ng <#> ...')
+    parser.add_argument('seed_file', metavar='seqfile', type=str, help="The seed sequence file (most formats are fine)")
+    parser.add_argument('output_dir', metavar='name', type=str, help="A name for your run")
+    
+    parser.add_argument('-nt', '--num_taxa', nargs='+', type=int, required=True,
+                        help='The number of taxa to be generated. Specify number or range')
+    parser.add_argument('-ng', '--num_groups', nargs='+', type=int, required=True,
+                        help='The number of orthogroups to be generated. Specify number or range')
+
+    parser.add_argument('-bl', '--branch_length', nargs="+", type=float, default=[1],
+                        help='The average gene tree branch length as substitutions per position')
+    parser.add_argument('-bs', '--branch_stdev', nargs="+", type=float, default=[0.2],
+                        help='The standard deviation around the gene tree branch length')
+    parser.add_argument('-drp', '--drop_chance', nargs='+', type=float, default=[0],
+                        help='The probability of losing a species in each species tree')
+    parser.add_argument('-ndr', '--num_drops', nargs='+', type=int, default=[0],
+                        help='The number of times to try dropping a species from the tree')
+    parser.add_argument('-dup', '--duplication_chance', nargs='+', type=float, default=[0],
+                        help='The probability of losing a species in each species tree')
+    parser.add_argument('-ndp', '--num_duplications', nargs='+', type=int, default=[0],
+                        help='The number of times to try adding a species from the tree')
+    parser.add_argument('-mdl', '--models', nargs='+', default=['WAG'], choices=['WAG', 'JTT', 'LG'],
+                        help='The number of times to try adding a species from the tree')
+    parser.add_argument('-alp', '--alpha', nargs='+', type=float, default=[2],
+                        help='The shape parameter of the gamma distribution')
+    parser.add_argument('-cat', '--categories', nargs='+', type=int, default=[3],
+                        help='The number of gamma categories.')
+
     parser.add_argument('-skp', '--skip_rdmcl',
                         help='Don\'t run RD-MCL on the generated data.', action='store_true', default=False)
     parser.add_argument('-arg', '--rdmcl_args',
@@ -196,22 +176,38 @@ if __name__ == '__main__':
     in_args = parser.parse_args()
 
     call_rdmcl = not in_args.skip_rdmcl
-    run_name = in_args.run_name  # Please name your run
+    output_dir = in_args.output_dir  # Please name your run
     rdmcl_flags = in_args.rdmcl_args
 
-    group_range = parse_input(in_args.num_groups, int)
-    taxa_range = parse_input(in_args.num_taxa, int)
-    models = in_args.models.split(' ')
+    taxa_range = sorted(in_args.num_taxa)
+    taxa_range = taxa_range if len(taxa_range) == 1 else list(range(taxa_range[0], taxa_range[1] + 1))
 
-    branch_lengths = parse_input(in_args.branch_length, float)
+    group_range = sorted(in_args.num_groups)
+    group_range = group_range if len(group_range) == 1 else list(range(group_range[0], group_range[1] + 1))
 
-    branch_stdevs = parse_input(in_args.branch_stdev, float)
-    alphas = parse_input(in_args.alpha, float)
-    category_range = parse_input(in_args.categories, int)
-    drop_chances = parse_input(in_args.drop_chance, float)
-    num_drops_range = parse_input(in_args.num_drops, int)
-    duplication_chances = parse_input(in_args.duplication_chance, float)
-    num_duplications_range = parse_input(in_args.num_duplications, int)
+    branch_lengths = make_range_from_inargs(in_args.branch_length)
+    branch_stdevs = make_range_from_inargs(in_args.branch_stdev)
+
+    drop_chances = make_range_from_inargs(in_args.drop_chance)
+    if drop_chances[-1] >= 1:
+        raise ValueError("A drop_chance parameter was >= 1.0")
+
+    num_drops_range = sorted(in_args.num_drops)
+    num_drops_range = num_drops_range if len(num_drops_range) == 1 \
+        else list(range(num_drops_range[0], num_drops_range[1] + 1))
+
+    duplication_chances = make_range_from_inargs(in_args.duplication_chance)
+
+    num_duplications_range = sorted(in_args.num_duplications)
+    num_duplications_range = num_duplications_range if len(num_duplications_range) == 1 \
+        else list(range(num_duplications_range[0], num_duplications_range[1] + 1))
+
+    models = in_args.models
+    alphas = make_range_from_inargs(in_args.alpha)
+
+    category_range = sorted(in_args.categories)
+    category_range = category_range if len(category_range) == 1 \
+        else list(range(num_drops_range[0], num_drops_range[1] + 1))
 
     seed_file = in_args.seed_file
     assert os.path.exists(seed_file)
@@ -245,14 +241,14 @@ if __name__ == '__main__':
     broker.daemon = True
     broker.start()
 
-    os.makedirs(run_name, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     run_multicore_function(arguments, generate)
 
     with open("site_rates_info.txt", "a") as ofile:
         ofile.write("\n")
-    shutil.move("site_rates_info.txt", "%s/" % run_name)
-    shutil.move("site_rates.txt", "%s/" % run_name)
+    os.remove("site_rates_info.txt")
+    os.remove("site_rates.txt")
 
     if call_rdmcl:
         rd_mcl()

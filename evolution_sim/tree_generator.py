@@ -12,6 +12,7 @@ from random import Random
 from Bio.Phylo.BaseTree import Tree
 from Bio.Phylo.BaseTree import TreeMixin
 
+
 def generate_perfect_tree(num_taxa, groups):  # Generates a perfect bipartition tree
     tree_str = "[&R] "
     lefts = 0
@@ -142,7 +143,6 @@ class TreeGenerator:
 
 
 def main():
-
     # Argument Parsing #
     parser = argparse.ArgumentParser(prog="tree_generator.py", usage=argparse.SUPPRESS,
                                      description='A tool for generating random ortholog trees.\nUsage:'
@@ -180,7 +180,7 @@ def main():
 
     for group in generator.groups():
         for seq in group:
-            sys.stderr.write(seq + '\t')
+            sys.stderr.write('%s\t' % seq)
         sys.stderr.write('\n')
     sys.stderr.write('\n')
 
