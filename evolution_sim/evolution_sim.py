@@ -4,12 +4,14 @@
 from pyvolve import newick, evolver, model, partition
 from tree_generator import TreeGenerator
 from multiprocessing import Process, SimpleQueue, Pipe
-from MyFuncs import run_multicore_function, TempFile, DynamicPrint
+from MyFuncs import run_multicore_function, TempFile, DynamicPrint, TempDir
 import argparse
+import shutil
 import subprocess
 import json
 import os
 import re
+import sys
 import sqlite3
 from buddysuite import SeqBuddy as Sb
 
@@ -143,35 +145,35 @@ if __name__ == '__main__':
     parser.add_argument('run_name', metavar='name', type=str, help="A name for your run")
     parser.add_argument('-nt', '--num_taxa',
                         help='The number of taxa to be generated. '
-                             '1-3 args: "value" or "lower_bound upper_bound step[default=1]")',
+                             '1-3 args: "value" or "lower_bound upper_bound step")',
                         action='store', required=True)
     parser.add_argument('-ng', '--num_groups',
                         help='The number of orthogroups to be generated. '
-                             '1-3 args: "value" or "lower_bound upper_bound step[default=1]"',
+                             '1-3 args: "value" or "lower_bound upper_bound step"',
                         action='store', required=True)
     parser.add_argument('-bl', '--branch_length',
                         help='The gene tree branch length. '
-                             '1-3 args: "value" or "lower_bound upper_bound step[default=1]"',
-                        action='store', default=None)
+                             '1-3 args: "value" or "lower_bound upper_bound step"',
+                        action='store')
     parser.add_argument('-bs', '--branch_stdev',
                         help='The standard deviation of the gene tree branch length. '
-                             '1-3 args: "value" or "lower_bound upper_bound step[default=1]"',
-                        action='store', default=None)
+                             '1-3 args: "value" or "lower_bound upper_bound step"',
+                        action='store')
     parser.add_argument('-drp', '--drop_chance',
                         help='The probability of losing a species in each species tree. '
-                             '1-3 args: "value" or "lower_bound upper_bound step[default=1]"',
+                             '1-3 args: "value" or "lower_bound upper_bound step"',
                         action='store', default='0')
     parser.add_argument('-ndr', '--num_drops',
                         help='The number of times to try dropping a species from the tree. '
-                             '1-3 args: "value" or "lower_bound upper_bound step[default=1]"',
+                             '1-3 args: "value" or "lower_bound upper_bound step"',
                         action='store', default='0')
     parser.add_argument('-dup', '--duplication_chance',
                         help='The probability of losing a species in each species tree. '
-                             '1-3 args: "value" or "lower_bound upper_bound step[default=1]"',
+                             '1-3 args: "value" or "lower_bound upper_bound step"',
                         action='store', default='0')
     parser.add_argument('-ndp', '--num_duplications',
                         help='The number of times to try adding a species from the tree. '
-                             '1-3 args: "value" or "lower_bound upper_bound step[default=1]"',
+                             '1-3 args: "value" or "lower_bound upper_bound step"',
                         action='store', default='0')
     parser.add_argument('-mdl', '--models',
                         help='The number of times to try adding a species from the tree. '
@@ -179,12 +181,12 @@ if __name__ == '__main__':
                         action='store', default='WAG')
     parser.add_argument('-alp', '--alpha',
                         help='The shape parameter of the gamma distribution.'
-                             '1-3 args: "value" or "lower_bound upper_bound step[default=1]"',
-                        action='store', default=None)
+                             '1-3 args: "value" or "lower_bound upper_bound step"',
+                        action='store')
     parser.add_argument('-cat', '--categories',
                         help='The number of gamma categories.'
-                             '1-3 args: "value" or "lower_bound upper_bound step[default=1]"',
-                        action='store', default=None)
+                             '1-3 args: "value" or "lower_bound upper_bound step"',
+                        action='store')
     parser.add_argument('-skp', '--skip_rdmcl',
                         help='Don\'t run RD-MCL on the generated data.', action='store_true', default=False)
     parser.add_argument('-arg', '--rdmcl_args',
@@ -240,11 +242,17 @@ if __name__ == '__main__':
 
     broker_queue = SimpleQueue()
     broker = Process(target=broker_func, args=[broker_queue])
+    broker.daemon = True
     broker.start()
 
     os.makedirs(run_name, exist_ok=True)
 
     run_multicore_function(arguments, generate)
+
+    with open("site_rates_info.txt", "a") as ofile:
+        ofile.write("\n")
+    shutil.move("site_rates_info.txt", "%s/" % run_name)
+    shutil.move("site_rates.txt", "%s/" % run_name)
 
     if call_rdmcl:
         rd_mcl()
