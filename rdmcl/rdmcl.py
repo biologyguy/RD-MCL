@@ -54,6 +54,7 @@ import MyFuncs
 from buddysuite import SeqBuddy as Sb
 from buddysuite import AlignBuddy as Alb
 
+# Globals
 git_commit = check_output(['git', 'rev-parse', '--short', 'HEAD']).decode().strip()
 git_commit = " (git %s)" % git_commit if git_commit else ""
 VERSION = "1.alpha%s" % git_commit
@@ -65,6 +66,9 @@ There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE.
 Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
 '''
+LOCK = Lock()
+CPUS = MyFuncs.usable_cpu_count()
+TIMER = MyFuncs.Timer()
 
 
 def broker_func(queue):
@@ -151,9 +155,9 @@ class Cluster(object):
         self.out_dir = out_dir if out_dir else parent.out_dir
 
         self.subgroup_counter = 0
-        #self.clique_counter = 0
-        #self.clique = clique
-        #self.cliques = []
+        # self.clique_counter = 0
+        # self.clique = clique
+        # self.cliques = []
         self.cluster_score = None
         self.collapsed_genes = OrderedDict()  # If paralogs are reciprocal best hits, collapse them
         self._name = None
@@ -162,7 +166,7 @@ class Cluster(object):
             self.taxa.setdefault(taxa, [])
             self.taxa[taxa].append(next_seq_id)
 
-        #if clique and not parent:
+        # if clique and not parent:
         #    raise AttributeError("A clique cannot be declared without including its parental sequence_ids.")
 
         if parent:
@@ -219,13 +223,13 @@ class Cluster(object):
             pass
         elif not self.parent.name():
             raise ValueError("Parent of current cluster has not been named.\n%s" % self)
-        #elif self.clique:
+        # elif self.clique:
         #    self._name = "%s_c%s" % (self.parent.name(), self.parent.clique_counter)
         #    self.parent.clique_counter += 1
         else:
             self._name = "%s_%s" % (self.parent.name(), self.parent.subgroup_counter)
             self.parent.subgroup_counter += 1
-            #for clique in self.cliques:
+            # for clique in self.cliques:
             #    clique.set_name()
         return
 
@@ -261,15 +265,14 @@ class Cluster(object):
                 scores.set_value(indx, "score", random.gauss(score, (score * 0.0000001)))
         return scores
 
-    def score(self, force=False):
-        seq_id_hash = md5_hash("".join(sorted(self.seq_ids)))
+    def score(self):
         self.cluster_score = self.raw_score(self.seq_ids)
-        with lock:
+        with LOCK:
             push(self.seq_id_hash, 'cluster_score', str(self.cluster_score))
             push(self.seq_id_hash, 'graph', self.sim_scores.to_csv(index=False))
         return self.cluster_score
 
-    def score_bak(self, force=False):
+    def score_bak(self):
         # if self.cluster_score and not force:
         #    return self.cluster_score
         # Confirm that a score for this cluster has not been calculated before
@@ -356,18 +359,18 @@ class Cluster(object):
             sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in clique.seq_ids]))
             alb_obj = generate_msa(sb_copy)
 
-            #if clique_ids in prev_scores:
+            # if clique_ids in prev_scores:
             #    self.cluster_score += float(fetch(clique_ids, 'cluster_score'))
-            #else:
+            # else:
 
             clique_score = self.raw_score(clique.seq_ids)
             self.cluster_score += clique_score
-            with lock:
+            with LOCK:
                 push(clique_ids, 'cluster_score', str(clique_score))
                 sim_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique.seq_ids)) &
                                              (self.sim_scores.seq2.isin(clique.seq_ids))]
                 push(clique_ids, 'graph', sim_scores.to_csv(index=False))
-        with lock:
+        with LOCK:
             push(seq_ids, 'cluster_score', str(self.cluster_score))
             push(seq_ids, 'graph', self.sim_scores.to_csv(index=False))
         return self.cluster_score
@@ -386,7 +389,8 @@ class Cluster(object):
         return score
     """
 
-    def raw_score(self, id_list):
+    @staticmethod
+    def raw_score(id_list):
         if len(id_list) == 1:
             return 0
 
@@ -472,7 +476,7 @@ def mcmcmc_mcl(args, params):
     mcl_output = Popen("mcl %s/input.csv --abc -te 2 -tf 'gq(%s)' -I %s -o %s/output.groups" %
                        (external_tmp_dir, gq, inflation, mcl_tmp_dir.path), shell=True, stderr=PIPE).communicate()
 
-    with lock:
+    with LOCK:
         with open("%s/.progress" % in_args.outdir, "r") as ifile:
             _progress = json.load(ifile)
             _progress['mcl_runs'] += 1
@@ -490,7 +494,7 @@ def mcmcmc_mcl(args, params):
         cluster_ids = md5_hash("".join(sorted(cluster)))
         cluster_data = fetch(cluster_ids, 'graph')
         if cluster_data:
-            with lock:
+            with LOCK:
                 sim_scores = pd.read_csv(StringIO(cluster_data), index_col=False)
             score += float()
         else:
@@ -503,7 +507,7 @@ def mcmcmc_mcl(args, params):
         clusters[indx] = cluster
         score += cluster.score()
 
-    with lock:
+    with LOCK:
         with open("%s/max.txt" % external_tmp_dir, "r") as ifile:
             current_max = float(ifile.read())
         if score > current_max:
@@ -590,13 +594,16 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
         sim_scores = pd.read_csv(StringIO(fetch(cluster_ids, 'graph')), index_col=False)
         sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster)
         if sub_cluster.seq_id_hash == master_cluster.seq_id_hash:
-            raise ArithmeticError("The sub_cluster and master_cluster are the same, but are returning different scores")
+            raise ArithmeticError("The sub_cluster and master_cluster are the same, but are returning different "
+                                  "scores\nsub-cluster score: %s, master score: %s\n%s" % (sub_cluster.score(),
+                                                                                           master_cluster.score(),
+                                                                                           sub_cluster.seq_id_hash))
         sub_cluster.score()
         sub_cluster.set_name()
         if len(sub_cluster) in [1, 2]:
             cluster_list.append(sub_cluster)
             continue
-        #if sub_cluster.cliques:
+        # if sub_cluster.cliques:
         #    for clique in sub_cluster.cliques:
         #        clique.clique = True
         #        clique.set_name()
@@ -618,7 +625,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
 
 
 def progress():
-    with lock:
+    with LOCK:
         with open("%s/.progress" % in_args.outdir, "r") as ifile:
             try:
                 _progress = json.load(ifile)
@@ -733,7 +740,7 @@ def place_orphans(clusters, scores):
 
         else:  # If the 'break' command is not encountered, the gene can be grouped with the max_ave cluster
             large_clusters[max_ave].seq_ids += small_clusters[sgroup].seq_ids
-            for taxon, seq_ids in small_clusters[sgroup].taxa.items:
+            for taxon, seq_ids in small_clusters[sgroup].taxa.items():
                 large_clusters[max_ave].taxa.setdefault(taxon, [])
                 large_clusters[max_ave].taxa[taxon] += seq_ids
             logging.info("\t%s added to %s" % (" and ".join(small_clusters[sgroup].seq_ids), max_ave))
@@ -887,7 +894,7 @@ def create_all_by_all_scores(alignment, quiet=False):
 
     all_by_all_outdir = MyFuncs.TempDir()
     if all_by_all:
-        n = ceil(len(all_by_all) / cpus)
+        n = ceil(len(all_by_all) / CPUS)
         all_by_all = [all_by_all[i:i + n] for i in range(0, len(all_by_all), n)] if all_by_all else []
         MyFuncs.run_multicore_function(all_by_all, score_sequences, [alignment, psi_pred_files, all_by_all_outdir.path],
                                        quiet=quiet)
@@ -1028,11 +1035,6 @@ if __name__ == '__main__':
 
     clique_check = True if not in_args.supress_clique_check else False
     recursion_check = True if not in_args.supress_recursion else False
-    best = None
-    best_clusters = None
-    lock = Lock()
-    cpus = MyFuncs.usable_cpu_count()
-    timer = MyFuncs.Timer()
 
     BLOSUM62 = make_full_mat(SeqMat(MatrixInfo.blosum62))
 
@@ -1058,7 +1060,7 @@ if __name__ == '__main__':
     if records_missing_ss_files:
         logging.warning("Executing PSI-Pred on %s sequences" % len(records_missing_ss_files))
         MyFuncs.run_multicore_function(records_missing_ss_files, psi_pred, [in_args.outdir])
-        logging.info("\t-- finished in %s --" % timer.split())
+        logging.info("\t-- finished in %s --" % TIMER.split())
         logging.info("\tfiles saved to %s\n" % "%s/psi_pred/" % in_args.outdir)
     else:
         logging.warning("RESUME: All PSI-Pred .ss2 files found in %s/psi_pred/" % in_args.outdir)
@@ -1078,7 +1080,7 @@ if __name__ == '__main__':
         alignbuddy = generate_msa(sequences)
         alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
         push(seq_ids_hash, 'alignment', str(alignbuddy))
-        logging.info("\t-- finished in %s --" % timer.split())
+        logging.info("\t-- finished in %s --" % TIMER.split())
 
     if os.path.isfile("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir):
         logging.warning("RESUME: Initial all-by-all similarity graph found")
@@ -1095,13 +1097,13 @@ if __name__ == '__main__':
                            header=None, index=False, sep="\t")
         push(seq_ids_hash, 'graph', scores_data.to_csv(header=None, index=False))
         group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data, out_dir=in_args.outdir)
-        logging.info("\t-- finished in %s --" % timer.split())
+        logging.info("\t-- finished in %s --" % TIMER.split())
 
     # Base cluster score
     base_score = group_0_cluster.score()
     logging.warning("Base cluster score: %s" % round(base_score, 4))
     # Reset the score of group_0 to account for possible collapse of paralogs
-    group_0_cluster.score(force=True)
+    group_0_cluster.score()
     if group_0_cluster.collapsed_genes:
         logging.warning("Reciprocal best-hit cliques of paralogs have been identified in the input sequences.")
         logging.info(" A representative sequence has been selected from each clique, and the remaining")
@@ -1129,7 +1131,7 @@ if __name__ == '__main__':
     with open("%s/.progress" % in_args.outdir, "r") as progress_file:
         progress_dict = json.load(progress_file)
     logging.warning("Total MCL runs: %s" % progress_dict["mcl_runs"])
-    logging.warning("\t-- finished in %s --" % timer.split())
+    logging.warning("\t-- finished in %s --" % TIMER.split())
 
     '''
     # Sort out reciprocal best hit cliques
@@ -1150,7 +1152,7 @@ if __name__ == '__main__':
     if not in_args.supress_singlet_folding:
         logging.warning("\n** Folding orphan sequences into clusters **")
         final_clusters = place_orphans(final_clusters, group_0_cluster.sim_scores)
-        logging.warning("\t-- finished in %s --" % timer.split())
+        logging.warning("\t-- finished in %s --" % TIMER.split())
 
     # Format the clusters and output to file
     logging.warning("\n** Final formatting **")
@@ -1179,9 +1181,9 @@ if __name__ == '__main__':
             output = "%s\n" % output.strip()
         del final_clusters[ind]
 
-    logging.warning("\t-- finished in %s --" % timer.split())
+    logging.warning("\t-- finished in %s --" % TIMER.split())
 
-    logging.warning("\nTotal execution time: %s" % timer.total_elapsed())
+    logging.warning("\nTotal execution time: %s" % TIMER.total_elapsed())
     with open("%s/final_clusters.txt" % in_args.outdir, "w") as outfile:
         outfile.write(output)
         logging.warning("Final score: %s" % round(final_score, 4))
