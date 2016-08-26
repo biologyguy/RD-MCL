@@ -34,7 +34,7 @@ import sqlite3
 from io import StringIO
 from time import time
 from copy import copy
-from subprocess import Popen, PIPE, check_output
+from subprocess import Popen, PIPE, check_output, CalledProcessError
 from multiprocessing import Lock, Process, SimpleQueue, Pipe
 from random import random
 from math import log, ceil
@@ -55,9 +55,15 @@ from buddysuite import SeqBuddy as Sb
 from buddysuite import AlignBuddy as Alb
 
 # Globals
-git_commit = check_output(['git', 'rev-parse', '--short', 'HEAD']).decode().strip()
-git_commit = " (git %s)" % git_commit if git_commit else ""
-VERSION = "1.alpha%s" % git_commit
+try:
+    script_path = os.path.abspath(__file__).split("/")
+    script_path = "/".join(script_path[:-1])
+    git_commit = check_output(['git', '--git-dir=%s/../.git' % script_path, 'rev-parse', '--short', 'HEAD']).decode().strip()
+    git_commit = " (git %s)" % git_commit if git_commit else ""
+    VERSION = "1.alpha%s" % git_commit
+except CalledProcessError:
+    VERSION = "1.alpha"
+
 NOTICE = '''\
 Public Domain Notice
 --------------------
