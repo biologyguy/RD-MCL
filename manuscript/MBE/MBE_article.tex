@@ -1,0 +1,94 @@
+\documentclass[nogrid]{MBE}%
+
+\usepackage{url}
+
+\jshort{mst}
+
+\volname{}
+
+\jvolume{0}
+
+\jvol{}
+
+\jissue{0}
+
+\pubyear{2016}
+
+\mstype{Letter}
+
+\artid{012}
+
+\access{Advance Access publication November 2, 2016}
+
+
+\begin{document}
+
+\title[RD-MCL]{High resolution classification of orthogroups by recursive dynamic Markov clustering}
+
+
+\author[Bond et al.]{Stephen R. \surname{Bond}, Karl E.
+Keat, and Andreas D. Baxevanis$^{\ast}$}
+
+\address{Computational and Statistical Genomics Branch, Division of Intramural Research, National Human Genome Research Institute, National Institutes of Health, 50 South Drive, Bethesda, MD, USA, 20892}
+
+
+\history{Received 12 November 2016}
+
+\coresp{E-mail: andy@mail.nih.gov}
+
+
+\editor{}
+
+\abstract{}
+
+\keyword{orthogroup, clustering}
+
+
+\maketitle
+
+
+\section{{Introduction}\label{sec:Intro}}
+
+
+\begin{table}[!t]
+\tableparts{\caption{File format support provided by each BuddySuite module for reading (R) and writing (W).\label{table:formats}}}
+      {\tabcolsep=4pt\begin{tabular}{@{\extracolsep{\fill}}llll@{}}
+        \toprule
+        Format							& SeqBuddy  					& AlignBuddy   					& PhyloBuddy
+        \\\colrule
+        Clustal 						& R \& W\textsuperscript{\dag} 	& R \& W						& None \\ 
+        EMBL\textsuperscript{\ddag} 	& R \& W						& R\textsuperscript{\dag}\& W	& None
+        \\\botrule
+      \end{tabular}}
+{\tablenote{\textsuperscript{\dag}All sequences must be the same length \\
+      		  \textsuperscript{\ddag}Supports rich sequence annotation}}
+\end{table}
+
+
+\section{Methods}
+I used MAFFT \cite{Katoh:2013hm}, because it's awesome.
+
+\section{Results}
+
+\section{Discussion}
+
+\section{Conclusions}
+
+\section{Acknowledgments}
+This research was supported by the Intramural Research Program of the National Human Genome Research Institute, National Institutes of Health.
+
+
+
+%\begin{figure*}[t]
+%\begin{center}
+%\includegraphics[height=0.4\textheight]{figures/figure_fixed.eps}
+%\end{center}
+%\caption{RefSeq records were identified in GenBank using the following query: ``Nematoda''[Organism] AND biomol\_mrna[PROP] AND refseq[filter]. The results were downloaded in GenBank format and subsamples of 10, 100, 1000, and 10000 records were used to test the runtime performance of the BuddySuite tools (excluding tools that depend on third-party programs or services). Each dot denotes a single BuddySuite tool, runtimes are the average of 10 replicates expressed in seconds (the y-axis is log-scale), and the subscript numbers below each jitter plot represents the size of the sequence, alignment, or tree file in bytes.}
+%\label{fig:timeit}
+%\end{figure*}
+
+
+\bibliographystyle{natbib}  % natbib.sty
+\bibliography{../references/refs}         % refs.bib
+
+\end{document}
