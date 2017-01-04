@@ -53,6 +53,7 @@ import mcmcmc
 import MyFuncs
 from buddysuite import SeqBuddy as Sb
 from buddysuite import AlignBuddy as Alb
+from helpers import SQLiteBroker
 
 # Globals
 try:
@@ -77,60 +78,13 @@ CPUS = MyFuncs.usable_cpu_count()
 TIMER = MyFuncs.Timer()
 
 
-def broker_func(queue):
-    # Good SQLite tutorial: http://sebastianraschka.com/Articles/2014_sqlite_in_python_tutorial.html
-    sqlite_file = "{0}/sqlite_db.sqlite".format(in_args.outdir)
-    logging.info("SQLite database saved to %s" % sqlite_file)
-    previous_run = True if os.path.isfile(sqlite_file) else False
-    connection = sqlite3.connect(sqlite_file)
-    cursor = connection.cursor()
-    if not previous_run:
-        cursor.execute("CREATE TABLE data_table (hash TEXT PRIMARY KEY, seq_ids TEXT, alignment TEXT, graph TEXT, "
-                       "cluster_score TEXT)")
-    while True:
-        if not queue.empty():
-            broker_output = queue.get()
-            if broker_output[0] == 'push':
-                hash_id, field, data = broker_output[1:4]
-                try:
-                    cursor.execute("INSERT INTO data_table (hash, {0}) VALUES ('{1}', '{2}')"
-                                   .format(field, hash_id, data))
-                except sqlite3.IntegrityError:
-                    cursor.execute("UPDATE data_table SET {0}=('{1}') WHERE hash=('{2}')"
-                                   .format(field, data, hash_id))
-                connection.commit()
-            elif broker_output[0] == 'fetch':
-                hash_id, field, pipe = broker_output[1:4]
-                cursor.execute("SELECT ({0}) FROM data_table WHERE hash='{1}'".format(field, hash_id))
-                response = cursor.fetchone()
-                if response is None or len(response) == 0:
-                    response = None
-                else:
-                    response = response[0]
-                pipe.send(response)
-            elif broker_output[0] == 'scored':
-                pipe = broker_output[1]
-                cursor.execute("SELECT (hash) FROM data_table WHERE cluster_score IS NOT NULL")
-                response = cursor.fetchall()
-                response = [x[0] for x in response]
-                pipe.send(json.dumps(response))
-            else:
-                raise RuntimeError("Broker instruction must be either 'put' or 'fetch', not %s." % broker_output[0])
-        connection.commit()
-
-
 def push(hash_id, field, data):
+    """This is deprecated and needs to be removed"""
     broker_queue.put(('push', hash_id, field, data))
 
 
-def fetch(hash_id, field):
-    recvpipe, sendpipe = Pipe(False)
-    broker_queue.put(('fetch', hash_id, field, sendpipe))
-    response = recvpipe.recv()
-    return response
-
-
 def scored_clusters():
+    """This is deprecated and needs to be removed"""
     recvpipe, sendpipe = Pipe(False)
     broker_queue.put(('scored', sendpipe))
     response = json.loads(recvpipe.recv())
@@ -274,8 +228,15 @@ class Cluster(object):
     def score(self):
         self.cluster_score = self.raw_score(self.seq_ids)
         with LOCK:
-            push(self.seq_id_hash, 'cluster_score', str(self.cluster_score))
-            push(self.seq_id_hash, 'graph', self.sim_scores.to_csv(index=False))
+            broker.query("""INSERT OR REPLACE INTO data_table (hash, graph, cluster_score, seq_ids, alignment)
+  VALUES (  '{0}',
+            '{1}',
+            '{2}',
+            (SELECT seq_ids FROM data_table WHERE hash = '{0}'),
+            (SELECT alignment FROM data_table WHERE hash = '{0}')
+          )""".format(self.seq_id_hash, self.sim_scores.to_csv(index=False), str(self.cluster_score)))
+            # push(self.seq_id_hash, 'cluster_score', str(self.cluster_score))
+            # push(self.seq_id_hash, 'graph', self.sim_scores.to_csv(index=False))
         return self.cluster_score
 
     def score_bak(self):
@@ -285,7 +246,7 @@ class Cluster(object):
         prev_scores = scored_clusters()
         seq_ids = md5_hash("".join(sorted(self.seq_ids)))
         # if seq_ids in prev_scores and not force:
-        #    self.cluster_score = float(fetch(seq_ids, 'cluster_score'))
+        #    self.cluster_score = float(query(seq_ids, 'cluster_score'))
         #    return self.cluster_score
 
         # Don't ignore the possibility of cliques, which will alter the score.
@@ -366,7 +327,7 @@ class Cluster(object):
             alb_obj = generate_msa(sb_copy)
 
             # if clique_ids in prev_scores:
-            #    self.cluster_score += float(fetch(clique_ids, 'cluster_score'))
+            #    self.cluster_score += float(query(clique_ids, 'cluster_score'))
             # else:
 
             clique_score = self.raw_score(clique.seq_ids)
@@ -498,10 +459,10 @@ def mcmcmc_mcl(args, params):
 
     for indx, cluster in enumerate(clusters):
         cluster_ids = md5_hash("".join(sorted(cluster)))
-        cluster_data = fetch(cluster_ids, 'graph')
-        if cluster_data:
+        cluster_data = broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_ids))
+        if cluster_data and cluster_data[0][0]:
             with LOCK:
-                sim_scores = pd.read_csv(StringIO(cluster_data), index_col=False)
+                sim_scores = pd.read_csv(StringIO(cluster_data[0][0]), index_col=False)
             score += float()
         else:
             sb_copy = Sb.make_copy(seqbuddy)
@@ -597,7 +558,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     recursion_clusters = []
     for sub_cluster in mcl_clusters:
         cluster_ids = md5_hash("".join(sorted(sub_cluster)))
-        sim_scores = pd.read_csv(StringIO(fetch(cluster_ids, 'graph')), index_col=False)
+        graph = broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_ids))[0][0]
+        sim_scores = pd.read_csv(StringIO(graph), index_col=False)
         sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster)
         if sub_cluster.seq_id_hash == master_cluster.seq_id_hash:
             raise ArithmeticError("The sub_cluster and master_cluster are the same, but are returning different "
@@ -830,17 +792,26 @@ def score_sequences(seq_pairs, args):
 def generate_msa(seqbuddy):
     seq_ids = sorted([rec.id for rec in seqbuddy.records])
     seq_id_hash = md5_hash("".join(seq_ids))
-    alignment = fetch(seq_id_hash, 'alignment')
-    if alignment:
-        alignment = Alb.AlignBuddy(alignment)
+    alignment = broker.query("SELECT (alignment) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
+    if alignment and alignment[0][0]:
+        alignment = Alb.AlignBuddy(alignment[0][0])
         pass
     else:
         if len(seqbuddy) == 1:
             alignment = Alb.AlignBuddy(str(seqbuddy))
         else:
             alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -2", quiet=True)
-        push(seq_id_hash, 'alignment', str(alignment))
-        push(seq_id_hash, 'seq_ids', str(", ".join(seq_ids)))
+
+        broker.query("""INSERT OR REPLACE INTO data_table (hash, alignment, seq_ids, cluster_score, graph)
+  VALUES (  '{0}',
+            '{1}',
+            '{2}',
+            (SELECT cluster_score FROM data_table WHERE hash = '{0}'),
+            (SELECT graph FROM data_table WHERE hash = '{0}')
+          )""".format(seq_id_hash, str(alignment), str(", ".join(seq_ids))))
+
+        # push(seq_id_hash, 'alignment', str(alignment))
+        # push(seq_id_hash, 'seq_ids', str(", ".join(seq_ids)))
     return alignment
 
 
@@ -857,9 +828,10 @@ def create_all_by_all_scores(alignment, quiet=False):
 
     # Only calculate if not previously calculated
     seq_ids = sorted([rec.id for rec in alignment.records_iter()])
-    graph = fetch(md5_hash("".join(seq_ids)), 'graph')
-    if graph:
-        sim_scores = pd.read_csv(StringIO(graph), index_col=False)
+    seq_id_hash = md5_hash("".join(seq_ids))
+    graph = broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
+    if graph and graph[0][0]:
+        sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False)
         sim_scores.columns = ["seq1", "seq2", "score"]
         return sim_scores
 
@@ -1010,15 +982,17 @@ if __name__ == '__main__':
     logging.info("")  # Just want to insert an extra line break for asthetics
     logging.warning("Launching SQLite Daemon")
     broker_queue = SimpleQueue()
-    broker = Process(target=broker_func, args=[broker_queue])
-    broker.daemon = True
-    broker.start()
 
+    broker = SQLiteBroker(db_file="{0}/sqlite_db.sqlite".format(in_args.outdir))
+    broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
+                                       "graph TEXT", "cluster_score TEXT"])
+    broker.start_broker()
     sequences = Sb.SeqBuddy(in_args.sequences)
     check_sequences(sequences)
     seq_ids_hash = md5_hash("".join(sorted([rec.id for rec in sequences.records])))
 
-    if fetch(seq_ids_hash, 'hash') == seq_ids_hash:
+    # Check if job has been run already
+    if broker.query("SELECT (hash) FROM data_table WHERE hash='{0}'".format(seq_ids_hash)) == seq_ids_hash:
         logging.warning("RESUME: This output directory was previous used for an identical RD-MCL run.\n"
                         "        All cached resources will be reused.")
 
@@ -1077,17 +1051,16 @@ if __name__ == '__main__':
     gap_extend = in_args.extend_penalty
     logging.info("gap open penalty: %s\ngap extend penalty: %s" % (gap_open, gap_extend))
 
-    align_data = fetch(seq_ids_hash, 'alignment')
-    if align_data:
+    align_data = broker.query("SELECT (alignment) FROM data_table WHERE hash='{0}'".format(seq_ids_hash))
+    if align_data and align_data[0][0]:
         logging.warning("RESUME: Initial multiple sequence alignment found")
-        alignbuddy = Alb.AlignBuddy(align_data)
+        alignbuddy = Alb.AlignBuddy(align_data[0][0])
     else:
         logging.warning("Generating initial multiple sequence alignment with MAFFT")
         alignbuddy = generate_msa(sequences)
         alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
-        push(seq_ids_hash, 'alignment', str(alignbuddy))
-        logging.info("\t-- finished in %s --" % TIMER.split())
 
+        logging.info("\t-- finished in %s --" % TIMER.split())
     if os.path.isfile("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir):
         logging.warning("RESUME: Initial all-by-all similarity graph found")
         scores_data = pd.read_csv("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir,
@@ -1101,7 +1074,9 @@ if __name__ == '__main__':
         scores_data = create_all_by_all_scores(alignbuddy)
         scores_data.to_csv("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir,
                            header=None, index=False, sep="\t")
-        push(seq_ids_hash, 'graph', scores_data.to_csv(header=None, index=False))
+        broker.query("UPDATE data_table SET graph='{0}' "
+                     "WHERE hash='{1}'".format(scores_data.to_csv(header=None, index=False), seq_ids_hash))
+
         group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data, out_dir=in_args.outdir)
         logging.info("\t-- finished in %s --" % TIMER.split())
 
@@ -1180,7 +1155,7 @@ if __name__ == '__main__':
 
         ind, max_clust = _max[0], final_clusters[_max[0]]
         if max_clust.subgroup_counter == 0:  # Don't want to include parents of subgroups
-            output += "%s\t%s\t" % (max_clust.name(), round(max_clust.score(force=True), 4))
+            output += "%s\t%s\t" % (max_clust.name(), round(max_clust.score(), 4))
             final_score += max_clust.score()
             for seq_id in sorted(max_clust.seq_ids):
                 output += "%s\t" % seq_id
@@ -1200,4 +1175,4 @@ if __name__ == '__main__':
 
     while not broker_queue.empty():
         pass
-    broker.terminate()
+    broker.close()
