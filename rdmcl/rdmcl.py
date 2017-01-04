@@ -28,17 +28,13 @@ import sys
 import os
 import re
 import shutil
-import logging
 import json
-import sqlite3
+import logging
 from io import StringIO
-from time import time
-from copy import copy
 from subprocess import Popen, PIPE, check_output, CalledProcessError
-from multiprocessing import Lock, Process, SimpleQueue, Pipe
+from multiprocessing import Lock, Pipe
 from random import random
-from math import log, ceil
-from hashlib import md5
+from math import ceil
 from collections import OrderedDict
 
 # 3rd party
@@ -51,9 +47,9 @@ from Bio.SubsMat import SeqMat, MatrixInfo
 # My packages
 import mcmcmc
 import MyFuncs
+import helpers
 from buddysuite import SeqBuddy as Sb
 from buddysuite import AlignBuddy as Alb
-from helpers import SQLiteBroker
 
 # Globals
 try:
@@ -169,7 +165,7 @@ class Cluster(object):
                             del self.collapsed_genes[paralog]
 
         self.seq_ids = seq_ids
-        self.seq_id_hash = md5_hash("".join(sorted(self.seq_ids)))
+        self.seq_id_hash = helpers.md5_hash("".join(sorted(self.seq_ids)))
 
     def _get_best_hits(self, gene):
         best_hits = self.sim_scores[(self.sim_scores.seq1 == gene) | (self.sim_scores.seq2 == gene)]
@@ -244,7 +240,7 @@ class Cluster(object):
         #    return self.cluster_score
         # Confirm that a score for this cluster has not been calculated before
         prev_scores = scored_clusters()
-        seq_ids = md5_hash("".join(sorted(self.seq_ids)))
+        seq_ids = helpers.md5_hash("".join(sorted(self.seq_ids)))
         # if seq_ids in prev_scores and not force:
         #    self.cluster_score = float(query(seq_ids, 'cluster_score'))
         #    return self.cluster_score
@@ -321,7 +317,7 @@ class Cluster(object):
 
         self.cluster_score = self.raw_score(decliqued_cluster)
         for clique in self.cliques:
-            clique_ids = md5_hash("".join(sorted(clique.seq_ids)))
+            clique_ids = helpers.md5_hash("".join(sorted(clique.seq_ids)))
             sb_copy = Sb.make_copy(seqbuddy)
             sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in clique.seq_ids]))
             alb_obj = generate_msa(sb_copy)
@@ -388,30 +384,6 @@ class Cluster(object):
         return str(self.seq_ids)
 
 
-def md5_hash(in_str):
-    in_str = str(in_str).encode()
-    return md5(in_str).hexdigest()
-
-
-def make_full_mat(subsmat):
-    for key in copy(subsmat):
-        try:
-            # don't over-write the reverse keys if they are already initialized
-            subsmat[(key[1], key[0])]
-        except KeyError:
-            subsmat[(key[1], key[0])] = subsmat[key]
-    return subsmat
-
-
-def bit_score(raw_score):
-    # These values were empirically determined for BLOSUM62 by Altschul
-    bit_k_value = 0.035
-    bit_lambda = 0.252
-
-    bits = ((bit_lambda * raw_score) - (log(bit_k_value))) / log(2)
-    return bits
-
-
 def psi_pred(seq_obj, args):
     out_dir = args[0]
     if os.path.isfile("%s/psi_pred/%s.ss2" % (out_dir, seq_obj.id)):
@@ -458,7 +430,7 @@ def mcmcmc_mcl(args, params):
     score = 0
 
     for indx, cluster in enumerate(clusters):
-        cluster_ids = md5_hash("".join(sorted(cluster)))
+        cluster_ids = helpers.md5_hash("".join(sorted(cluster)))
         cluster_data = broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_ids))
         if cluster_data and cluster_data[0][0]:
             with LOCK:
@@ -557,7 +529,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     mcl_clusters = parse_mcl_clusters("%s/best_group" % temp_dir.path)
     recursion_clusters = []
     for sub_cluster in mcl_clusters:
-        cluster_ids = md5_hash("".join(sorted(sub_cluster)))
+        cluster_ids = helpers.md5_hash("".join(sorted(sub_cluster)))
         graph = broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_ids))[0][0]
         sim_scores = pd.read_csv(StringIO(graph), index_col=False)
         sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster)
@@ -732,7 +704,7 @@ def place_orphans(clusters, scores):
 def score_sequences(seq_pairs, args):
     # Calculate the best possible scores, and divide by the observed scores
     alb_obj, psi_pred_files, output_dir = args
-    file_name = md5_hash(str(seq_pairs))
+    file_name = helpers.md5_hash(str(seq_pairs))
     ofile = open("%s/%s" % (output_dir, file_name), "w")
     for seq_pair in seq_pairs:
         id1, id2 = seq_pair
@@ -791,7 +763,7 @@ def score_sequences(seq_pairs, args):
 
 def generate_msa(seqbuddy):
     seq_ids = sorted([rec.id for rec in seqbuddy.records])
-    seq_id_hash = md5_hash("".join(seq_ids))
+    seq_id_hash = helpers.md5_hash("".join(seq_ids))
     alignment = broker.query("SELECT (alignment) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
     if alignment and alignment[0][0]:
         alignment = Alb.AlignBuddy(alignment[0][0])
@@ -828,7 +800,7 @@ def create_all_by_all_scores(alignment, quiet=False):
 
     # Only calculate if not previously calculated
     seq_ids = sorted([rec.id for rec in alignment.records_iter()])
-    seq_id_hash = md5_hash("".join(seq_ids))
+    seq_id_hash = helpers.md5_hash("".join(seq_ids))
     graph = broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
     if graph and graph[0][0]:
         sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False)
@@ -886,28 +858,6 @@ def create_all_by_all_scores(alignment, quiet=False):
     return sim_scores
 
 
-class Logger(object):
-    def __init__(self, location=None):
-        if not location:
-            tmpfile = MyFuncs.TempFile()
-            self.location = "%s/rdmcl.log" % tmpfile.path
-        else:
-            self.location = location
-
-        # Set up logging. Use 'info' to write to file only, anything higher will go to both terminal and file.
-        logging.basicConfig(filename=location, level=logging.INFO, format="")
-        self.logger = logging.getLogger()
-        self.console = logging.StreamHandler()
-        self.console.setLevel(logging.WARNING)
-        self.logger.addHandler(self.console)
-
-    def move_log(self, location):
-        shutil.move(self.location, location)
-        logging.basicConfig(filename=location, level=logging.INFO, format="")
-        self.location = location
-        return
-
-
 def check_sequences(seqbuddy):
     logging.warning("Checking that the format of all sequence ids matches 'taxa%sgene'" % in_args.taxa_separator)
     failures = []
@@ -955,7 +905,7 @@ if __name__ == '__main__':
 
     in_args = parser.parse_args()
 
-    logger_obj = Logger("rdmcl.log")
+    logger_obj = helpers.Logger("rdmcl.log")
     logging.info("*************************** Recursive Dynamic Markov Clustering ****************************")
     logging.warning("RD-MCL version %s\n\n%s" % (VERSION, NOTICE))
     logging.info("********************************************************************************************\n")
@@ -981,15 +931,14 @@ if __name__ == '__main__':
 
     logging.info("")  # Just want to insert an extra line break for asthetics
     logging.warning("Launching SQLite Daemon")
-    broker_queue = SimpleQueue()
 
-    broker = SQLiteBroker(db_file="{0}/sqlite_db.sqlite".format(in_args.outdir))
+    broker = helpers.SQLiteBroker(db_file="{0}/sqlite_db.sqlite".format(in_args.outdir))
     broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
                                        "graph TEXT", "cluster_score TEXT"])
     broker.start_broker()
     sequences = Sb.SeqBuddy(in_args.sequences)
     check_sequences(sequences)
-    seq_ids_hash = md5_hash("".join(sorted([rec.id for rec in sequences.records])))
+    seq_ids_hash = helpers.md5_hash("".join(sorted([rec.id for rec in sequences.records])))
 
     # Check if job has been run already
     if broker.query("SELECT (hash) FROM data_table WHERE hash='{0}'".format(seq_ids_hash)) == seq_ids_hash:
@@ -1016,7 +965,7 @@ if __name__ == '__main__':
     clique_check = True if not in_args.supress_clique_check else False
     recursion_check = True if not in_args.supress_recursion else False
 
-    BLOSUM62 = make_full_mat(SeqMat(MatrixInfo.blosum62))
+    BLOSUM62 = helpers.make_full_mat(SeqMat(MatrixInfo.blosum62))
 
     ambiguous_X = {"A": 0, "R": -1, "N": -1, "D": -1, "C": -2, "Q": -1, "E": -1, "G": -1, "H": -1, "I": -1, "L": -1,
                    "K": -1, "M": -1, "F": -1, "P": -2, "S": 0, "T": 0, "W": -2, "Y": -1, "V": -1}
@@ -1173,6 +1122,4 @@ if __name__ == '__main__':
                             " the inclusion of collapsed paralogs")
         logging.warning("Clusters written to: %s/final_clusters.txt" % in_args.outdir)
 
-    while not broker_queue.empty():
-        pass
     broker.close()

@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 import sqlite3
-from multiprocessing import SimpleQueue, Process, Pipe
 import sys
 import re
 import json
+import logging
+import shutil
+from copy import copy
+from hashlib import md5
+from multiprocessing import SimpleQueue, Process, Pipe
 
 
 class SQLiteBroker(object):
@@ -74,3 +78,49 @@ class SQLiteBroker(object):
     def close(self):
         self.stop_broker()
         self.connection.close()
+
+
+class Logger(object):
+    def __init__(self, location=None):
+        if not location:
+            tmpfile = MyFuncs.TempFile()
+            self.location = "%s/temp.log" % tmpfile.path
+        else:
+            self.location = location
+
+        # Set up logging. Use 'info' to write to file only, anything higher will go to both terminal and file.
+        logging.basicConfig(filename=location, level=logging.INFO, format="")
+        self.logger = logging.getLogger()
+        self.console = logging.StreamHandler()
+        self.console.setLevel(logging.WARNING)
+        self.logger.addHandler(self.console)
+
+    def move_log(self, location):
+        shutil.move(self.location, location)
+        logging.basicConfig(filename=location, level=logging.INFO, format="")
+        self.location = location
+        return
+
+
+def md5_hash(in_str):
+    in_str = str(in_str).encode()
+    return md5(in_str).hexdigest()
+
+
+def make_full_mat(subsmat):
+    for key in copy(subsmat):
+        try:
+            # don't over-write the reverse keys if they are already initialized
+            subsmat[(key[1], key[0])]
+        except KeyError:
+            subsmat[(key[1], key[0])] = subsmat[key]
+    return subsmat
+
+
+def bit_score(raw_score):
+    # These values were empirically determined for BLOSUM62 by Altschul
+    bit_k_value = 0.035
+    bit_lambda = 0.252
+
+    bits = ((bit_lambda * raw_score) - (log(bit_k_value))) / log(2)
+    return bits
