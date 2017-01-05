@@ -88,7 +88,7 @@ def scored_clusters():
 
 
 class Cluster(object):
-    def __init__(self, seq_ids, sim_scores, out_dir=None, parent=None, clique=False):
+    def __init__(self, seq_ids, sim_scores, parent=None, clique=False):
         """
         - Note that reciprocal best hits between paralogs are collapsed when instantiating group_0, so
           no problem strongly penalizing all paralogs in the scoring algorithm
@@ -105,10 +105,6 @@ class Cluster(object):
         self.taxa = OrderedDict()
         self.sim_scores = sim_scores
         self.parent = parent
-
-        if not parent and not out_dir:
-            raise AttributeError("Cannot create a root Cluster object without specifying an output directory.")
-        self.out_dir = out_dir if out_dir else parent.out_dir
 
         self.subgroup_counter = 0
         # self.clique_counter = 0
@@ -1015,7 +1011,7 @@ if __name__ == '__main__':
         scores_data = pd.read_csv("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir,
                                   index_col=False, sep="\t")
         scores_data.columns = ["seq1", "seq2", "score"]
-        group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data, out_dir=in_args.outdir)
+        group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data)
 
     else:
         logging.warning("Generating initial all-by-all similarity graph")
@@ -1026,7 +1022,7 @@ if __name__ == '__main__':
         broker.query("UPDATE data_table SET graph='{0}' "
                      "WHERE hash='{1}'".format(scores_data.to_csv(header=None, index=False), seq_ids_hash))
 
-        group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data, out_dir=in_args.outdir)
+        group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data)
         logging.info("\t-- finished in %s --" % TIMER.split())
 
     # Base cluster score
