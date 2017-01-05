@@ -355,7 +355,7 @@ class MCMCMC:
         :return: None
         """
         if len(params) != len(self.chains[0].params):
-            raise AttributeError("To many params supplied in reset_params().\n%s expected\n%s supplied\n%s"
+            raise AttributeError("Incorrect number of params supplied in reset_params().\n%s expected\n%s supplied\n%s"
                                  % (len(self.chains[0].params), len(params), str(params)))
 
         for _chain in self.chains:

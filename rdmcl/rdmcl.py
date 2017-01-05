@@ -88,7 +88,7 @@ def scored_clusters():
 
 
 class Cluster(object):
-    def __init__(self, seq_ids, sim_scores, parent=None, clique=False):
+    def __init__(self, seq_ids, sim_scores, taxa_separator="-", parent=None, clique=False):
         """
         - Note that reciprocal best hits between paralogs are collapsed when instantiating group_0, so
           no problem strongly penalizing all paralogs in the scoring algorithm
@@ -104,6 +104,7 @@ class Cluster(object):
         """
         self.taxa = OrderedDict()
         self.sim_scores = sim_scores
+        self.taxa_separator = taxa_separator
         self.parent = parent
 
         self.subgroup_counter = 0
@@ -114,7 +115,7 @@ class Cluster(object):
         self.collapsed_genes = OrderedDict()  # If paralogs are reciprocal best hits, collapse them
         self._name = None
         for next_seq_id in seq_ids:
-            taxa = next_seq_id.split(in_args.taxa_separator)[0]
+            taxa = next_seq_id.split(taxa_separator)[0]
             self.taxa.setdefault(taxa, [])
             self.taxa[taxa].append(next_seq_id)
 
@@ -137,11 +138,11 @@ class Cluster(object):
             while not breakout:
                 breakout = True
                 for seq1_id in seq_ids:
-                    seq1_taxa = seq1_id.split(in_args.taxa_separator)[0]
+                    seq1_taxa = seq1_id.split(taxa_separator)[0]
                     paralog_best_hits = []
                     for hit in self._get_best_hits(seq1_id).itertuples():
                         seq2_id = hit.seq1 if hit.seq1 != seq1_id else hit.seq2
-                        if seq2_id.split(in_args.taxa_separator)[0] != seq1_taxa:
+                        if seq2_id.split(taxa_separator)[0] != seq1_taxa:
                             paralog_best_hits = []
                             break
                         paralog_best_hits.append(seq2_id)
@@ -298,7 +299,8 @@ class Cluster(object):
                 clique95 = [np.percentile(clique_resample, 2.5), np.percentile(clique_resample, 97.5)]
                 integrated = total_kde.integrate_box_1d(clique95[0], clique95[1])
                 if integrated < 0.05:
-                    clique = Cluster(clique, sim_scores=clique_scores, parent=self, clique=True)
+                    clique = Cluster(clique, sim_scores=clique_scores, taxa_separator=self.taxa_separator,
+                                     parent=self, clique=True)
                     self.cliques.append(clique)
 
         if self.cliques:
@@ -348,14 +350,13 @@ class Cluster(object):
         return score
     """
 
-    @staticmethod
-    def raw_score(id_list):
+    def raw_score(self, id_list):
         if len(id_list) == 1:
             return 0
 
         taxa = OrderedDict()
         for gene in id_list:
-            taxon = gene.split(in_args.taxa_separator)[0]
+            taxon = gene.split(self.taxa_separator)[0]
             taxa.setdefault(taxon, [])
             taxa[taxon].append(gene)
 
@@ -405,7 +406,7 @@ def psi_pred(seq_obj, args):
 
 def mcmcmc_mcl(args, params):
     inflation, gq = args
-    external_tmp_dir, min_score, seqbuddy, parent_cluster = params
+    external_tmp_dir, min_score, seqbuddy, parent_cluster, taxa_separator = params
     mcl_tmp_dir = MyFuncs.TempDir()
 
     mcl_output = Popen("mcl %s/input.csv --abc -te 2 -tf 'gq(%s)' -I %s -o %s/output.groups" %
@@ -438,7 +439,7 @@ def mcmcmc_mcl(args, params):
             alb_obj = generate_msa(sb_copy)
             sim_scores = create_all_by_all_scores(alb_obj, quiet=True)
 
-        cluster = Cluster(cluster, sim_scores, parent=parent_cluster)
+        cluster = Cluster(cluster, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator)
         clusters[indx] = cluster
         score += cluster.score()
 
@@ -452,7 +453,7 @@ def mcmcmc_mcl(args, params):
     return score
 
 
-def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=True):
+def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=True, taxa_separator="-"):
     """
     Run MCMCMC on MCL to find the best orthogroups
     :param master_cluster: The group to be subdivided
@@ -461,6 +462,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     :param seqbuddy: The sequences that are included in the master sequence_ids
     :param steps: How many MCMCMC iterations to run TODO: calculate this on the fly
     :param quiet: Suppress StdErr
+    :param taxa_separator: The string that separates taxon names from gene names
     :return: list of sequence_ids objects
     """
     def save_cluster():
@@ -501,8 +503,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
             ofile.write("-1000000000")
 
         mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1,
-                                       params=["%s" % temp_dir.path, False, seqbuddy, master_cluster], quiet=quiet,
-                                       outfile="%s/mcmcmc_out.csv" % temp_dir.path)
+                                       params=["%s" % temp_dir.path, False, seqbuddy, master_cluster, taxa_separator],
+                                       quiet=quiet, outfile="%s/mcmcmc_out.csv" % temp_dir.path)
 
     except RuntimeError:  # Happens when mcmcmc fails to find different initial chain parameters
         save_cluster()
@@ -513,7 +515,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     for chain in mcmcmc_factory.chains:
         worst_score = chain.raw_min if chain.raw_min < worst_score else worst_score
 
-    mcmcmc_factory.reset_params(["%s" % temp_dir.path, worst_score, seqbuddy, master_cluster])
+    mcmcmc_factory.reset_params(["%s" % temp_dir.path, worst_score, seqbuddy, master_cluster, taxa_separator])
     mcmcmc_factory.run()
     mcmcmc_output = pd.read_csv("%s/mcmcmc_out.csv" % temp_dir.path, "\t")
 
@@ -528,7 +530,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
         cluster_ids = helpers.md5_hash("".join(sorted(sub_cluster)))
         graph = broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_ids))[0][0]
         sim_scores = pd.read_csv(StringIO(graph), index_col=False)
-        sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster)
+        sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster, taxa_separator=taxa_separator)
         if sub_cluster.seq_id_hash == master_cluster.seq_id_hash:
             raise ArithmeticError("The sub_cluster and master_cluster are the same, but are returning different "
                                   "scores\nsub-cluster score: %s, master score: %s\n%s" % (sub_cluster.score(),
@@ -554,7 +556,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
         seqbuddy_copy = Sb.pull_recs(seqbuddy_copy, ["^%s$" % rec_id for rec_id in sub_cluster.seq_ids])
 
         # Recursion... Reassign cluster_list, as all clusters are returned at the end of a call to orthogroup_caller
-        cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, steps=steps, quiet=quiet,)
+        cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, steps=steps, quiet=quiet,
+                                         taxa_separator=taxa_separator)
 
     save_cluster()
     return cluster_list
@@ -1011,7 +1014,8 @@ if __name__ == '__main__':
         scores_data = pd.read_csv("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir,
                                   index_col=False, sep="\t")
         scores_data.columns = ["seq1", "seq2", "score"]
-        group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data)
+        group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data,
+                                  taxa_separator=in_args.taxa_separator)
 
     else:
         logging.warning("Generating initial all-by-all similarity graph")
@@ -1022,7 +1026,8 @@ if __name__ == '__main__':
         broker.query("UPDATE data_table SET graph='{0}' "
                      "WHERE hash='{1}'".format(scores_data.to_csv(header=None, index=False), seq_ids_hash))
 
-        group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data)
+        group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data,
+                                  taxa_separator=in_args.taxa_separator)
         logging.info("\t-- finished in %s --" % TIMER.split())
 
     # Base cluster score
@@ -1051,7 +1056,7 @@ if __name__ == '__main__':
     run_time = MyFuncs.RunTime(prefix=progress, _sleep=0.3, final_clear=True)
     run_time.start()
     final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences,
-                                       steps=in_args.mcmcmc_steps, quiet=True)
+                                       steps=in_args.mcmcmc_steps, quiet=True, taxa_separator=in_args.taxa_separator)
     run_time.end()
 
     with open("%s/.progress" % in_args.outdir, "r") as progress_file:
