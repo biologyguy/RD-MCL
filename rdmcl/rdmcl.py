@@ -109,7 +109,7 @@ class Cluster(object):
 
         self.subgroup_counter = 0
         # self.clique_counter = 0
-        # self.clique = clique
+        self.clique = clique
         # self.cliques = []
         self.cluster_score = None
         self.collapsed_genes = OrderedDict()  # If paralogs are reciprocal best hits, collapse them
@@ -140,7 +140,7 @@ class Cluster(object):
                 for seq1_id in seq_ids:
                     seq1_taxa = seq1_id.split(taxa_separator)[0]
                     paralog_best_hits = []
-                    for hit in self._get_best_hits(seq1_id).itertuples():
+                    for hit in self.get_best_hits(seq1_id).itertuples():
                         seq2_id = hit.seq1 if hit.seq1 != seq1_id else hit.seq2
                         if seq2_id.split(taxa_separator)[0] != seq1_taxa:
                             paralog_best_hits = []
@@ -164,7 +164,7 @@ class Cluster(object):
         self.seq_ids = seq_ids
         self.seq_id_hash = helpers.md5_hash("".join(sorted(self.seq_ids)))
 
-    def _get_best_hits(self, gene):
+    def get_best_hits(self, gene):
         best_hits = self.sim_scores[(self.sim_scores.seq1 == gene) | (self.sim_scores.seq2 == gene)]
         if not best_hits.empty:
             best_hits = best_hits.loc[best_hits.score == max(best_hits.score)].values
@@ -197,16 +197,16 @@ class Cluster(object):
             raise AttributeError("Cluster has not been named.")
         return self._name
 
-    def _recursive_best_hits(self, gene, global_best_hits, tested_ids):
-        best_hits = self._get_best_hits(gene)
+    def recursive_best_hits(self, gene, global_best_hits, tested_ids):
+        best_hits = self.get_best_hits(gene)
         global_best_hits = global_best_hits.append(best_hits, ignore_index=True)
         for _edge in best_hits.itertuples():
             if _edge.seq1 not in tested_ids:
                 tested_ids.append(_edge.seq1)
-                global_best_hits = self._recursive_best_hits(_edge.seq1, global_best_hits, tested_ids)
+                global_best_hits = self.recursive_best_hits(_edge.seq1, global_best_hits, tested_ids)
             if _edge.seq2 not in tested_ids:
                 tested_ids.append(_edge.seq2)
-                global_best_hits = self._recursive_best_hits(_edge.seq2, global_best_hits, tested_ids)
+                global_best_hits = self.recursive_best_hits(_edge.seq2, global_best_hits, tested_ids)
         return global_best_hits
 
     @staticmethod
@@ -232,6 +232,8 @@ class Cluster(object):
             # push(self.seq_id_hash, 'graph', self.sim_scores.to_csv(index=False))
         return self.cluster_score
 
+    """
+    Much expanded scoring system that is currently broken
     def score_bak(self):
         # if self.cluster_score and not force:
         #    return self.cluster_score
@@ -250,7 +252,7 @@ class Cluster(object):
             for taxa, genes in self.taxa.items():
                 if len(genes) > 1:
                     for gene in genes:
-                        best_hits = self._recursive_best_hits(gene, best_hits, [gene])
+                        best_hits = self.recursive_best_hits(gene, best_hits, [gene])
 
             cliques = []
             for edge in best_hits.itertuples():
@@ -335,6 +337,7 @@ class Cluster(object):
             push(seq_ids, 'cluster_score', str(self.cluster_score))
             push(seq_ids, 'graph', self.sim_scores.to_csv(index=False))
         return self.cluster_score
+    """
 
     """The following are possible score modifier schemes to account for group size
     def gpt(self, score, taxa):  # groups per taxa
