@@ -6,4 +6,4 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 echo "test_rdmcl.py"
 TEST_SCRIPTS=${DIR}'/tests/test_rdmcl.py '
-py.test ${TEST_SCRIPTS} --cov ${DIR}/rdmcl.py --cov-report html -n 1 -p no:cacheprovider --durations=10 $@
+py.test ${TEST_SCRIPTS} --cov ${DIR}/rdmcl.py --cov-report html -n 8 -p no:cacheprovider --durations=10 $@
