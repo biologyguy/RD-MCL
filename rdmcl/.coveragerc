@@ -1,0 +1,4 @@
+[run]
+source = /home/travis/build/biologyguy/RD-MCL/rdmcl/rdmcl.py
+         /home/travis/build/biologyguy/RD-MCL/rdmcl/helpers.py
+         /home/travis/build/biologyguy/RD-MCL/rdmcl/mcmcmc.py
