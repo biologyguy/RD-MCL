@@ -990,7 +990,7 @@ if __name__ == '__main__':
         logging.warning("Executing PSI-Pred on %s sequences" % len(records_missing_ss_files))
         MyFuncs.run_multicore_function(records_missing_ss_files, psi_pred, [in_args.outdir])
         logging.info("\t-- finished in %s --" % TIMER.split())
-        logging.info("\tfiles saved to %s\n" % "%s/psi_pred/" % in_args.outdir)
+        logging.info("\tfiles saved to %s" % "%s/psi_pred/" % in_args.outdir)
     else:
         logging.warning("RESUME: All PSI-Pred .ss2 files found in %s/psi_pred/" % in_args.outdir)
 
