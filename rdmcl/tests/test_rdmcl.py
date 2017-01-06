@@ -7,6 +7,7 @@ import os
 import pandas as pd
 from collections import OrderedDict
 from .. import rdmcl
+from buddysuite import buddy_resources as br
 
 
 # #########  Clusters  ########## #
@@ -66,7 +67,7 @@ def test_psipred_bins(binary, hf):
 
 
 def test_psi_pred(hf):
-    tmpdir = MyFuncs.TempDir()
+    tmpdir = br.TempDir()
     tmpdir.subdir("psi_pred")
     rdmcl.psi_pred(hf.cteno_panxs.to_dict()["BOL-PanxαB"], [tmpdir.path])
     with open("{0}{1}psi_pred{1}BOL-PanxαB.ss2".format(tmpdir.path, hf.sep), "r") as ifile:

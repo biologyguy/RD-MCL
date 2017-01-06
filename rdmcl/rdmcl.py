@@ -50,6 +50,7 @@ import MyFuncs
 import helpers
 from buddysuite import SeqBuddy as Sb
 from buddysuite import AlignBuddy as Alb
+from buddysuite import buddy_resources as br
 
 # Globals
 try:
@@ -386,24 +387,24 @@ class Cluster(object):
 
 def psi_pred(seq_obj, args):
     out_dir = args[0]
-    if os.path.isfile("%s/psi_pred/%s.ss2" % (out_dir, seq_obj.id)):
+    if os.path.isfile("{0}{1}psi_pred{1}{2}.ss2".format(out_dir, os.sep, seq_obj.id)):
         return
-    temp_dir = MyFuncs.TempDir()
+    temp_dir = br.TempDir()
     pwd = os.getcwd()
-    psipred_dir = os.path.abspath("%s/psipred" % os.path.dirname(__file__))
+    psipred_dir = os.path.abspath("%s%spsipred" % (os.path.dirname(__file__), os.sep))
     os.chdir(temp_dir.path)
     with open("sequence.fa", "w") as ofile:
         ofile.write(seq_obj.format("fasta"))
 
     command = '''\
-{0}/bin/seq2mtx sequence.fa > {1}/{2}.mtx;
-{0}/bin/psipred {1}/{2}.mtx {0}/data/weights.dat {0}/data/weights.dat2 {0}/data/weights.dat3 > {1}/{2}.ss;
-{0}/bin/psipass2 {0}/data/weights_p2.dat 1 1.0 1.0 {1}/{2}.ss2 {1}/{2}.ss > {1}/{2}.horiz;
-'''.format(psipred_dir, temp_dir.path, seq_obj.id)
+{0}{3}bin{3}seq2mtx sequence.fa > {1}{3}{2}.mtx;
+{0}{3}bin{3}psipred {1}{3}{2}.mtx {0}{3}data{3}weights.dat {0}{3}data{3}weights.dat2 {0}{3}data{3}weights.dat3 > {1}{3}{2}.ss;
+{0}{3}bin{3}psipass2 {0}{3}data{3}weights_p2.dat 1 1.0 1.0 {1}{3}{2}.ss2 {1}{3}{2}.ss > {1}{3}{2}.horiz;
+'''.format(psipred_dir, temp_dir.path, seq_obj.id, os.sep)
 
     Popen(command, shell=True).wait()
     os.chdir(pwd)
-    shutil.move("%s/%s.ss2" % (temp_dir.path, seq_obj.id), "%s/psi_pred/" % out_dir)
+    shutil.move("%s%s%s.ss2" % (temp_dir.path, os.sep, seq_obj.id), "{0}{1}psi_pred{1}".format(out_dir, os.sep))
     return
 
 
