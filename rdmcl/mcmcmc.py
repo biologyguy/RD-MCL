@@ -13,7 +13,7 @@ import random
 import string
 import numpy as np
 from scipy.stats import norm
-from MyFuncs import DynamicPrint, TempDir, usable_cpu_count
+from buddysuite.buddy_resources import DynamicPrint, TempDir, usable_cpu_count
 from copy import deepcopy
 from multiprocessing import Process
 
