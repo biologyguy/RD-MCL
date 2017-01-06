@@ -48,7 +48,7 @@ Keat, and Andreas D. Baxevanis$^{\ast}$}
 
 
 \section{{Introduction}\label{sec:Intro}}
-
+When a gene evolves an important physiological role, purifying selection will often maintain that function through evolutionary time [REF]. As a result, orthology (i.e., homology via speciation) has become a well-accepted predictor of shared gene product function among species, and considerable effort has been made to develop computational methods to identify orthologs. The algorithms in current use fall into two distinct categories: Tree-based and graph-based clustering methods \cite{Tekaia:2016ga}. Tree-based approaches (e.g., Ensembl Compara \cite{Vilella:2009ju}, LOFT \cite{vanderHeijden:2007bo}, and SYNERGY \cite{Wapinski:2007fa}) broadly rely on estimating a phylogenetic tree for a target gene family, and then reconciling the gene tree with a `known' species tree to identify orthologous clades. Tree-based methods are very accurate under ideal conditions, although high quality species trees are often difficult to estimate. Alternatively, pairwise similarity graph clustering methods can leverage graph theory to rapidly identify natural clusters of related sequences from genome scale datasets. Reciprocal best-hit methods were among the earliest developed for this purpose, but were restricted to assessing only two species at a time. Due to the non-transitive nature of orthology (i.e., paralogs in one species can be orthologous to a single gene in another species), it is more difficult (or impossible) to explicitly assign sequences into groups of pure orthologs. Instead, the term `orthogroup' has come to represent a cluster of orthologs that may include closely related paralogs. InParanoid, EggNOG, and OMA are popular tools for assigning sequences to orthogroups using a `best-hit clique' approach, where closed best-hit sub-graphs are identified in the dataset. While accurate within each sub-graph, these methods tend to be overly strict in their assignment; this causes an under-representation of actual orthologous relationships among many species. Alternatively, Markov clustering (MCL) is very efficient at isolating more inclusive sub-graphs. OrthoMCL is one of the most popular MCL-based ortholog prediction methods, but it is prone to placing too many in-paralogs into orthogroups (i.e., it is less precise). In the current study we have increased the overall resolving power of de novo MCL-based orthogroup assignment with a number of novel enhancements, including refinement of the pairwise similarity metrics, using a supervised heuristic to dynamically select MCL parameters, recursively subdividing orthogroups, and testing putative orthogroups for best-hit cliques to maximize resolution.
 
 \begin{table}[!t]
 \tableparts{\caption{File format support provided by each BuddySuite module for reading (R) and writing (W).\label{table:formats}}}
@@ -71,6 +71,7 @@ I used MAFFT \cite{Katoh:2013hm}, because it's awesome.
 \section{Results}
 
 \section{Discussion}
+Spill some ink regarding in/out paralogs \cite{Sonnhammer:2002vm,Tekaia:2016ga}.
 
 \section{Conclusions}
 
