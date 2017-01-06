@@ -2,3 +2,5 @@
 source = /home/travis/build/biologyguy/RD-MCL/rdmcl/rdmcl.py
          /home/travis/build/biologyguy/RD-MCL/rdmcl/helpers.py
          /home/travis/build/biologyguy/RD-MCL/rdmcl/mcmcmc.py
+         /home/travis/build/biologyguy/RD-MCL/rdmcl/tests/conftest.py
+         /home/travis/build/biologyguy/RD-MCL/rdmcl/tests/__init__.py

@@ -20,8 +20,8 @@ sim_scores.columns = ["seq1", "seq2", "score"]
 # #################################  -  Helper class  -  ################################## #
 class HelperMethods(object):
     def __init__(self):
-        self.resource_path = RESOURCE_PATH
         self.sep = SEP
+        self.resource_path = RESOURCE_PATH
         self.cteno_panxs = cteno_panxs
         self.cteno_ids = ids
         self.cteno_sim_scores = sim_scores
