@@ -71,12 +71,6 @@ def test_cluster_instantiate_child(hf):
     assert cluster.seq_id_hash == hf.string2hash("".join(sorted(child_ids)))
 
 
-def test_cluster_get_best_hits(hf):
-    cluster = rdmcl.Cluster(*hf.base_cluster_args())
-    best_hit = cluster.get_best_hits("Bab-PanxαA")
-    assert best_hit.iloc[0].seq2 == "Lcr-PanxαG"
-
-
 def test_cluster_get_name(hf):
     parent = rdmcl.Cluster(*hf.base_cluster_args())
     assert parent.name() == "group_0"
@@ -107,6 +101,13 @@ def test_cluster_set_name(hf):
 
     group_0_0.set_name()
     assert group_0_0._name == "group_0_0"
+
+
+def test_cluster_get_best_hits(hf):
+    cluster = rdmcl.Cluster(*hf.base_cluster_args())
+    best_hit = cluster.get_best_hits("Bab-PanxαA")
+    assert best_hit.iloc[0].seq2 == "Lcr-PanxαG"
+
 
 # #########  PSI-PRED  ########## #
 bins = ['chkparse', 'psipass2', 'psipred', 'seq2mtx']

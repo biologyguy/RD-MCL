@@ -164,19 +164,22 @@ class Cluster(object):
         self.seq_ids = seq_ids
         self.seq_id_hash = helpers.md5_hash("".join(sorted(self.seq_ids)))
 
-    def get_best_hits(self, gene):
-        best_hits = self.sim_scores[(self.sim_scores.seq1 == gene) | (self.sim_scores.seq2 == gene)]
-        if not best_hits.empty:
-            best_hits = best_hits.loc[best_hits.score == max(best_hits.score)].values
-            best_hits = pd.DataFrame(best_hits, columns=["seq1", "seq2", "score"])
-        return best_hits
-
     def name(self):
+        """
+        Get cluster name, or raise error if not yet set
+        :return: The cluster's name
+        :rtype: str
+        """
         if not self._name:
             raise AttributeError("Cluster has not been named.")
         return self._name
 
     def set_name(self):
+        """
+        Set the cluster name if not yet done, otherwise do nothing.
+        The parent cluster must already have a name, and the new name here is an increment of the parents name
+        :return: Nothing
+        """
         if self._name:
             pass
         # elif self.clique:
@@ -194,12 +197,44 @@ class Cluster(object):
         return
 
     def compare(self, query):
+        """
+        Determine the percentage of sequence ids shared with a query cluster
+        :param query: Another cluster object
+        :return:
+        """
         matches = set(self.seq_ids).intersection(query.seq_ids)
-        weighted_match = (len(matches) * 2.) / (len(self) + query.len)
+        weighted_match = (len(matches) * 2.) / (len(self) + len(query))
         print("name: %s, matches: %s, weighted_match: %s" % (self.name(), len(matches), weighted_match))
         return weighted_match
 
+    def get_best_hits(self, gene):
+        """
+        Search through the sim scores data frame to find the gene(s) with the highest similarity to the query
+        :param gene: Query gene name
+        :type gene: str
+        :return: The best hit(s). Multiple matches will all have the same similarity score.
+        :rtype: pd.DataFrame
+        """
+        best_hits = self.sim_scores[(self.sim_scores.seq1 == gene) | (self.sim_scores.seq2 == gene)]
+        if not best_hits.empty:
+            best_hits = best_hits.loc[best_hits.score == max(best_hits.score)].values
+            best_hits = pd.DataFrame(best_hits, columns=["seq1", "seq2", "score"])
+        return best_hits
+
     def recursive_best_hits(self, gene, global_best_hits, tested_ids):
+        """
+        Compile a best-hit clique.
+        The best hit for a given gene may not have the query gene as its reciprocal best hit, so find the actual best
+        hit and continue until a fully contained clique is formed.
+        :param gene: Query gene name
+        :type gene: str
+        :param global_best_hits: Growing list of best hits that is passed to each recursive call
+        :type global_best_hits: pd.DataFrame
+        :param tested_ids: Growing list of ids that have already been tested, so not repeating the same work
+        :type tested_ids: list
+        :return: The final clique
+        :rtype: pd.DataFrame
+        """
         best_hits = self.get_best_hits(gene)
         global_best_hits = global_best_hits.append(best_hits, ignore_index=True)
         for _edge in best_hits.itertuples():
@@ -213,6 +248,12 @@ class Cluster(object):
 
     @staticmethod
     def perturb(scores):
+        """
+        Add a very small bit of variance into score values when std == 0
+        :param scores: Similarity scores
+        :type scores: pd.DataFrame
+        :return: updated data frame
+        """
         valve = br.SafetyValve(global_reps=10)
         while scores.score.std() == 0:
             valve.step("Failed to perturb:\n%s" % scores)
@@ -221,7 +262,11 @@ class Cluster(object):
         return scores
 
     def score(self):
-        self.cluster_score = self.raw_score(self.seq_ids)
+        """
+        Calculate the cluster score and update the SQLite database
+        :return: score
+        """
+        self.cluster_score = raw_score(self.seq_ids, self.taxa_separator)
         with LOCK:
             broker.query("""INSERT OR REPLACE INTO data_table (hash, graph, cluster_score, seq_ids, alignment)
   VALUES (  '{0}',
@@ -230,8 +275,6 @@ class Cluster(object):
             (SELECT seq_ids FROM data_table WHERE hash = '{0}'),
             (SELECT alignment FROM data_table WHERE hash = '{0}')
           )""".format(self.seq_id_hash, self.sim_scores.to_csv(index=False), str(self.cluster_score)))
-            # push(self.seq_id_hash, 'cluster_score', str(self.cluster_score))
-            # push(self.seq_id_hash, 'graph', self.sim_scores.to_csv(index=False))
         return self.cluster_score
 
     """
@@ -355,35 +398,45 @@ class Cluster(object):
         return score
     """
 
-    def raw_score(self, id_list):
-        if len(id_list) == 1:
-            return 0
-
-        taxa = OrderedDict()
-        for gene in id_list:
-            taxon = gene.split(self.taxa_separator)[0]
-            taxa.setdefault(taxon, [])
-            taxa[taxon].append(gene)
-
-        # sequence_ids should never consist of a single taxa because reciprocal best hit paralogs have been removed
-        # Update: Apparently not true. New paralog best hit cliques can form after the group is broken up some.
-        # if len(taxa) == 1:
-        #    raise ReferenceError("Only a single taxa found in sequence_ids...\n%s" % taxa)
-
-        unique_scores = 1
-        paralog_scores = -1
-        for taxon, genes in taxa.items():
-            if len(genes) == 1:
-                unique_scores *= 2 * (1 + (len(group_0_cluster.taxa[taxon]) / len(group_0_cluster)))
-            else:
-                paralog_scores *= len(genes) * (len(genes) / len(group_0_cluster.taxa[taxon]))
-        return unique_scores + paralog_scores
 
     def __len__(self):
         return len(self.seq_ids)
 
     def __str__(self):
         return str(self.seq_ids)
+
+
+def raw_score(id_list, taxa_separator):
+    """
+    Very basic cluster scoring algorithm.
+    Single sequence -> score 0
+
+    :param id_list:
+    :param taxa_separator:
+    :return:
+    """
+    if len(id_list) == 1:
+        return 0
+
+    taxa = OrderedDict()
+    for gene in id_list:
+        taxon = gene.split(taxa_separator)[0]
+        taxa.setdefault(taxon, [])
+        taxa[taxon].append(gene)
+
+    # sequence_ids should never consist of a single taxa because reciprocal best hit paralogs have been removed
+    # Update: Apparently not true. New paralog best hit cliques can form after the group is broken up some.
+    # if len(taxa) == 1:
+    #    raise ReferenceError("Only a single taxa found in sequence_ids...\n%s" % taxa)
+
+    unique_scores = 1
+    paralog_scores = -1
+    for taxon, genes in taxa.items():
+        if len(genes) == 1:
+            unique_scores *= 2 * (1 + (len(group_0_cluster.taxa[taxon]) / len(group_0_cluster)))
+        else:
+            paralog_scores *= len(genes) * (len(genes) / len(group_0_cluster.taxa[taxon]))
+    return unique_scores + paralog_scores
 
 
 def psi_pred(seq_obj, args):
@@ -785,9 +838,6 @@ def generate_msa(seqbuddy):
             (SELECT cluster_score FROM data_table WHERE hash = '{0}'),
             (SELECT graph FROM data_table WHERE hash = '{0}')
           )""".format(seq_id_hash, str(alignment), str(", ".join(seq_ids))))
-
-        # push(seq_id_hash, 'alignment', str(alignment))
-        # push(seq_id_hash, 'seq_ids', str(", ".join(seq_ids)))
     return alignment
 
 
