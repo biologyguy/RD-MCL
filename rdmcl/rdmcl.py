@@ -46,7 +46,6 @@ from Bio.SubsMat import SeqMat, MatrixInfo
 
 # My packages
 import mcmcmc
-import MyFuncs
 import helpers
 from buddysuite import SeqBuddy as Sb
 from buddysuite import AlignBuddy as Alb
@@ -71,8 +70,8 @@ PARTICULAR PURPOSE.
 Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
 '''
 LOCK = Lock()
-CPUS = MyFuncs.usable_cpu_count()
-TIMER = MyFuncs.Timer()
+CPUS = br.usable_cpu_count()
+TIMER = helpers.Timer()
 
 
 def push(hash_id, field, data):
@@ -214,7 +213,7 @@ class Cluster(object):
 
     @staticmethod
     def perturb(scores):
-        valve = MyFuncs.SafetyValve(global_reps=10)
+        valve = br.SafetyValve(global_reps=10)
         while scores.score.std() == 0:
             valve.step("Failed to perturb:\n%s" % scores)
             for indx, score in scores.score.iteritems():
@@ -413,7 +412,7 @@ def psi_pred(seq_obj, args):
 def mcmcmc_mcl(args, params):
     inflation, gq = args
     external_tmp_dir, min_score, seqbuddy, parent_cluster, taxa_separator = params
-    mcl_tmp_dir = MyFuncs.TempDir()
+    mcl_tmp_dir = br.TempDir()
 
     mcl_output = Popen("mcl %s/input.csv --abc -te 2 -tf 'gq(%s)' -I %s -o %s/output.groups" %
                        (external_tmp_dir, gq, inflation, mcl_tmp_dir.path), shell=True, stderr=PIPE).communicate()
@@ -488,7 +487,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
         return
 
     master_cluster.set_name()
-    temp_dir = MyFuncs.TempDir()
+    temp_dir = br.TempDir()
     master_cluster.sim_scores.to_csv("%s/input.csv" % temp_dir.path, header=None, index=False, sep="\t")
 
     # If there are no paralogs in the cluster, then it is already at its highest score and MCL is unnecessary
@@ -847,13 +846,13 @@ def create_all_by_all_scores(alignment, quiet=False):
         for rec2 in ids2:
             all_by_all.append((rec1, rec2))
 
-    all_by_all_outdir = MyFuncs.TempDir()
+    all_by_all_outdir = br.TempDir()
     if all_by_all:
         n = ceil(len(all_by_all) / CPUS)
         all_by_all = [all_by_all[i:i + n] for i in range(0, len(all_by_all), n)] if all_by_all else []
-        MyFuncs.run_multicore_function(all_by_all, score_sequences, [alignment, psi_pred_files, all_by_all_outdir.path],
+        br.run_multicore_function(all_by_all, score_sequences, [alignment, psi_pred_files, all_by_all_outdir.path],
                                        quiet=quiet)
-    sim_scores_file = MyFuncs.TempFile()
+    sim_scores_file = br.TempFile()
     sim_scores_file.write("seq1,seq2,score")
     aba_root, aba_dirs, aba_files = next(os.walk(all_by_all_outdir.path))
     for aba_file in aba_files:
@@ -993,7 +992,7 @@ if __name__ == '__main__':
 
     if records_missing_ss_files:
         logging.warning("Executing PSI-Pred on %s sequences" % len(records_missing_ss_files))
-        MyFuncs.run_multicore_function(records_missing_ss_files, psi_pred, [in_args.outdir])
+        br.run_multicore_function(records_missing_ss_files, psi_pred, [in_args.outdir])
         logging.info("\t-- finished in %s --" % TIMER.split())
         logging.info("\tfiles saved to %s" % "%s/psi_pred/" % in_args.outdir)
     else:
@@ -1059,7 +1058,7 @@ if __name__ == '__main__':
     with open("%s/.progress" % in_args.outdir, "w") as progress_file:
         progress_dict = {"mcl_runs": 0, "placed": 0, "total": len(group_0_cluster)}
         json.dump(progress_dict, progress_file)
-    run_time = MyFuncs.RunTime(prefix=progress, _sleep=0.3, final_clear=True)
+    run_time = br.RunTime(prefix=progress, _sleep=0.3, final_clear=True)
     run_time.start()
     final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences,
                                        steps=in_args.mcmcmc_steps, quiet=True, taxa_separator=in_args.taxa_separator)
