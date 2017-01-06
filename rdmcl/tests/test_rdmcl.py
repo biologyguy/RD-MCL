@@ -103,11 +103,56 @@ def test_cluster_set_name(hf):
     assert group_0_0._name == "group_0_0"
 
 
+def test_cluster_compare(hf, capsys):
+    subject = rdmcl.Cluster(['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE'],
+                            hf.get_data("cteno_sim_scores"))
+    query = rdmcl.Cluster(['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC', 'Oma-PanxαC', 'Dgl-PanxαE'],
+                          hf.get_data("cteno_sim_scores"))
+    assert subject.compare(query) == 0.2
+    out, err = capsys.readouterr()
+    assert out == "name: group_0, matches: 1, weighted_match: 0.2\n"
+    assert query.compare(subject) == 0.2
+
+
 def test_cluster_get_best_hits(hf):
     cluster = rdmcl.Cluster(*hf.base_cluster_args())
     best_hit = cluster.get_best_hits("Bab-PanxαA")
     assert best_hit.iloc[0].seq2 == "Lcr-PanxαG"
 
+
+def test_cluster_recursive_best_hits(hf):
+    cluster = rdmcl.Cluster(*hf.base_cluster_args())
+    global_best_hits = pd.DataFrame(columns=["seq1", "seq2", "score"])
+    best_hits = cluster.recursive_best_hits('Bab-PanxαB', global_best_hits, ['Bab-PanxαB'])
+    assert best_hits.to_csv() == """\
+,seq1,seq2,score
+0,Bab-PanxαB,Vpa-PanxαB,0.9715263513449742
+1,Lcr-PanxαH,Vpa-PanxαB,0.979692672624647
+2,Lcr-PanxαH,Vpa-PanxαB,0.979692672624647
+"""
+
+
+def test_cluster_perterb(hf):
+    cluster = rdmcl.Cluster(*hf.base_cluster_args())
+    global_best_hits = pd.DataFrame(columns=["seq1", "seq2", "score"])
+    best_hits = cluster.recursive_best_hits('Lcr-PanxαH', global_best_hits, ['Lcr-PanxαH'])
+    assert best_hits.iloc[0].score == 0.979692672624647
+
+    best_hits = cluster.perturb(best_hits)
+    assert best_hits.iloc[0].score != 0.979692672624647
+    assert round(best_hits.iloc[0].score, 5) == 0.97969
+
+
+def test_cluster_len(hf):
+    cluster = rdmcl.Cluster(['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC', 'Oma-PanxαC', 'Dgl-PanxαE'],
+                            hf.get_data("cteno_sim_scores"))
+    assert len(cluster) == 5
+
+
+def test_cluster_str(hf):
+    cluster = rdmcl.Cluster(['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC', 'Oma-PanxαC', 'Dgl-PanxαE'],
+                            hf.get_data("cteno_sim_scores"))
+    assert str(cluster) == "['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC', 'Oma-PanxαC', 'Dgl-PanxαE']"
 
 # #########  PSI-PRED  ########## #
 bins = ['chkparse', 'psipass2', 'psipred', 'seq2mtx']

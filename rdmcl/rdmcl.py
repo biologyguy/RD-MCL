@@ -33,7 +33,7 @@ import logging
 from io import StringIO
 from subprocess import Popen, PIPE, check_output, CalledProcessError
 from multiprocessing import Lock, Pipe
-from random import random
+from random import random, gauss
 from math import ceil
 from collections import OrderedDict
 
@@ -258,9 +258,10 @@ class Cluster(object):
         while scores.score.std() == 0:
             valve.step("Failed to perturb:\n%s" % scores)
             for indx, score in scores.score.iteritems():
-                scores.set_value(indx, "score", random.gauss(score, (score * 0.0000001)))
+                scores.set_value(indx, "score", gauss(score, (score * 0.0000001)))
         return scores
 
+    # ToDo: Remove the score broker query from the Cluster class
     def score(self):
         """
         Calculate the cluster score and update the SQLite database
@@ -397,7 +398,6 @@ class Cluster(object):
         score = round(score / len(self.clusters) - modifier, 2)
         return score
     """
-
 
     def __len__(self):
         return len(self.seq_ids)
