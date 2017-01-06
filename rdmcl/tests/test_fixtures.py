@@ -17,3 +17,9 @@ def test_helper_attributes(hf):
 
 def test_helper_string2hash(hf):
     assert hf.string2hash("foo") == "acbd18db4cc2f85cedef654fccc4a4d8"
+
+
+def test_helper_base_cluster_args(hf):
+    cteno_ids, cteno_sim_scores = hf.base_cluster_args()
+    assert cteno_ids == hf.cteno_ids
+    assert cteno_sim_scores.to_csv() == hf.cteno_sim_scores.to_csv()

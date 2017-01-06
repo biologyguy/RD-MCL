@@ -5,7 +5,6 @@ import pytest
 import MyFuncs
 import os
 import pandas as pd
-from copy import deepcopy
 from collections import OrderedDict
 from .. import rdmcl
 from buddysuite import buddy_resources as br
@@ -13,7 +12,7 @@ from buddysuite import buddy_resources as br
 
 # #########  Clusters  ########## #
 def test_cluster_instantiate_group_0(hf):
-    cluster = rdmcl.Cluster(list(hf.cteno_ids), deepcopy(hf.cteno_sim_scores))
+    cluster = rdmcl.Cluster(*hf.base_cluster_args())
     assert [taxa for taxa in cluster.taxa] == ['Bab', 'Bch', 'Bfo', 'Bfr', 'BOL', 'Cfu', 'Dgl', 'Edu', 'Hca', 'Hru',
                                                'Lcr', 'Lla', 'Mle', 'Oma', 'Pba', 'Tin', 'Vpa', 'Hvu']
     assert hf.string2hash(cluster.sim_scores.to_csv()) == "984c4424c2b8529694696d715c4108a5"
@@ -54,7 +53,7 @@ def test_cluster_instantiate_group_0(hf):
 
 
 def test_cluster_instantiate_child(hf):
-    parent = rdmcl.Cluster(list(hf.cteno_ids), deepcopy(hf.cteno_sim_scores))
+    parent = rdmcl.Cluster(*hf.base_cluster_args())
     child_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Edu-PanxαA', 'Hca-PanxαB',
                  'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
     sim_scores = pd.read_csv("%sCteno_pannexins_subgroup_sim.scores" % hf.resource_path, index_col=False, header=None)
@@ -74,7 +73,7 @@ def test_cluster_instantiate_child(hf):
 
 
 def test_cluster_get_best_hits(hf):
-    cluster = rdmcl.Cluster(list(hf.cteno_ids), deepcopy(hf.cteno_sim_scores))
+    cluster = rdmcl.Cluster(*hf.base_cluster_args())
     best_hit = cluster.get_best_hits("Bab-PanxαA")
     assert best_hit.iloc[0].seq2 == "Lcr-PanxαG"
 

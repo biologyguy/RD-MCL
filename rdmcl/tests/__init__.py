@@ -3,6 +3,7 @@ import os
 import sys
 import pandas as pd
 from hashlib import md5
+from copy import deepcopy
 from buddysuite import SeqBuddy as Sb
 
 SEP = os.sep
@@ -29,3 +30,6 @@ class HelperMethods(object):
     @staticmethod
     def string2hash(_input):
         return md5(_input.encode("utf-8")).hexdigest()
+
+    def base_cluster_args(self):
+        return list(self.cteno_ids), deepcopy(self.cteno_sim_scores)
