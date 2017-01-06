@@ -77,6 +77,38 @@ def test_cluster_get_best_hits(hf):
     best_hit = cluster.get_best_hits("Bab-PanxαA")
     assert best_hit.iloc[0].seq2 == "Lcr-PanxαG"
 
+
+def test_cluster_get_name(hf):
+    parent = rdmcl.Cluster(*hf.base_cluster_args())
+    assert parent.name() == "group_0"
+    child = rdmcl.Cluster(['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC'], parent.sim_scores, parent=parent)
+    with pytest.raises(AttributeError) as err:
+        child.name()
+    assert "Cluster has not been named." in str(err)
+
+
+def test_cluster_set_name(hf):
+    group_0 = rdmcl.Cluster(*hf.base_cluster_args())
+    assert group_0._name == "group_0"
+    group_0.set_name()
+    assert group_0._name == "group_0"
+
+    child_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Edu-PanxαA', 'Hca-PanxαB',
+                 'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
+    sim_scores = pd.read_csv("%sCteno_pannexins_subgroup_sim.scores" % hf.resource_path, index_col=False, header=None)
+    sim_scores.columns = ["seq1", "seq2", "score"]
+    group_0_0 = rdmcl.Cluster(child_ids, sim_scores, parent=group_0)
+    assert group_0_0._name is None
+
+    grandchild_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB']
+    group_0_0_0 = rdmcl.Cluster(grandchild_ids, sim_scores, parent=group_0_0)
+    with pytest.raises(ValueError) as err:
+        group_0_0_0.set_name()
+    assert "Parent of current cluster has not been named." in str(err)
+
+    group_0_0.set_name()
+    assert group_0_0._name == "group_0_0"
+
 # #########  PSI-PRED  ########## #
 bins = ['chkparse', 'psipass2', 'psipred', 'seq2mtx']
 

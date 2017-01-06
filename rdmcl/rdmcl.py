@@ -172,15 +172,22 @@ class Cluster(object):
             best_hits = pd.DataFrame(best_hits, columns=["seq1", "seq2", "score"])
         return best_hits
 
+    def name(self):
+        if not self._name:
+            raise AttributeError("Cluster has not been named.")
+        return self._name
+
     def set_name(self):
         if self._name:
             pass
-        elif not self.parent.name():
-            raise ValueError("Parent of current cluster has not been named.\n%s" % self)
         # elif self.clique:
         #    self._name = "%s_c%s" % (self.parent.name(), self.parent.clique_counter)
         #    self.parent.clique_counter += 1
         else:
+            try:
+                self.parent.name()
+            except AttributeError:
+                raise ValueError("Parent of current cluster has not been named.\n%s" % self)
             self._name = "%s_%s" % (self.parent.name(), self.parent.subgroup_counter)
             self.parent.subgroup_counter += 1
             # for clique in self.cliques:
@@ -192,11 +199,6 @@ class Cluster(object):
         weighted_match = (len(matches) * 2.) / (len(self) + query.len)
         print("name: %s, matches: %s, weighted_match: %s" % (self.name(), len(matches), weighted_match))
         return weighted_match
-
-    def name(self):
-        if not self._name:
-            raise AttributeError("Cluster has not been named.")
-        return self._name
 
     def recursive_best_hits(self, gene, global_best_hits, tested_ids):
         best_hits = self.get_best_hits(gene)
