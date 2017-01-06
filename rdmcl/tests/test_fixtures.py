@@ -10,9 +10,9 @@ from hashlib import md5
 def test_helper_attributes(hf):
     assert hf.sep == os.sep
     assert hf.resource_path == os.path.join(os.path.dirname(os.path.abspath(__file__)), 'unit_test_resources') + os.sep
-    assert type(hf.cteno_panxs) == buddysuite.SeqBuddy.SeqBuddy
-    assert hf.cteno_ids == [rec.id for rec in hf.cteno_panxs.records]
-    assert md5(hf.cteno_sim_scores.to_csv().encode("utf-8")).hexdigest() == "6402f2222a0cc43d3e32c6f8cc84a47a"
+    assert type(hf._cteno_panxs) == buddysuite.SeqBuddy.SeqBuddy
+    assert hf._cteno_ids == [rec.id for rec in hf._cteno_panxs.records]
+    assert md5(hf._cteno_sim_scores.to_csv().encode("utf-8")).hexdigest() == "6402f2222a0cc43d3e32c6f8cc84a47a"
 
 
 def test_helper_string2hash(hf):
@@ -21,5 +21,14 @@ def test_helper_string2hash(hf):
 
 def test_helper_base_cluster_args(hf):
     cteno_ids, cteno_sim_scores = hf.base_cluster_args()
-    assert cteno_ids == hf.cteno_ids
-    assert cteno_sim_scores.to_csv() == hf.cteno_sim_scores.to_csv()
+    assert cteno_ids == hf._cteno_ids
+    assert cteno_sim_scores.to_csv() == hf._cteno_sim_scores.to_csv()
+
+
+def test_helper_get_data(hf):
+    assert str(hf.get_data("cteno_panxs")) == str(hf._cteno_panxs)
+    assert hf.get_data("cteno_ids") == hf._cteno_ids
+    assert hf.get_data("cteno_sim_scores").to_csv() == hf._cteno_sim_scores.to_csv()
+    with pytest.raises(AttributeError) as err:
+        hf.get_data("foo")
+    assert "Unknown data type: foo" in str(err)

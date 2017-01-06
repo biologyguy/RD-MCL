@@ -23,13 +23,23 @@ class HelperMethods(object):
     def __init__(self):
         self.sep = SEP
         self.resource_path = RESOURCE_PATH
-        self.cteno_panxs = cteno_panxs
-        self.cteno_ids = ids
-        self.cteno_sim_scores = sim_scores
+        self._cteno_panxs = cteno_panxs
+        self._cteno_ids = ids
+        self._cteno_sim_scores = sim_scores
 
     @staticmethod
     def string2hash(_input):
         return md5(_input.encode("utf-8")).hexdigest()
 
     def base_cluster_args(self):
-        return list(self.cteno_ids), deepcopy(self.cteno_sim_scores)
+        return list(self._cteno_ids), deepcopy(self._cteno_sim_scores)
+
+    def get_data(self, data):
+        if data == "cteno_panxs":
+            return deepcopy(self._cteno_panxs)
+        elif data == "cteno_ids":
+            return deepcopy(self._cteno_ids)
+        elif data == "cteno_sim_scores":
+            return deepcopy(self._cteno_sim_scores)
+        else:
+            raise AttributeError("Unknown data type: %s" % data)
