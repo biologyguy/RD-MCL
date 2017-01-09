@@ -13,7 +13,7 @@ from multiprocessing import SimpleQueue, Process, Pipe
 
 class SQLiteBroker(object):
     """
-    Simple multithread broker to insert/update records in a db or to retrieve records
+    Multithread broker to query a SQLite db
     """
     def __init__(self, db_file="sqlite_db.sqlite"):
         self.db_file = db_file
@@ -138,7 +138,6 @@ def pretty_time(seconds):
         minutes = floor(seconds / 60)
         seconds -= (minutes * 60)
         output = "%i days, %i hrs, %i min, %i sec" % (days, hours, minutes, seconds)
-
     return output
 
 
@@ -161,6 +160,5 @@ def bit_score(raw_score):
     # These values were empirically determined for BLOSUM62 by Altschul
     bit_k_value = 0.035
     bit_lambda = 0.252
-
     bits = ((bit_lambda * raw_score) - (log(bit_k_value))) / log(2)
     return bits

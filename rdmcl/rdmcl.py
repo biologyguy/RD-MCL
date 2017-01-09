@@ -422,14 +422,14 @@ def raw_score(id_list, taxa_separator):
     return unique_scores + paralog_scores
 
 
-def score_cluster(cluster, sqlite_broker):
+def score_cluster(cluster, sql_broker):
     """
     Calculate the cluster score and update the SQLite database
     :return: score
     """
     cluster.cluster_score = raw_score(cluster.seq_ids, cluster.taxa_separator)
     with LOCK:
-        sqlite_broker.query("""INSERT OR REPLACE INTO data_table (hash, graph, cluster_score, seq_ids, alignment)
+        sql_broker.query("""INSERT OR REPLACE INTO data_table (hash, graph, cluster_score, seq_ids, alignment)
 VALUES (  '{0}',
         '{1}',
         '{2}',
@@ -464,7 +464,7 @@ def mc_psi_pred(seq_obj, args):
 
 def mcmcmc_mcl(args, params):
     inflation, gq = args
-    external_tmp_dir, min_score, seqbuddy, parent_cluster, taxa_separator = params
+    external_tmp_dir, min_score, seqbuddy, parent_cluster, taxa_separator, sql_broker = params
     mcl_tmp_dir = br.TempDir()
 
     mcl_output = Popen("mcl %s/input.csv --abc -te 2 -tf 'gq(%s)' -I %s -o %s/output.groups" %
@@ -486,7 +486,7 @@ def mcmcmc_mcl(args, params):
 
     for indx, cluster in enumerate(clusters):
         cluster_ids = helpers.md5_hash("".join(sorted(cluster)))
-        cluster_data = broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_ids))
+        cluster_data = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_ids))
         if cluster_data and cluster_data[0][0]:
             with LOCK:
                 sim_scores = pd.read_csv(StringIO(cluster_data[0][0]), index_col=False)
@@ -494,8 +494,8 @@ def mcmcmc_mcl(args, params):
         else:
             sb_copy = Sb.make_copy(seqbuddy)
             sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster]))
-            alb_obj = generate_msa(sb_copy)
-            sim_scores = create_all_by_all_scores(alb_obj, quiet=True)
+            alb_obj = generate_msa(sb_copy, sql_broker)
+            sim_scores = create_all_by_all_scores(alb_obj, sql_broker=sql_broker, quiet=True)
 
         cluster = Cluster(cluster, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator)
         clusters[indx] = cluster
@@ -511,13 +511,14 @@ def mcmcmc_mcl(args, params):
     return score
 
 
-def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=True, taxa_separator="-"):
+def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, steps=1000, quiet=True, taxa_separator="-"):
     """
     Run MCMCMC on MCL to find the best orthogroups
     :param master_cluster: The group to be subdivided
     :type master_cluster: Cluster
     :param cluster_list: When a sequence_ids is finalized after recursion, it is appended to this list
     :param seqbuddy: The sequences that are included in the master sequence_ids
+    :param sql_broker: Multithread SQL broker that can be queried
     :param steps: How many MCMCMC iterations to run TODO: calculate this on the fly
     :param quiet: Suppress StdErr
     :param taxa_separator: The string that separates taxon names from gene names
@@ -527,7 +528,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
         cluster_list.append(master_cluster)
         if not os.path.isdir("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name())):
             temp_dir.save("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name()))
-        alignment = generate_msa(seqbuddy)
+        alignment = generate_msa(seqbuddy, sql_broker)
         alignment.write("%s/alignments/%s.aln" % (in_args.outdir, master_cluster.name()))
         master_cluster.sim_scores.to_csv("%s/sim_scores/%s.scores" % (in_args.outdir, master_cluster.name()),
                                          header=None, index=False, sep="\t")
@@ -559,9 +560,9 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     try:
         with open("%s/max.txt" % temp_dir.path, "w") as ofile:
             ofile.write("-1000000000")
-
+        mcmcmc_params = ["%s" % temp_dir.path, False, seqbuddy, master_cluster, taxa_separator, sql_broker]
         mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1,
-                                       params=["%s" % temp_dir.path, False, seqbuddy, master_cluster, taxa_separator],
+                                       params=mcmcmc_params,
                                        quiet=quiet, outfile="%s/mcmcmc_out.csv" % temp_dir.path)
 
     except RuntimeError:  # Happens when mcmcmc fails to find different initial chain parameters
@@ -573,12 +574,13 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     for chain in mcmcmc_factory.chains:
         worst_score = chain.raw_min if chain.raw_min < worst_score else worst_score
 
-    mcmcmc_factory.reset_params(["%s" % temp_dir.path, worst_score, seqbuddy, master_cluster, taxa_separator])
+    mcmcmc_factory.reset_params(["%s" % temp_dir.path, worst_score, seqbuddy,
+                                 master_cluster, taxa_separator, sql_broker])
     mcmcmc_factory.run()
     mcmcmc_output = pd.read_csv("%s/mcmcmc_out.csv" % temp_dir.path, "\t")
 
     best_score = max(mcmcmc_output["result"])
-    if best_score <= score_cluster(master_cluster, broker):
+    if best_score <= score_cluster(master_cluster, sql_broker):
         save_cluster()
         return cluster_list
 
@@ -586,15 +588,15 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     recursion_clusters = []
     for sub_cluster in mcl_clusters:
         cluster_ids = helpers.md5_hash("".join(sorted(sub_cluster)))
-        graph = broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_ids))[0][0]
+        graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_ids))[0][0]
         sim_scores = pd.read_csv(StringIO(graph), index_col=False)
         sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster, taxa_separator=taxa_separator)
         if sub_cluster.seq_id_hash == master_cluster.seq_id_hash:
             raise ArithmeticError("The sub_cluster and master_cluster are the same, but are returning different "
                                   "scores\nsub-cluster score: %s, master score: %s\n%s"
-                                  % (score_cluster(sub_cluster, broker), score_cluster(master_cluster, broker),
+                                  % (score_cluster(sub_cluster, sql_broker), score_cluster(master_cluster, sql_broker),
                                      sub_cluster.seq_id_hash))
-        score_cluster(sub_cluster, broker)
+        score_cluster(sub_cluster, sql_broker)
         sub_cluster.set_name()
         if len(sub_cluster) in [1, 2]:
             cluster_list.append(sub_cluster)
@@ -614,8 +616,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
         seqbuddy_copy = Sb.pull_recs(seqbuddy_copy, ["^%s$" % rec_id for rec_id in sub_cluster.seq_ids])
 
         # Recursion... Reassign cluster_list, as all clusters are returned at the end of a call to orthogroup_caller
-        cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, steps=steps, quiet=quiet,
-                                         taxa_separator=taxa_separator)
+        cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, sql_broker=sql_broker,
+                                         steps=steps, quiet=quiet, taxa_separator=taxa_separator)
 
     save_cluster()
     return cluster_list
@@ -817,33 +819,38 @@ def score_sequences(seq_pairs, args):
     return
 
 
-def generate_msa(seqbuddy):
+def generate_msa(seqbuddy, sql_broker=None):
     seq_ids = sorted([rec.id for rec in seqbuddy.records])
     seq_id_hash = helpers.md5_hash("".join(seq_ids))
-    alignment = broker.query("SELECT (alignment) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
-    if alignment and alignment[0][0]:
-        alignment = Alb.AlignBuddy(alignment[0][0])
-        pass
-    else:
+    alignment = False
+
+    if sql_broker:
+        alignment = sql_broker.query("SELECT (alignment) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
+        if alignment and alignment[0][0]:
+            alignment = Alb.AlignBuddy(alignment[0][0])
+
+    if not alignment:
         if len(seqbuddy) == 1:
             alignment = Alb.AlignBuddy(str(seqbuddy))
         else:
             alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -2", quiet=True)
 
-        broker.query("""INSERT OR REPLACE INTO data_table (hash, alignment, seq_ids, cluster_score, graph)
-  VALUES (  '{0}',
-            '{1}',
-            '{2}',
-            (SELECT cluster_score FROM data_table WHERE hash = '{0}'),
-            (SELECT graph FROM data_table WHERE hash = '{0}')
-          )""".format(seq_id_hash, str(alignment), str(", ".join(seq_ids))))
+    if sql_broker:
+        sql_broker.query("""INSERT OR REPLACE INTO data_table (hash, alignment, seq_ids, cluster_score, graph)
+                        VALUES ('{0}',
+                                '{1}',
+                                '{2}',
+                                (SELECT cluster_score FROM data_table WHERE hash = '{0}'),
+                                (SELECT graph FROM data_table WHERE hash = '{0}')
+                                )""".format(seq_id_hash, str(alignment), str(", ".join(seq_ids))))
     return alignment
 
 
-def create_all_by_all_scores(alignment, quiet=False):
+def create_all_by_all_scores(alignment, sql_broker=None, quiet=False):
     """
     Generate a multiple sequence alignment and pull out all-by-all similarity graph
     :param alignment: AlignBuddy object
+    :param sql_broker: Multithread SQL broker that can be queried
     :param quiet: Supress multicore output
     :return:
     """
@@ -854,11 +861,12 @@ def create_all_by_all_scores(alignment, quiet=False):
     # Only calculate if not previously calculated
     seq_ids = sorted([rec.id for rec in alignment.records_iter()])
     seq_id_hash = helpers.md5_hash("".join(seq_ids))
-    graph = broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
-    if graph and graph[0][0]:
-        sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False)
-        sim_scores.columns = ["seq1", "seq2", "score"]
-        return sim_scores
+    if sql_broker:
+        graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
+        if graph and graph[0][0]:
+            sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False)
+            sim_scores.columns = ["seq1", "seq2", "score"]
+            return sim_scores
 
     # Don't want to modify the alignbuddy object in place
     alignment = Alb.make_copy(alignment)
@@ -900,7 +908,7 @@ def create_all_by_all_scores(alignment, quiet=False):
         n = ceil(len(all_by_all) / CPUS)
         all_by_all = [all_by_all[i:i + n] for i in range(0, len(all_by_all), n)] if all_by_all else []
         br.run_multicore_function(all_by_all, score_sequences, [alignment, psi_pred_files, all_by_all_outdir.path],
-                                       quiet=quiet)
+                                  quiet=quiet)
     sim_scores_file = br.TempFile()
     sim_scores_file.write("seq1,seq2,score")
     aba_root, aba_dirs, aba_files = next(os.walk(all_by_all_outdir.path))
@@ -908,6 +916,15 @@ def create_all_by_all_scores(alignment, quiet=False):
         with open("%s/%s" % (aba_root, aba_file), "r") as ifile:
             sim_scores_file.write(ifile.read())
     sim_scores = pd.read_csv(sim_scores_file.get_handle("r"), index_col=False)
+    if sql_broker:
+        sql_broker.query("""INSERT OR REPLACE INTO data_table (hash, alignment, seq_ids, cluster_score, graph)
+                        VALUES ('{0}',
+                                '{1}',
+                                '{2}',
+                                (SELECT cluster_score FROM data_table WHERE hash = '{0}'),
+                                '{3}'
+                                )""".format(seq_id_hash, str(alignment), str(", ".join(seq_ids)),
+                                            sim_scores.to_csv(header=None, index=False)))
     return sim_scores
 
 
@@ -1059,7 +1076,7 @@ if __name__ == '__main__':
         alignbuddy = Alb.AlignBuddy(align_data[0][0])
     else:
         logging.warning("Generating initial multiple sequence alignment with MAFFT")
-        alignbuddy = generate_msa(sequences)
+        alignbuddy = generate_msa(sequences, broker)
         alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
 
         logging.info("\t-- finished in %s --" % TIMER.split())
@@ -1074,7 +1091,7 @@ if __name__ == '__main__':
     else:
         logging.warning("Generating initial all-by-all similarity graph")
         logging.info(" written to: %s/sim_scores/complete_all_by_all.scores" % in_args.outdir)
-        scores_data = create_all_by_all_scores(alignbuddy)
+        scores_data = create_all_by_all_scores(alignbuddy, sql_broker=broker)
         scores_data.to_csv("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir,
                            header=None, index=False, sep="\t")
         broker.query("UPDATE data_table SET graph='{0}' "
@@ -1109,7 +1126,7 @@ if __name__ == '__main__':
         json.dump(progress_dict, progress_file)
     run_time = br.RunTime(prefix=progress, _sleep=0.3, final_clear=True)
     run_time.start()
-    final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences,
+    final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences, sql_broker=broker,
                                        steps=in_args.mcmcmc_steps, quiet=True, taxa_separator=in_args.taxa_separator)
     run_time.end()
 
