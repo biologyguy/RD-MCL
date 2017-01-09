@@ -72,6 +72,16 @@ Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
 LOCK = Lock()
 CPUS = br.usable_cpu_count()
 TIMER = helpers.Timer()
+GAP_OPEN = -5
+GAP_EXTEND = 0
+BLOSUM62 = helpers.make_full_mat(SeqMat(MatrixInfo.blosum62))
+
+ambiguous_X = {"A": 0, "R": -1, "N": -1, "D": -1, "C": -2, "Q": -1, "E": -1, "G": -1, "H": -1, "I": -1, "L": -1,
+               "K": -1, "M": -1, "F": -1, "P": -2, "S": 0, "T": 0, "W": -2, "Y": -1, "V": -1}
+for aa in ambiguous_X:
+    pair = sorted((aa, "X"))
+    pair = tuple(pair)
+    BLOSUM62[pair] = ambiguous_X[aa]
 
 
 def push(hash_id, field, data):
@@ -494,7 +504,7 @@ def mcmcmc_mcl(args, params):
 
         cluster = Cluster(cluster, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator)
         clusters[indx] = cluster
-        score += score_cluster(cluster, broker)
+        score += score_cluster(cluster, sql_broker)
 
     with LOCK:
         with open("%s/max.txt" % external_tmp_dir, "r") as ifile:
@@ -773,7 +783,7 @@ def place_orphans(clusters, scores):
 
 def score_sequences(seq_pairs, args):
     # Calculate the best possible scores, and divide by the observed scores
-    alb_obj, psi_pred_files, output_dir = args
+    alb_obj, psi_pred_files, output_dir, gap_open, gap_extend = args
     file_name = helpers.md5_hash(str(seq_pairs))
     ofile = open("%s/%s" % (output_dir, file_name), "w")
     for seq_pair in seq_pairs:
@@ -858,11 +868,13 @@ def generate_msa(seqbuddy, sql_broker=None):
     return alignment
 
 
-def create_all_by_all_scores(alignment, outdir, sql_broker=None, quiet=False):
+def create_all_by_all_scores(alignment, outdir, gap_open=GAP_OPEN, gap_extend=GAP_EXTEND, sql_broker=None, quiet=False):
     """
     Generate a multiple sequence alignment and pull out all-by-all similarity graph
     :param alignment: AlignBuddy object
     :param outdir: Where are files being written to?
+    :param gap_open: Gap initiation penalty
+    :param gap_extend: Gap extension penalty
     :param sql_broker: Multithread SQL broker that can be queried
     :param quiet: Supress multicore output
     :return:
@@ -920,7 +932,8 @@ def create_all_by_all_scores(alignment, outdir, sql_broker=None, quiet=False):
     if all_by_all:
         n = ceil(len(all_by_all) / CPUS)
         all_by_all = [all_by_all[i:i + n] for i in range(0, len(all_by_all), n)] if all_by_all else []
-        br.run_multicore_function(all_by_all, score_sequences, [alignment, psi_pred_files, all_by_all_outdir.path],
+        score_sequences_params = [alignment, psi_pred_files, all_by_all_outdir.path, gap_open, gap_extend]
+        br.run_multicore_function(all_by_all, score_sequences, score_sequences_params,
                                   quiet=quiet)
     sim_scores_file = br.TempFile()
     sim_scores_file.write("seq1,seq2,score")
@@ -976,9 +989,9 @@ if __name__ == '__main__':
     parser.add_argument("-nt", "--no_msa_trim", action="store_true",
                         help="Don't apply the gappyout algorithm to MSAs before scoring")
     parser.add_argument("-op", "--open_penalty", help="Penalty for opening a gap in pairwise alignment scoring",
-                        type=float, default=-5)
+                        type=float, default=GAP_OPEN)
     parser.add_argument("-ep", "--extend_penalty", help="Penalty for extending a gap in pairwise alignment scoring",
-                        type=float, default=0)
+                        type=float, default=GAP_EXTEND)
     parser.add_argument("-ts", "--taxa_separator", action="store", default="-",
                         help="Specify a string that separates taxa ids from gene names")
     parser.add_argument("-f", "--force", action="store_true",
@@ -1045,17 +1058,8 @@ if __name__ == '__main__':
     # Move log file into output directory
     logger_obj.move_log("%s/rdmcl.log" % in_args.outdir)
 
-    clique_check = True if not in_args.supress_clique_check else False
-    recursion_check = True if not in_args.supress_recursion else False
-
-    BLOSUM62 = helpers.make_full_mat(SeqMat(MatrixInfo.blosum62))
-
-    ambiguous_X = {"A": 0, "R": -1, "N": -1, "D": -1, "C": -2, "Q": -1, "E": -1, "G": -1, "H": -1, "I": -1, "L": -1,
-                   "K": -1, "M": -1, "F": -1, "P": -2, "S": 0, "T": 0, "W": -2, "Y": -1, "V": -1}
-    for aa in ambiguous_X:
-        pair = sorted((aa, "X"))
-        pair = tuple(pair)
-        BLOSUM62[pair] = ambiguous_X[aa]
+    # clique_check = True if not in_args.supress_clique_check else False
+    # recursion_check = True if not in_args.supress_recursion else False
 
     # PSIPRED
     logging.warning("\n** PSI-Pred **")
@@ -1079,9 +1083,7 @@ if __name__ == '__main__':
 
     # Initial alignment
     logging.warning("\n** All-by-all graph **")
-    gap_open = in_args.open_penalty
-    gap_extend = in_args.extend_penalty
-    logging.info("gap open penalty: %s\ngap extend penalty: %s" % (gap_open, gap_extend))
+    logging.info("gap open penalty: %s\ngap extend penalty: %s" % (in_args.open_penalty, in_args.extend_penalty))
 
     align_data = broker.query("SELECT (alignment) FROM data_table WHERE hash='{0}'".format(seq_ids_hash))
     if align_data and align_data[0][0]:
