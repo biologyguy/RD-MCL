@@ -166,7 +166,7 @@ def test_psipred_bins(binary, hf):
 def test_psi_pred(hf):
     tmpdir = br.TempDir()
     tmpdir.subdir("psi_pred")
-    rdmcl.psi_pred(hf.get_data("cteno_panxs").to_dict()["BOL-PanxαB"], [tmpdir.path])
+    rdmcl.mc_psi_pred(hf.get_data("cteno_panxs").to_dict()["BOL-PanxαB"], [tmpdir.path])
     with open("{0}{1}psi_pred{1}BOL-PanxαB.ss2".format(tmpdir.path, hf.sep), "r") as ifile:
         output = ifile.read()
         assert hf.string2hash(output) == "da4192e125808e501495dfe4169d56c0", print(output)
@@ -175,7 +175,7 @@ def test_psi_pred(hf):
         ofile.write("\nfoo")
 
     # Confirm that sequences are not reprocessed if already present
-    rdmcl.psi_pred(hf.get_data("cteno_panxs").to_dict()["BOL-PanxαB"], [tmpdir.path])
+    rdmcl.mc_psi_pred(hf.get_data("cteno_panxs").to_dict()["BOL-PanxαB"], [tmpdir.path])
     with open("%s/psi_pred/BOL-PanxαB.ss2" % tmpdir.path, "r") as ifile:
         output = ifile.read()
         assert hf.string2hash(output) == "af9666d37426caa2bbf6b9075ce8df96", print(output)

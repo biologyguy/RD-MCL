@@ -261,23 +261,6 @@ class Cluster(object):
                 scores.set_value(indx, "score", gauss(score, (score * 0.0000001)))
         return scores
 
-    # ToDo: Remove the score broker query from the Cluster class
-    def score(self):
-        """
-        Calculate the cluster score and update the SQLite database
-        :return: score
-        """
-        self.cluster_score = raw_score(self.seq_ids, self.taxa_separator)
-        with LOCK:
-            broker.query("""INSERT OR REPLACE INTO data_table (hash, graph, cluster_score, seq_ids, alignment)
-  VALUES (  '{0}',
-            '{1}',
-            '{2}',
-            (SELECT seq_ids FROM data_table WHERE hash = '{0}'),
-            (SELECT alignment FROM data_table WHERE hash = '{0}')
-          )""".format(self.seq_id_hash, self.sim_scores.to_csv(index=False), str(self.cluster_score)))
-        return self.cluster_score
-
     """
     Much expanded scoring system that is currently broken
     def score_bak(self):
@@ -439,7 +422,24 @@ def raw_score(id_list, taxa_separator):
     return unique_scores + paralog_scores
 
 
-def psi_pred(seq_obj, args):
+def score_cluster(cluster, sqlite_broker):
+    """
+    Calculate the cluster score and update the SQLite database
+    :return: score
+    """
+    cluster.cluster_score = raw_score(cluster.seq_ids, cluster.taxa_separator)
+    with LOCK:
+        sqlite_broker.query("""INSERT OR REPLACE INTO data_table (hash, graph, cluster_score, seq_ids, alignment)
+VALUES (  '{0}',
+        '{1}',
+        '{2}',
+        (SELECT seq_ids FROM data_table WHERE hash = '{0}'),
+        (SELECT alignment FROM data_table WHERE hash = '{0}')
+      )""".format(cluster.seq_id_hash, cluster.sim_scores.to_csv(index=False), str(cluster.cluster_score)))
+    return cluster.cluster_score
+
+
+def mc_psi_pred(seq_obj, args):
     out_dir = args[0]
     if os.path.isfile("{0}{1}psi_pred{1}{2}.ss2".format(out_dir, os.sep, seq_obj.id)):
         return
@@ -499,7 +499,7 @@ def mcmcmc_mcl(args, params):
 
         cluster = Cluster(cluster, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator)
         clusters[indx] = cluster
-        score += cluster.score()
+        score += score_cluster(cluster, broker)
 
     with LOCK:
         with open("%s/max.txt" % external_tmp_dir, "r") as ifile:
@@ -578,7 +578,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
     mcmcmc_output = pd.read_csv("%s/mcmcmc_out.csv" % temp_dir.path, "\t")
 
     best_score = max(mcmcmc_output["result"])
-    if best_score <= master_cluster.score():
+    if best_score <= score_cluster(master_cluster, broker):
         save_cluster()
         return cluster_list
 
@@ -591,10 +591,10 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, steps=1000, quiet=
         sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster, taxa_separator=taxa_separator)
         if sub_cluster.seq_id_hash == master_cluster.seq_id_hash:
             raise ArithmeticError("The sub_cluster and master_cluster are the same, but are returning different "
-                                  "scores\nsub-cluster score: %s, master score: %s\n%s" % (sub_cluster.score(),
-                                                                                           master_cluster.score(),
-                                                                                           sub_cluster.seq_id_hash))
-        sub_cluster.score()
+                                  "scores\nsub-cluster score: %s, master score: %s\n%s"
+                                  % (score_cluster(sub_cluster, broker), score_cluster(master_cluster, broker),
+                                     sub_cluster.seq_id_hash))
+        score_cluster(sub_cluster, broker)
         sub_cluster.set_name()
         if len(sub_cluster) in [1, 2]:
             cluster_list.append(sub_cluster)
@@ -626,9 +626,8 @@ def progress():
         with open("%s/.progress" % in_args.outdir, "r") as ifile:
             try:
                 _progress = json.load(ifile)
-                return "MCL runs processed: %s. Sequences placed: %s/%s. Run time: " % (_progress['mcl_runs'],
-                                                                                        _progress['placed'],
-                                                                                        _progress['total'])
+                return "MCL runs processed: %s. Sequences placed: %s/%s. Run time: " \
+                       % (_progress['mcl_runs'], _progress['placed'], _progress['total'])
             except json.decoder.JSONDecodeError:
                 pass
 
@@ -1042,7 +1041,7 @@ if __name__ == '__main__':
 
     if records_missing_ss_files:
         logging.warning("Executing PSI-Pred on %s sequences" % len(records_missing_ss_files))
-        br.run_multicore_function(records_missing_ss_files, psi_pred, [in_args.outdir])
+        br.run_multicore_function(records_missing_ss_files, mc_psi_pred, [in_args.outdir])
         logging.info("\t-- finished in %s --" % TIMER.split())
         logging.info("\tfiles saved to %s" % "%s/psi_pred/" % in_args.outdir)
     else:
@@ -1086,10 +1085,10 @@ if __name__ == '__main__':
         logging.info("\t-- finished in %s --" % TIMER.split())
 
     # Base cluster score
-    base_score = group_0_cluster.score()
+    base_score = score_cluster(group_0_cluster, broker)
     logging.warning("Base cluster score: %s" % round(base_score, 4))
     # Reset the score of group_0 to account for possible collapse of paralogs
-    group_0_cluster.score()
+    score_cluster(group_0_cluster, broker)
     if group_0_cluster.collapsed_genes:
         logging.warning("Reciprocal best-hit cliques of paralogs have been identified in the input sequences.")
         logging.info(" A representative sequence has been selected from each clique, and the remaining")
@@ -1160,8 +1159,8 @@ if __name__ == '__main__':
 
         ind, max_clust = _max[0], final_clusters[_max[0]]
         if max_clust.subgroup_counter == 0:  # Don't want to include parents of subgroups
-            output += "%s\t%s\t" % (max_clust.name(), round(max_clust.score(), 4))
-            final_score += max_clust.score()
+            output += "%s\t%s\t" % (max_clust.name(), round(score_cluster(max_clust, broker), 4))
+            final_score += score_cluster(max_clust, broker)
             for seq_id in sorted(max_clust.seq_ids):
                 output += "%s\t" % seq_id
             output = "%s\n" % output.strip()
