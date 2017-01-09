@@ -440,8 +440,8 @@ VALUES (  '{0}',
 
 
 def mc_psi_pred(seq_obj, args):
-    out_dir = args[0]
-    if os.path.isfile("{0}{1}psi_pred{1}{2}.ss2".format(out_dir, os.sep, seq_obj.id)):
+    outdir = args[0]
+    if os.path.isfile("{0}{1}psi_pred{1}{2}.ss2".format(outdir, os.sep, seq_obj.id)):
         return
     temp_dir = br.TempDir()
     pwd = os.getcwd()
@@ -458,13 +458,13 @@ def mc_psi_pred(seq_obj, args):
 
     Popen(command, shell=True).wait()
     os.chdir(pwd)
-    shutil.move("%s%s%s.ss2" % (temp_dir.path, os.sep, seq_obj.id), "{0}{1}psi_pred{1}".format(out_dir, os.sep))
+    shutil.move("%s%s%s.ss2" % (temp_dir.path, os.sep, seq_obj.id), "{0}{1}psi_pred{1}".format(outdir, os.sep))
     return
 
 
 def mcmcmc_mcl(args, params):
     inflation, gq = args
-    external_tmp_dir, min_score, seqbuddy, parent_cluster, taxa_separator, sql_broker, progress = params
+    external_tmp_dir, min_score, seqbuddy, parent_cluster, taxa_separator, sql_broker, outdir, progress = params
     mcl_tmp_dir = br.TempDir()
 
     mcl_output = Popen("mcl %s/input.csv --abc -te 2 -tf 'gq(%s)' -I %s -o %s/output.groups" %
@@ -490,7 +490,7 @@ def mcmcmc_mcl(args, params):
             sb_copy = Sb.make_copy(seqbuddy)
             sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster]))
             alb_obj = generate_msa(sb_copy, sql_broker)
-            sim_scores = create_all_by_all_scores(alb_obj, sql_broker=sql_broker, quiet=True)
+            sim_scores = create_all_by_all_scores(alb_obj, outdir, sql_broker=sql_broker, quiet=True)
 
         cluster = Cluster(cluster, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator)
         clusters[indx] = cluster
@@ -506,7 +506,7 @@ def mcmcmc_mcl(args, params):
     return score
 
 
-def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progress,
+def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progress, outdir,
                       steps=1000, quiet=True, taxa_separator="-"):
     """
     Run MCMCMC on MCL to find the best orthogroups
@@ -516,6 +516,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     :param seqbuddy: The sequences that are included in the master sequence_ids
     :param sql_broker: Multithread SQL broker that can be queried
     :param progress: Progress class
+    :param outdir: where are files being written to?
     :param steps: How many MCMCMC iterations to run TODO: calculate this on the fly
     :param quiet: Suppress StdErr
     :param taxa_separator: The string that separates taxon names from gene names
@@ -523,11 +524,11 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     """
     def save_cluster():
         cluster_list.append(master_cluster)
-        if not os.path.isdir("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name())):
-            temp_dir.save("%s/mcmcmc/%s" % (in_args.outdir, master_cluster.name()))
+        if not os.path.isdir("%s/mcmcmc/%s" % (outdir, master_cluster.name())):
+            temp_dir.save("%s/mcmcmc/%s" % (outdir, master_cluster.name()))
         alignment = generate_msa(seqbuddy, sql_broker)
-        alignment.write("%s/alignments/%s.aln" % (in_args.outdir, master_cluster.name()))
-        master_cluster.sim_scores.to_csv("%s/sim_scores/%s.scores" % (in_args.outdir, master_cluster.name()),
+        alignment.write("%s/alignments/%s.aln" % (outdir, master_cluster.name()))
+        master_cluster.sim_scores.to_csv("%s/sim_scores/%s.scores" % (outdir, master_cluster.name()),
                                          header=None, index=False, sep="\t")
         update = len(master_cluster.seq_ids) if not master_cluster.subgroup_counter else 0
         progress.update("placed", update)
@@ -553,7 +554,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     try:
         with open("%s/max.txt" % temp_dir.path, "w") as ofile:
             ofile.write("-1000000000")
-        mcmcmc_params = ["%s" % temp_dir.path, False, seqbuddy, master_cluster, taxa_separator, sql_broker, progress]
+        mcmcmc_params = ["%s" % temp_dir.path, False, seqbuddy, master_cluster,
+                         taxa_separator, sql_broker, outdir, progress]
         mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1,
                                        params=mcmcmc_params,
                                        quiet=quiet, outfile="%s/mcmcmc_out.csv" % temp_dir.path)
@@ -567,8 +569,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     for chain in mcmcmc_factory.chains:
         worst_score = chain.raw_min if chain.raw_min < worst_score else worst_score
 
-    mcmcmc_factory.reset_params(["%s" % temp_dir.path, worst_score, seqbuddy,
-                                 master_cluster, taxa_separator, sql_broker, progress])
+    mcmcmc_factory.reset_params(["%s" % temp_dir.path, worst_score, seqbuddy, master_cluster,
+                                 taxa_separator, sql_broker, outdir, progress])
     mcmcmc_factory.run()
     mcmcmc_output = pd.read_csv("%s/mcmcmc_out.csv" % temp_dir.path, "\t")
 
@@ -610,15 +612,16 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
         # Recursion... Reassign cluster_list, as all clusters are returned at the end of a call to orthogroup_caller
         cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, sql_broker=sql_broker,
-                                         progress=progress, steps=steps, quiet=quiet, taxa_separator=taxa_separator)
+                                         progress=progress, outdir=outdir, steps=steps, quiet=quiet,
+                                         taxa_separator=taxa_separator)
 
     save_cluster()
     return cluster_list
 
 
 class Progress(object):
-    def __init__(self, out_dir):
-        self.outdir = out_dir
+    def __init__(self, outdir):
+        self.outdir = outdir
         with open("%s/.progress" % self.outdir, "w") as progress_file:
             _progress = {"mcl_runs": 0, "placed": 0, "total": len(group_0_cluster)}
             json.dump(_progress, progress_file)
@@ -855,10 +858,11 @@ def generate_msa(seqbuddy, sql_broker=None):
     return alignment
 
 
-def create_all_by_all_scores(alignment, sql_broker=None, quiet=False):
+def create_all_by_all_scores(alignment, outdir, sql_broker=None, quiet=False):
     """
     Generate a multiple sequence alignment and pull out all-by-all similarity graph
     :param alignment: AlignBuddy object
+    :param outdir: Where are files being written to?
     :param sql_broker: Multithread SQL broker that can be queried
     :param quiet: Supress multicore output
     :return:
@@ -883,7 +887,7 @@ def create_all_by_all_scores(alignment, sql_broker=None, quiet=False):
     # Need to specify what columns the PsiPred files map to now that there are gaps.
     psi_pred_files = OrderedDict()
     for rec in alignment.records_iter():
-        ss_file = pd.read_csv("%s/psi_pred/%s.ss2" % (in_args.outdir, rec.id), comment="#",
+        ss_file = pd.read_csv("%s/psi_pred/%s.ss2" % (outdir, rec.id), comment="#",
                               header=None, delim_whitespace=True)
         ss_file.columns = ["indx", "aa", "ss", "coil_prob", "helix_prob", "sheet_prob"]
         ss_counter = 0
@@ -937,16 +941,16 @@ def create_all_by_all_scores(alignment, sql_broker=None, quiet=False):
     return sim_scores
 
 
-def check_sequences(seqbuddy):
-    logging.warning("Checking that the format of all sequence ids matches 'taxa%sgene'" % in_args.taxa_separator)
+def check_sequences(seqbuddy, taxa_separator):
+    logging.warning("Checking that the format of all sequence ids matches 'taxa%sgene'" % taxa_separator)
     failures = []
     for rec in seqbuddy.records:
-        rec_id = rec.id.split(in_args.taxa_separator)
+        rec_id = rec.id.split(taxa_separator)
         if len(rec_id) != 2:
             failures.append(rec.id)
     if failures:
         logging.error("Malformed sequence id(s): '%s'\nThe taxa separator character is currently set to '%s',\n"
-                      " which can be changed with the '-ts' flag" % (", ".join(failures), in_args.taxa_separator))
+                      " which can be changed with the '-ts' flag" % (", ".join(failures), taxa_separator))
         sys.exit()
     else:
         logging.warning("    %s sequences PASSED" % len(seqbuddy))
@@ -1016,7 +1020,7 @@ if __name__ == '__main__':
                                        "graph TEXT", "cluster_score TEXT"])
     broker.start_broker()
     sequences = Sb.SeqBuddy(in_args.sequences)
-    check_sequences(sequences)
+    check_sequences(sequences, in_args.taxa_separator)
     seq_ids_hash = helpers.md5_hash("".join(sorted([rec.id for rec in sequences.records])))
 
     # Check if job has been run already
@@ -1025,12 +1029,12 @@ if __name__ == '__main__':
                         "        All cached resources will be reused.")
 
     # Make sure all the necessary directories are present and emptied of old run files
-    for outdir in ["%s%s" % (in_args.outdir, x) for x in ["", "/alignments", "/mcmcmc", "/sim_scores", "/psi_pred"]]:
-        if not os.path.isdir(outdir):
-            logging.info("mkdir %s" % outdir)
-            os.makedirs(outdir)
+    for _path in ["%s%s" % (in_args.outdir, x) for x in ["", "/alignments", "/mcmcmc", "/sim_scores", "/psi_pred"]]:
+        if not os.path.isdir(_path):
+            logging.info("mkdir %s" % _path)
+            os.makedirs(_path)
         # Delete old 'group' files/directories
-        root, dirs, files = next(os.walk(outdir))
+        root, dirs, files = next(os.walk(_path))
         for _file in files:
             if "group" in _file:
                 os.remove("%s/%s" % (root, _file))
@@ -1100,7 +1104,7 @@ if __name__ == '__main__':
     else:
         logging.warning("Generating initial all-by-all similarity graph")
         logging.info(" written to: %s/sim_scores/complete_all_by_all.scores" % in_args.outdir)
-        scores_data = create_all_by_all_scores(alignbuddy, sql_broker=broker)
+        scores_data = create_all_by_all_scores(alignbuddy, in_args.outdir, sql_broker=broker)
         scores_data.to_csv("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir,
                            header=None, index=False, sep="\t")
         broker.query("UPDATE data_table SET graph='{0}' "
@@ -1135,7 +1139,7 @@ if __name__ == '__main__':
     run_time = br.RunTime(prefix=progress_tracker.__str__, _sleep=0.3, final_clear=True)
     run_time.start()
     final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences, sql_broker=broker,
-                                       progress=progress_tracker, steps=in_args.mcmcmc_steps, quiet=True,
+                                       progress=progress_tracker, outdir=in_args.outdir, steps=in_args.mcmcmc_steps, quiet=True,
                                        taxa_separator=in_args.taxa_separator)
     run_time.end()
 
