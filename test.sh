@@ -14,6 +14,14 @@ then
     FAILURE=1
 fi
 
+#### Helper tests
+TEST_SCRIPTS='test_helpers.py '
+py.test ${TEST_SCRIPTS} --cache-clear -p no:cacheprovider --cov --cov-report= --cov-config ../.coveragerc --durations=10
+if [ $? -ne 0 ]
+then
+    FAILURE=1
+fi
+
 #### RD-MCL tests
 TEST_SCRIPTS='test_rdmcl.py '
 py.test ${TEST_SCRIPTS} --cache-clear -p no:cacheprovider --cov --cov-report= --cov-config ../.coveragerc --durations=10

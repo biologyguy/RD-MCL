@@ -9,6 +9,7 @@ from time import time
 from copy import copy
 from hashlib import md5
 from multiprocessing import SimpleQueue, Process, Pipe
+from buddysuite.buddy_resources import pretty_time
 
 
 class SQLiteBroker(object):
@@ -115,30 +116,6 @@ class Timer(object):
 
     def total_elapsed(self, prefix="", postfix=""):
         return "%s%s%s" % (prefix, pretty_time(round(time()) - self.start), postfix)
-
-
-def pretty_time(seconds):
-    if seconds < 60:
-        output = "%i sec" % seconds
-    elif seconds < 3600:
-        minutes = floor(seconds / 60)
-        seconds -= minutes * 60
-        output = "%i min, %i sec" % (minutes, seconds)
-    elif seconds < 86400:
-        hours = floor((seconds / 60) / 60)
-        seconds -= hours * 60 * 60
-        minutes = floor(seconds / 60)
-        seconds -= minutes * 60
-        output = "%i hrs, %i min, %i sec" % (hours, minutes, seconds)
-    else:
-        days = floor(((seconds / 60) / 60) / 24)
-        seconds -= (days * 60 * 60 * 24)
-        hours = floor((seconds / 60) / 60)
-        seconds -= (hours * 60 * 60)
-        minutes = floor(seconds / 60)
-        seconds -= (minutes * 60)
-        output = "%i days, %i hrs, %i min, %i sec" % (days, hours, minutes, seconds)
-    return output
 
 
 def md5_hash(in_str):

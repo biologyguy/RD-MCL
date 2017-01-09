@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 import pytest
+from .. import rdmcl
 import os
 import pandas as pd
 from collections import OrderedDict
-from .. import rdmcl
 from buddysuite import buddy_resources as br
 
 
