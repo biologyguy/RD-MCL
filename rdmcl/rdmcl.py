@@ -168,6 +168,7 @@ class Cluster(object):
                         self.sim_scores = self.sim_scores[(self.sim_scores.seq1 != paralog) &
                                                           (self.sim_scores.seq2 != paralog)]
                         del seq_ids[seq_ids.index(paralog)]
+                        del self.taxa[seq1_taxa][self.taxa[seq1_taxa].index(paralog)]
                         if paralog in self.collapsed_genes:
                             self.collapsed_genes[seq1_id] += self.collapsed_genes[paralog]
                             del self.collapsed_genes[paralog]

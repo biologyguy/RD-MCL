@@ -12,6 +12,29 @@ DIRECTORY_SCRIPT = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, "%s%s.." % (DIRECTORY_SCRIPT, SEP))
 RESOURCE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'unit_test_resources') + SEP
 
+'''
+cteno_pannexins.fa contains 134 sequences, 16 of which are removed as paralog cliques, leaving 118
+
+taxon   total_paralogs  minus_cliques
+BOL     8
+Bab     5
+Bch     5
+Bfo     10
+Bfr     4
+Cfu     6
+Dgl     9
+Edu     9
+Hca     8
+Hru     5
+Hvu     14
+Lcr     12
+Lla     3
+Mle     12
+Oma     4
+Pba     7
+Tin     6
+Vpa     7
+'''
 cteno_panxs = Sb.SeqBuddy("%s%sCteno_pannexins.fa" % (RESOURCE_PATH, SEP))
 ids = [rec.id for rec in cteno_panxs.records]
 sim_scores = pd.read_csv("%sCteno_pannexins_sim.scores" % RESOURCE_PATH, "\t", index_col=False, header=None)

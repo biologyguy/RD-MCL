@@ -143,6 +143,31 @@ def test_cluster_perterb(hf):
     assert round(best_hits.iloc[0].score, 5) == 0.97969
 
 
+def test_cluster_get_base_cluster(hf):
+    parent = rdmcl.Cluster(*hf.base_cluster_args())
+
+    # No paralogs
+    child_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Edu-PanxαA', 'Hca-PanxαB',
+                 'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
+    child = rdmcl.Cluster(child_ids, hf.get_data("cteno_sim_scores"), parent=parent)
+    # First time calling Cluster.score() calculates the score
+    assert child.score() == 18282.891448122067
+
+    # The second call just retrieves the attribute from the cluster saved during first call
+    assert child.score() == 18282.891448122067
+
+    # With paralogs
+    child_ids = ['BOL-PanxαA', 'BOL-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Edu-PanxαA', 'Hca-PanxαB',
+                 'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
+    child = rdmcl.Cluster(child_ids, hf.get_data("cteno_sim_scores"), parent=parent)
+    assert child.score() == 4106.238039160724
+
+    # Single sequence
+    child_ids = ['BOL-PanxαA']
+    child = rdmcl.Cluster(child_ids, hf.get_data("cteno_sim_scores"), parent=parent)
+    assert child.score() == 0
+
+
 def test_cluster_len(hf):
     cluster = rdmcl.Cluster(['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC', 'Oma-PanxαC', 'Dgl-PanxαE'],
                             hf.get_data("cteno_sim_scores"))
