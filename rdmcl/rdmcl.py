@@ -116,6 +116,7 @@ class Cluster(object):
         self.sim_scores = sim_scores
         self.taxa_separator = taxa_separator
         self.parent = parent
+        self.base_cluster = self.get_base_cluster()
 
         self.subgroup_counter = 0
         # self.clique_counter = 0
@@ -271,6 +272,47 @@ class Cluster(object):
                 scores.set_value(indx, "score", gauss(score, (score * 0.0000001)))
         return scores
 
+    def get_base_cluster(self):
+        cluster = self
+        while True:
+            if not cluster.parent:
+                return cluster
+            cluster = cluster.parent
+
+    def score(self):
+        """
+        Very basic cluster scoring algorithm.
+        Single sequence -> score 0
+        :return:
+        """
+        if self.cluster_score:
+            return self.cluster_score
+
+        if len(self.seq_ids) == 1:
+            self.cluster_score = 0
+            return 0
+
+        taxa = OrderedDict()
+        for gene in self.seq_ids:
+            taxon = gene.split(self.taxa_separator)[0]
+            taxa.setdefault(taxon, [])
+            taxa[taxon].append(gene)
+
+        # sequence_ids should never consist of a single taxa because reciprocal best hit paralogs have been removed
+        # Update: Apparently not true. New paralog best hit cliques can form after the group is broken up some.
+        # if len(taxa) == 1:
+        #    raise ReferenceError("Only a single taxa found in sequence_ids...\n%s" % taxa)
+
+        unique_scores = 1
+        paralog_scores = -1
+        for taxon, genes in taxa.items():
+            if len(genes) == 1:
+                unique_scores *= 2 * (1 + (len(self.base_cluster.taxa[taxon]) / len(self.base_cluster)))
+            else:
+                paralog_scores *= len(genes) * (len(genes) / len(self.base_cluster.taxa[taxon]))
+        self.cluster_score = unique_scores + paralog_scores
+        return self.cluster_score
+
     """
     Much expanded scoring system that is currently broken
     def score_bak(self):
@@ -354,7 +396,7 @@ class Cluster(object):
         else:
             decliqued_cluster = self.seq_ids
 
-        self.cluster_score = self.raw_score(decliqued_cluster)
+        self.cluster_score = self.score(decliqued_cluster)
         for clique in self.cliques:
             clique_ids = helpers.md5_hash("".join(sorted(clique.seq_ids)))
             sb_copy = Sb.make_copy(seqbuddy)
@@ -365,7 +407,7 @@ class Cluster(object):
             #    self.cluster_score += float(query(clique_ids, 'cluster_score'))
             # else:
 
-            clique_score = self.raw_score(clique.seq_ids)
+            clique_score = self.score(clique.seq_ids)
             self.cluster_score += clique_score
             with LOCK:
                 push(clique_ids, 'cluster_score', str(clique_score))
@@ -399,45 +441,11 @@ class Cluster(object):
         return str(self.seq_ids)
 
 
-def raw_score(id_list, taxa_separator):
-    """
-    Very basic cluster scoring algorithm.
-    Single sequence -> score 0
-
-    :param id_list:
-    :param taxa_separator:
-    :return:
-    """
-    if len(id_list) == 1:
-        return 0
-
-    taxa = OrderedDict()
-    for gene in id_list:
-        taxon = gene.split(taxa_separator)[0]
-        taxa.setdefault(taxon, [])
-        taxa[taxon].append(gene)
-
-    # sequence_ids should never consist of a single taxa because reciprocal best hit paralogs have been removed
-    # Update: Apparently not true. New paralog best hit cliques can form after the group is broken up some.
-    # if len(taxa) == 1:
-    #    raise ReferenceError("Only a single taxa found in sequence_ids...\n%s" % taxa)
-
-    unique_scores = 1
-    paralog_scores = -1
-    for taxon, genes in taxa.items():
-        if len(genes) == 1:
-            unique_scores *= 2 * (1 + (len(group_0_cluster.taxa[taxon]) / len(group_0_cluster)))
-        else:
-            paralog_scores *= len(genes) * (len(genes) / len(group_0_cluster.taxa[taxon]))
-    return unique_scores + paralog_scores
-
-
 def score_cluster(cluster, sql_broker):
     """
     Calculate the cluster score and update the SQLite database
     :return: score
     """
-    cluster.cluster_score = raw_score(cluster.seq_ids, cluster.taxa_separator)
     with LOCK:
         sql_broker.query("""INSERT OR REPLACE INTO data_table (hash, graph, cluster_score, seq_ids, alignment)
 VALUES (  '{0}',
@@ -445,7 +453,7 @@ VALUES (  '{0}',
         '{2}',
         (SELECT seq_ids FROM data_table WHERE hash = '{0}'),
         (SELECT alignment FROM data_table WHERE hash = '{0}')
-      )""".format(cluster.seq_id_hash, cluster.sim_scores.to_csv(index=False), str(cluster.cluster_score)))
+      )""".format(cluster.seq_id_hash, cluster.sim_scores.to_csv(index=False), str(cluster.score())))
     return cluster.cluster_score
 
 
@@ -630,10 +638,10 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
 
 class Progress(object):
-    def __init__(self, outdir):
+    def __init__(self, outdir, base_cluster):
         self.outdir = outdir
         with open("%s/.progress" % self.outdir, "w") as progress_file:
-            _progress = {"mcl_runs": 0, "placed": 0, "total": len(group_0_cluster)}
+            _progress = {"mcl_runs": 0, "placed": 0, "total": len(base_cluster)}
             json.dump(_progress, progress_file)
 
     def update(self, key, value):
@@ -1136,7 +1144,7 @@ if __name__ == '__main__':
     # Ortholog caller
     logging.warning("\n** Recursive MCL **")
     final_clusters = []
-    progress_tracker = Progress(in_args.outdir)
+    progress_tracker = Progress(in_args.outdir, group_0_cluster)
 
     run_time = br.RunTime(prefix=progress_tracker.__str__, _sleep=0.3, final_clear=True)
     run_time.start()
