@@ -9,7 +9,7 @@ from time import time
 from copy import copy
 from hashlib import md5
 from multiprocessing import SimpleQueue, Process, Pipe
-from buddysuite.buddy_resources import pretty_time
+from buddysuite.buddy_resources import pretty_time, TempDir
 
 
 class SQLiteBroker(object):
@@ -87,15 +87,11 @@ class SQLiteBroker(object):
 
 
 class Logger(object):
-    def __init__(self, location=None):
-        if not location:
-            tmpfile = MyFuncs.TempFile()
-            self.location = "%s/temp.log" % tmpfile.path
-        else:
-            self.location = location
+    def __init__(self, location):
+        self.location = location
 
         # Set up logging. Use 'info' to write to file only, anything higher will go to both terminal and file.
-        logging.basicConfig(filename=location, level=logging.INFO, format="")
+        logging.basicConfig(filename=self.location, level=logging.INFO, format="")
         self.logger = logging.getLogger()
         self.console = logging.StreamHandler()
         self.console.setLevel(logging.WARNING)

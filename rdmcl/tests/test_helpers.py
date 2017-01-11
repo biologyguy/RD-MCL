@@ -124,3 +124,23 @@ def test_sqlitebroker_close(hf):
     assert broker.broker.is_alive()
     broker.close()
     assert not broker.broker.is_alive()
+
+
+def test_logger(hf):
+    tmp = br.TempFile()
+    logger = helpers.Logger(tmp.path)
+    assert type(logger.logger) == helpers.logging.RootLogger
+    assert type(logger.console) == helpers.logging.StreamHandler
+    assert logger.logger.level == 20
+    assert len(logger.logger.handlers) == 2
+    assert type(logger.logger.handlers[1]) == helpers.logging.StreamHandler
+    assert logger.console.level == 30
+
+    helpers.logging.info("Some info")
+    helpers.logging.warning("Some Warnings")
+
+    logger.move_log("%sfirst.log" % tmp.path)
+
+    with open("%sfirst.log" % tmp.path, "r") as ofile:
+        assert ofile.read() == "Some info\nSome Warnings\n"
+
