@@ -23,7 +23,7 @@
 
 \begin{document}
 
-\title[RD-MCL]{High resolution classification of orthogroups by recursive dynamic Markov clustering}
+\title[RD-MCL]{Recursive dynamic Markov clustering for fine-grained orthogroup classification}
 
 
 \author[Bond et al.]{Stephen R. \surname{Bond}, Karl E.
@@ -33,7 +33,7 @@ Keat, and Andreas D. Baxevanis$^{\ast}$}
 
 
 \history{Received 12 November 2016}
-
+    
 \coresp{E-mail: andy@mail.nih.gov}
 
 
@@ -50,7 +50,7 @@ Keat, and Andreas D. Baxevanis$^{\ast}$}
 \section{{Introduction}\label{sec:Intro}}
 When a gene evolves an important physiological role, purifying selection tends to maintain that function through evolutionary time \cite{Altenhoff:2012ea, Rogozin:2014fp, KryuchkovaMostacci:2016iw}. As a result, orthology (i.e., homology via speciation) has become a widely used predictor of shared gene product function among species, with considerable effort made to develop computational methods for identifying orthologs. The algorithms in current use generally fall into two distinct categories: Tree-based and graph-based clustering methods \cite{Tekaia:2016ga}. Tree-based approaches (e.g., Ensembl Compara \cite{Vilella:2009ju}, LOFT \cite{vanderHeijden:2007bo}, and SYNERGY \cite{Wapinski:2007fa}) broadly rely on estimating a phylogenetic tree for a target gene family, and then reconciling the gene tree with a `known' species tree to identify orthologous clades. While tree-based methods are very accurate under ideal conditions, estimating the species trees they rely creates a considerable source of uncertainty \cite{Xu:2016ek}. Alternatively, pairwise similarity graph clustering methods leverage graph theory to rapidly identify groups of related sequences from genome scale datasets [REF]. Reciprocal best-hit methods were among the earliest developed for this purpose, but were restricted to assessing only two species at a time [REF]. Due to the non-transitive nature of orthology (i.e., paralogs in one species can be orthologous to a single gene in another species), it is more difficult (or impossible) to explicitly assign sequences into groups of pure orthologs [REF]. Instead, the term `orthogroup' has come to represent a cluster of orthologs that may include closely related paralogs [REF]. InParanoid, EggNOG \cite{Jensen:2007cc}, and OMA \cite{Roth:2009iu} are popular tools for assigning sequences to orthogroups using a `best-hit clique' approach, where closed best-hit sub-graphs are identified in the dataset. While accurate within each sub-graph, these methods tend to be overly strict in their assignment; this causes an under-representation of actual orthologous relationships among many species. Alternatively, Markov clustering (MCL) is very efficient at isolating more inclusive sub-graphs. OrthoMCL is one of the most popular MCL-based ortholog prediction methods, but it is prone to placing too many in-paralogs into orthogroups (i.e., it is less precise). In the current study we have increased the overall resolving power of de novo MCL-based orthogroup assignment with a number of novel enhancements, including refinement of the pairwise similarity metrics, using a supervised heuristic to dynamically select MCL parameters, recursively subdividing orthogroups, and testing putative orthogroups for best-hit cliques to maximize resolution.
 
-BLAST scores (bit or e-value) have a strong length bias when calculating orthogroups \cite{Emms:2015ig}.
+BLAST scores (bit or e-value) have a strong length bias when calculating orthogroups \cite{Emms:2015ig}. OrthoFinder also uses a static inflation/edge similarity threashold \cite{Emms:2015ig}
 
 \begin{table}[!t]
 \tableparts{\caption{File format support provided by each BuddySuite module for reading (R) and writing (W).\label{table:formats}}}
@@ -83,6 +83,19 @@ Might want to compare results agains Ortholog-Finder if appropriate \cite{Horiik
 Construction of an ortholog ontology \cite{Chiba:2015ed}?
 
 Try OrthoFinder length-normalized bit scores as similarity metric between sequences \cite{Emms:2015ig}.
+
+Use precision and recall as measures of accuracy of simulated data (https://en.wikipedia.org/wiki/Precision\_and\_recall and \cite{Emms:2015ig})
+$Precision = \frac{TP}{TP + FP}$
+
+$Recall = \frac{TP}{TP + FN}$
+
+$F-Score = 2 * \frac{precision * recall}{precision + recall}$
+
+Where TP is True Positive, FP is False Positives, and FN is False Negatives. 
+
+Create raw clusters using MMseqs2.0 (https://github.com/soedinglab/MMseqs2).
+
+Output orthogroups in plain text and the \textit{Quest for Orthologs} community standard OrthoXML \cite{Dessimoz:2012dj}
 
 \section{Results}
 
