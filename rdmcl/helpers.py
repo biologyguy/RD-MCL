@@ -39,7 +39,7 @@ class SQLiteBroker(object):
             pass
         return
 
-    def _broker_loop(self, queue):
+    def _broker_loop(self, queue):  # The queue must be passed in explicitly because the process is being spun off
         while True:
             if not queue.empty():
                 query = queue.get()
