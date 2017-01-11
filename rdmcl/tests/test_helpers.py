@@ -6,10 +6,12 @@ from .. import helpers
 import os
 import buddysuite.SeqBuddy
 import buddysuite.buddy_resources as br
-from hashlib import md5
 import sqlite3
+from hashlib import md5
+from time import sleep
 from multiprocessing.queues import SimpleQueue
 from multiprocessing import Pipe, Process
+from Bio.SubsMat import SeqMat, MatrixInfo
 
 
 def test_sqlitebroker_init(hf):
@@ -143,4 +145,28 @@ def test_logger(hf):
 
     with open("%sfirst.log" % tmp.path, "r") as ofile:
         assert ofile.read() == "Some info\nSome Warnings\n"
+
+
+def test_timer():
+    timer = helpers.Timer()
+    sleep(1)
+    assert timer.split(prefix="start_", postfix="_end") == 'start_1 sec_end'
+    sleep(1)
+    assert timer.split(prefix="start_", postfix="_end") == 'start_1 sec_end'
+    sleep(1)
+    assert timer.total_elapsed(prefix="start_", postfix="_end") == 'start_3 sec_end'
+
+
+def test_md5_hash():
+    assert helpers.md5_hash("Hello") == "8b1a9953c4611296a827abf8c47804d7"
+
+
+def test_make_full_mat():
+    blosum62 = helpers.make_full_mat(SeqMat(MatrixInfo.blosum62))
+    assert blosum62["A", "B"] == -2
+    assert blosum62["B", "A"] == -2
+
+
+def test_bit_score():
+    assert helpers.bit_score(100) == 41.192416298119
 

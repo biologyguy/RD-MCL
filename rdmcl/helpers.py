@@ -5,6 +5,7 @@ import re
 import json
 import logging
 import shutil
+from math import log
 from time import time
 from copy import copy
 from hashlib import md5
@@ -119,7 +120,7 @@ class Timer(object):
 
 
 def md5_hash(in_str):
-    in_str = str(in_str).encode()
+    in_str = str(in_str).encode("utf-8")
     return md5(in_str).hexdigest()
 
 
@@ -134,6 +135,10 @@ def make_full_mat(subsmat):
 
 
 def bit_score(raw_score):
+    """
+    :param raw_score: Sum of values pulled from BLOSUM62 substitution matrix
+    :return:
+    """
     # These values were empirically determined for BLOSUM62 by Altschul
     bit_k_value = 0.035
     bit_lambda = 0.252
