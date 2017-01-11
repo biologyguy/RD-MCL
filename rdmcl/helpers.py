@@ -72,6 +72,9 @@ class SQLiteBroker(object):
         return
 
     def query(self, sql):
+        if not self.broker:
+            raise RuntimeError("Broker not running. Use the 'start_broker()' method before calling query().")
+
         recvpipe, sendpipe = Pipe(False)
         self.broker_queue.put({'mode': 'sql', 'sql': sql, 'pipe': sendpipe})
         response = json.loads(recvpipe.recv())
@@ -80,6 +83,7 @@ class SQLiteBroker(object):
     def close(self):
         self.stop_broker()
         self.connection.close()
+        return
 
 
 class Logger(object):

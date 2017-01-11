@@ -10,7 +10,7 @@ py.test ${TEST_SCRIPTS} --cov ${DIR}/tests/__init__.py --cov-report html -n 4 -p
 
 echo "test_helpers.py"
 TEST_SCRIPTS=${DIR}'/tests/test_helpers.py '
-py.test ${TEST_SCRIPTS} --cov ${DIR}/helpers.py --cov-report html -n 3 -p no:cacheprovider --durations=10 $@
+py.test ${TEST_SCRIPTS} --cov ${DIR}/helpers.py --cov-report html -n 6 -p no:cacheprovider --durations=10 $@
 
 echo "test_rdmcl.py"
 TEST_SCRIPTS=${DIR}'/tests/test_rdmcl.py '

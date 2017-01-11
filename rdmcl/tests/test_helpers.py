@@ -9,7 +9,7 @@ import buddysuite.buddy_resources as br
 from hashlib import md5
 import sqlite3
 from multiprocessing.queues import SimpleQueue
-from multiprocessing import Pipe
+from multiprocessing import Pipe, Process
 
 
 def test_sqlitebroker_init(hf):
@@ -26,8 +26,8 @@ def test_sqlitebroker_create_table(hf):
     tmpdir = br.TempDir()
     broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
     broker.create_table("foo", ['id INT PRIMARY KEY', 'some_data TEXT', 'numbers INT'])
-    connection = sqlite3.connect("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
-    cursor = connection.cursor()
+    connect = sqlite3.connect("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
+    cursor = connect.cursor()
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
     response = cursor.fetchone()
     assert response == ("foo",)
@@ -60,8 +60,8 @@ def test_sqlitebroker_broker_loop(hf, monkeypatch, capsys):
     monkeypatch.setattr(SimpleQueue, 'get', simple_queue_get.get)
     broker._broker_loop(broker.broker_queue)
 
-    connection = sqlite3.connect("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
-    cursor = connection.cursor()
+    connect = sqlite3.connect("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
+    cursor = connect.cursor()
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
     response = cursor.fetchone()
     assert response == ("foo",)
@@ -82,3 +82,45 @@ def test_sqlitebroker_broker_loop(hf, monkeypatch, capsys):
     assert 'sqlite3.OperationalError: near "NONSENSE": syntax error' in str(err)
     out, err = capsys.readouterr()
     assert "Failed query: NONSENSE SQL COMMAND" in out
+
+
+def test_sqlitebroker_start_and_stop_broker(hf):
+    tmpdir = br.TempDir()
+    broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
+    assert broker.broker is None
+    broker.start_broker()
+    assert type(broker.broker) == Process
+    assert broker.broker.is_alive()
+
+    broker.stop_broker()
+    assert not broker.broker.is_alive()
+
+
+def test_sqlitebroker_query(hf):
+    tmpdir = br.TempDir()
+    broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
+    broker.create_table("foo", ['id INT PRIMARY KEY', 'some_data TEXT', 'numbers INT'])
+    with pytest.raises(RuntimeError) as err:
+        broker.query("INSERT INTO foo (id, some_data, numbers) VALUES (0, 'hello', 25)")
+    assert "Broker not running." in str(err)
+
+    broker.start_broker()
+    query = broker.query("INSERT INTO foo (id, some_data, numbers) VALUES (0, 'hello', 25)")
+    assert query == []
+
+    broker.close()
+    connect = sqlite3.connect("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
+    cursor = connect.cursor()
+    cursor.execute("SELECT * FROM foo")
+    response = cursor.fetchone()
+    assert response == (0, 'hello', 25)
+
+
+def test_sqlitebroker_close(hf):
+    tmpdir = br.TempDir()
+    broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
+    assert broker.broker is None
+    broker.start_broker()
+    assert broker.broker.is_alive()
+    broker.close()
+    assert not broker.broker.is_alive()
