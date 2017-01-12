@@ -3,7 +3,9 @@
 
 import pytest
 from .. import rdmcl
+from .. import helpers
 import os
+import sqlite3
 import pandas as pd
 from collections import OrderedDict
 from buddysuite import buddy_resources as br
@@ -12,42 +14,41 @@ from buddysuite import buddy_resources as br
 # #########  Clusters  ########## #
 def test_cluster_instantiate_group_0(hf):
     cluster = rdmcl.Cluster(*hf.base_cluster_args())
-    assert [taxa for taxa in cluster.taxa] == ['Bab', 'Bch', 'Bfo', 'Bfr', 'BOL', 'Cfu', 'Dgl', 'Edu', 'Hca', 'Hru',
-                                               'Lcr', 'Lla', 'Mle', 'Oma', 'Pba', 'Tin', 'Vpa', 'Hvu']
+    assert [taxa for taxa in cluster.taxa] == ['BOL', 'Bab', 'Bch', 'Bfo', 'Bfr', 'Cfu', 'Dgl', 'Edu', 'Hca', 'Hru',
+                                               'Hvu', 'Lcr', 'Lla', 'Mle', 'Oma', 'Pba', 'Tin', 'Vpa']
     assert hf.string2hash(cluster.sim_scores.to_csv()) == "984c4424c2b8529694696d715c4108a5"
     assert cluster.taxa_separator == "-"
     assert cluster.parent is None
     assert cluster.subgroup_counter == 0
     assert cluster.cluster_score is None
-    assert cluster.collapsed_genes == OrderedDict([('Cfu-PanxαA', ['Cfu-PanxαF']), ('Lcr-PanxαA', ['Lcr-PanxαL']),
-                                                   ('Mle-Panxα10A', ['Mle-Panxα9']),
+    assert cluster.collapsed_genes == OrderedDict([('Cfu-PanxαA', ['Cfu-PanxαF']),
                                                    ('Hvu-PanxβM', ['Hvu-PanxβI', 'Hvu-PanxβG', 'Hvu-PanxβH',
                                                                    'Hvu-PanxβD', 'Hvu-PanxβK', 'Hvu-PanxβE',
                                                                    'Hvu-PanxβF', 'Hvu-PanxβA', 'Hvu-PanxβC',
                                                                    'Hvu-PanxβB', 'Hvu-PanxβJ', 'Hvu-PanxβL',
-                                                                   'Hvu-PanxβO'])])
+                                                                   'Hvu-PanxβO']), ('Lcr-PanxαA', ['Lcr-PanxαL']),
+                                                   ('Mle-Panxα10A', ['Mle-Panxα9'])])
     assert cluster._name == "group_0"
-    assert cluster.seq_ids == ['Bab-PanxαA', 'Bab-PanxαB', 'Bab-PanxαC', 'Bab-PanxαD', 'Bab-PanxαE', 'Bch-PanxαA',
-                               'Bch-PanxαB', 'Bch-PanxαC', 'Bch-PanxαD', 'Bch-PanxαE', 'Bfo-PanxαA', 'Bfo-PanxαB',
-                               'Bfo-PanxαC', 'Bfo-PanxαD', 'Bfo-PanxαE', 'Bfo-PanxαF', 'Bfo-PanxαG', 'Bfo-PanxαH',
-                               'Bfo-PanxαI', 'Bfo-PanxαJ', 'Bfr-PanxαA', 'Bfr-PanxαB', 'Bfr-PanxαC', 'Bfr-PanxαD',
-                               'BOL-PanxαA', 'BOL-PanxαB', 'BOL-PanxαC', 'BOL-PanxαD', 'BOL-PanxαE', 'BOL-PanxαF',
-                               'BOL-PanxαG', 'BOL-PanxαH', 'Cfu-PanxαA', 'Cfu-PanxαB', 'Cfu-PanxαC', 'Cfu-PanxαD',
+    assert cluster.seq_ids == ['BOL-PanxαA', 'BOL-PanxαB', 'BOL-PanxαC', 'BOL-PanxαD', 'BOL-PanxαE', 'BOL-PanxαF',
+                               'BOL-PanxαG', 'BOL-PanxαH', 'Bab-PanxαA', 'Bab-PanxαB', 'Bab-PanxαC', 'Bab-PanxαD',
+                               'Bab-PanxαE', 'Bch-PanxαA', 'Bch-PanxαB', 'Bch-PanxαC', 'Bch-PanxαD', 'Bch-PanxαE',
+                               'Bfo-PanxαA', 'Bfo-PanxαB', 'Bfo-PanxαC', 'Bfo-PanxαD', 'Bfo-PanxαE', 'Bfo-PanxαF',
+                               'Bfo-PanxαG', 'Bfo-PanxαH', 'Bfo-PanxαI', 'Bfo-PanxαJ', 'Bfr-PanxαA', 'Bfr-PanxαB',
+                               'Bfr-PanxαC', 'Bfr-PanxαD', 'Cfu-PanxαA', 'Cfu-PanxαB', 'Cfu-PanxαC', 'Cfu-PanxαD',
                                'Cfu-PanxαE', 'Dgl-PanxαA', 'Dgl-PanxαB', 'Dgl-PanxαC', 'Dgl-PanxαD', 'Dgl-PanxαE',
                                'Dgl-PanxαF', 'Dgl-PanxαG', 'Dgl-PanxαH', 'Dgl-PanxαI', 'Edu-PanxαA', 'Edu-PanxαB',
                                'Edu-PanxαC', 'Edu-PanxαD', 'Edu-PanxαE', 'Edu-PanxαF', 'Edu-PanxαG', 'Edu-PanxαH',
                                'Edu-PanxαI', 'Hca-PanxαA', 'Hca-PanxαB', 'Hca-PanxαC', 'Hca-PanxαD', 'Hca-PanxαE',
                                'Hca-PanxαF', 'Hca-PanxαG', 'Hca-PanxαH', 'Hru-PanxαA', 'Hru-PanxαB', 'Hru-PanxαC',
-                               'Hru-PanxαD', 'Hru-PanxαE', 'Lcr-PanxαA', 'Lcr-PanxαB', 'Lcr-PanxαC', 'Lcr-PanxαD',
-                               'Lcr-PanxαE', 'Lcr-PanxαF', 'Lcr-PanxαG', 'Lcr-PanxαH', 'Lcr-PanxαI', 'Lcr-PanxαJ',
-                               'Lcr-PanxαK', 'Lla-PanxαA', 'Lla-PanxαB', 'Lla-PanxαC', 'Mle-Panxα1', 'Mle-Panxα2',
-                               'Mle-Panxα3', 'Mle-Panxα4', 'Mle-Panxα5', 'Mle-Panxα6', 'Mle-Panxα7A', 'Mle-Panxα8',
-                               'Mle-Panxα10A', 'Mle-Panxα11', 'Mle-Panxα12', 'Oma-PanxαA', 'Oma-PanxαB', 'Oma-PanxαC',
-                               'Oma-PanxαD', 'Pba-PanxαA', 'Pba-PanxαB', 'Pba-PanxαC', 'Pba-PanxαD', 'Pba-PanxαE',
-                               'Pba-PanxαF', 'Pba-PanxαG', 'Tin-PanxαA', 'Tin-PanxαB', 'Tin-PanxαC', 'Tin-PanxαD',
-                               'Tin-PanxαE', 'Tin-PanxαF', 'Vpa-PanxαA', 'Vpa-PanxαB', 'Vpa-PanxαC', 'Vpa-PanxαD',
-                               'Vpa-PanxαE', 'Vpa-PanxαF', 'Vpa-PanxαG', 'Hvu-PanxβM']
-
+                               'Hru-PanxαD', 'Hru-PanxαE', 'Hvu-PanxβM', 'Lcr-PanxαA', 'Lcr-PanxαB', 'Lcr-PanxαC',
+                               'Lcr-PanxαD', 'Lcr-PanxαE', 'Lcr-PanxαF', 'Lcr-PanxαG', 'Lcr-PanxαH', 'Lcr-PanxαI',
+                               'Lcr-PanxαJ', 'Lcr-PanxαK', 'Lla-PanxαA', 'Lla-PanxαB', 'Lla-PanxαC', 'Mle-Panxα1',
+                               'Mle-Panxα10A', 'Mle-Panxα11', 'Mle-Panxα12', 'Mle-Panxα2', 'Mle-Panxα3', 'Mle-Panxα4',
+                               'Mle-Panxα5', 'Mle-Panxα6', 'Mle-Panxα7A', 'Mle-Panxα8', 'Oma-PanxαA', 'Oma-PanxαB',
+                               'Oma-PanxαC', 'Oma-PanxαD', 'Pba-PanxαA', 'Pba-PanxαB', 'Pba-PanxαC', 'Pba-PanxαD',
+                               'Pba-PanxαE', 'Pba-PanxαF', 'Pba-PanxαG', 'Tin-PanxαA', 'Tin-PanxαB', 'Tin-PanxαC',
+                               'Tin-PanxαD', 'Tin-PanxαE', 'Tin-PanxαF', 'Vpa-PanxαA', 'Vpa-PanxαB', 'Vpa-PanxαC',
+                               'Vpa-PanxαD', 'Vpa-PanxαE', 'Vpa-PanxαF', 'Vpa-PanxαG']
     assert cluster.seq_id_hash == "1433a90160800be5348bc92477a87420"
 
 
@@ -177,7 +178,7 @@ def test_cluster_len(hf):
 def test_cluster_str(hf):
     cluster = rdmcl.Cluster(['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC', 'Oma-PanxαC', 'Dgl-PanxαE'],
                             hf.get_data("cteno_sim_scores"))
-    assert str(cluster) == "['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC', 'Oma-PanxαC', 'Dgl-PanxαE']"
+    assert str(cluster) == "['Dgl-PanxαE', 'Hru-PanxαA', 'Lcr-PanxαH', 'Oma-PanxαC', 'Tin-PanxαC']"
 
 # #########  PSI-PRED  ########## #
 bins = ['chkparse', 'psipass2', 'psipred', 'seq2mtx']

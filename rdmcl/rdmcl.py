@@ -30,6 +30,7 @@ import re
 import shutil
 import json
 import logging
+import sqlite3
 from io import StringIO
 from subprocess import Popen, PIPE, check_output, CalledProcessError
 from multiprocessing import Lock, Pipe
@@ -125,6 +126,8 @@ class Cluster(object):
         self.cluster_score = None
         self.collapsed_genes = OrderedDict()  # If paralogs are reciprocal best hits, collapse them
         self._name = None
+
+        seq_ids = sorted(seq_ids)
         for next_seq_id in seq_ids:
             taxa = next_seq_id.split(taxa_separator)[0]
             self.taxa.setdefault(taxa, [])
@@ -174,7 +177,8 @@ class Cluster(object):
                             del self.collapsed_genes[paralog]
 
         self.seq_ids = seq_ids
-        self.seq_id_hash = helpers.md5_hash("".join(sorted(self.seq_ids)))
+        self.seq_ids_str = str("".join(seq_ids))
+        self.seq_id_hash = helpers.md5_hash(self.seq_ids_str)
 
     def name(self):
         """
@@ -280,13 +284,13 @@ class Cluster(object):
                 return cluster
             cluster = cluster.parent
 
-    def score(self):
+    def score(self, force=False):
         """
         Very basic cluster scoring algorithm.
         Single sequence -> score 0
         :return:
         """
-        if self.cluster_score:
+        if self.cluster_score and not force:
             return self.cluster_score
 
         if len(self.seq_ids) == 1:
@@ -442,20 +446,21 @@ class Cluster(object):
         return str(self.seq_ids)
 
 
-def score_cluster(cluster, sql_broker):
-    """
-    Calculate the cluster score and update the SQLite database
-    :return: score
-    """
-    with LOCK:
-        sql_broker.query("""INSERT OR REPLACE INTO data_table (hash, graph, cluster_score, seq_ids, alignment)
-VALUES (  '{0}',
-        '{1}',
-        '{2}',
-        (SELECT seq_ids FROM data_table WHERE hash = '{0}'),
-        (SELECT alignment FROM data_table WHERE hash = '{0}')
-      )""".format(cluster.seq_id_hash, cluster.sim_scores.to_csv(index=False), str(cluster.score())))
-    return cluster.cluster_score
+def cluster2database(cluster, sql_broker, alignment=None, graph=None):
+    sql_broker.query("""INSERT OR IGNORE INTO data_table (hash, seq_ids, cluster_score)
+                        VALUES ('{0}', '{1}', '{2}')
+                        """.format(cluster.seq_id_hash, cluster.seq_ids_str, cluster.score()))
+
+    align_query = "SELECT (alignment) FROM data_table WHERE hash='%s'" % cluster.seq_id_hash
+    if alignment and not sql_broker.query(align_query)[0][0]:
+        sql_broker.query("""UPDATE data_table SET alignment='{0}'
+                            WHERE hash='{1}'""".format(alignment, cluster.seq_id_hash))
+
+    graph_query = "SELECT (graph) FROM data_table WHERE hash='%s'" % cluster.seq_id_hash
+    if graph and not sql_broker.query(graph_query)[0][0]:
+        sql_broker.query("""UPDATE data_table SET graph='{0}'
+                            WHERE hash='{1}'""".format(graph, cluster.seq_id_hash))
+    return
 
 
 def mc_psi_pred(seq_obj, args):
@@ -498,22 +503,24 @@ def mcmcmc_mcl(args, params):
     clusters = parse_mcl_clusters("%s/output.groups" % mcl_tmp_dir.path)
     score = 0
 
-    for indx, cluster in enumerate(clusters):
-        cluster_ids = helpers.md5_hash("".join(sorted(cluster)))
-        cluster_data = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_ids))
+    for indx, cluster_ids in enumerate(clusters):
+        cluster_hash = helpers.md5_hash("".join(sorted(cluster_ids)))
+        cluster_data = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_hash))
         if cluster_data and cluster_data[0][0]:
             with LOCK:
                 sim_scores = pd.read_csv(StringIO(cluster_data[0][0]), index_col=False)
             score += float()
+            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator)
         else:
             sb_copy = Sb.make_copy(seqbuddy)
-            sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster]))
+            sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster_ids]))
             alb_obj = generate_msa(sb_copy, sql_broker)
             sim_scores = create_all_by_all_scores(alb_obj, outdir, sql_broker=sql_broker, quiet=True)
+            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator)
+            cluster2database(cluster, sql_broker, alignment=str(alb_obj), graph=sim_scores.to_csv(header=None, index=False))
 
-        cluster = Cluster(cluster, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator)
         clusters[indx] = cluster
-        score += score_cluster(cluster, sql_broker)
+        score += cluster.score()
 
     with LOCK:
         with open("%s/max.txt" % external_tmp_dir, "r") as ifile:
@@ -594,7 +601,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     mcmcmc_output = pd.read_csv("%s/mcmcmc_out.csv" % temp_dir.path, "\t")
 
     best_score = max(mcmcmc_output["result"])
-    if best_score <= score_cluster(master_cluster, sql_broker):
+    if best_score <= master_cluster.score():
         save_cluster()
         return cluster_list
 
@@ -602,15 +609,20 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     recursion_clusters = []
     for sub_cluster in mcl_clusters:
         cluster_ids = helpers.md5_hash("".join(sorted(sub_cluster)))
-        graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_ids))[0][0]
-        sim_scores = pd.read_csv(StringIO(graph), index_col=False)
+        if len(sub_cluster) == 1:
+            sim_scores = pd.DataFrame(columns=["seq1", "seq2", "score"])
+        else:
+            # All mcl sub clusters are written to database in mcmcmc_mcl(), so no need to check if exists
+            graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_ids))[0][0]
+            sim_scores = pd.read_csv(StringIO(graph), index_col=False)
+            sim_scores.columns = ["seq1", "seq2", "score"]
+
         sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster, taxa_separator=taxa_separator)
         if sub_cluster.seq_id_hash == master_cluster.seq_id_hash:
             raise ArithmeticError("The sub_cluster and master_cluster are the same, but are returning different "
                                   "scores\nsub-cluster score: %s, master score: %s\n%s"
-                                  % (score_cluster(sub_cluster, sql_broker), score_cluster(master_cluster, sql_broker),
+                                  % (sub_cluster.score(), master_cluster.score(),
                                      sub_cluster.seq_id_hash))
-        score_cluster(sub_cluster, sql_broker)
         sub_cluster.set_name()
         if len(sub_cluster) in [1, 2]:
             cluster_list.append(sub_cluster)
@@ -850,30 +862,21 @@ def score_sequences(seq_pairs, args):
     return
 
 
-def generate_msa(seqbuddy, sql_broker=None):
+def generate_msa(seqbuddy, sql_broker):
     seq_ids = sorted([rec.id for rec in seqbuddy.records])
     seq_id_hash = helpers.md5_hash("".join(seq_ids))
-    alignment = False
 
-    if sql_broker:
-        alignment = sql_broker.query("SELECT (alignment) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
-        if alignment and alignment[0][0]:
-            alignment = Alb.AlignBuddy(alignment[0][0])
-
-    if not alignment:
+    alignment = sql_broker.query("SELECT (alignment) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
+    if alignment and alignment[0][0]:
+        alignment = Alb.AlignBuddy(alignment[0][0])
+    else:
         if len(seqbuddy) == 1:
             alignment = Alb.AlignBuddy(str(seqbuddy))
         else:
             alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -2", quiet=True)
 
-    if sql_broker:
-        sql_broker.query("""INSERT OR REPLACE INTO data_table (hash, alignment, seq_ids, cluster_score, graph)
-                        VALUES ('{0}',
-                                '{1}',
-                                '{2}',
-                                (SELECT cluster_score FROM data_table WHERE hash = '{0}'),
-                                (SELECT graph FROM data_table WHERE hash = '{0}')
-                                )""".format(seq_id_hash, str(alignment), str(", ".join(seq_ids))))
+        sql_broker.query("""UPDATE data_table SET alignment='{0}'
+                            WHERE hash='{1}'""".format(str(alignment), seq_id_hash))
     return alignment
 
 
@@ -951,15 +954,6 @@ def create_all_by_all_scores(alignment, outdir, gap_open=GAP_OPEN, gap_extend=GA
         with open("%s/%s" % (aba_root, aba_file), "r") as ifile:
             sim_scores_file.write(ifile.read())
     sim_scores = pd.read_csv(sim_scores_file.get_handle("r"), index_col=False)
-    if sql_broker:
-        sql_broker.query("""INSERT OR REPLACE INTO data_table (hash, alignment, seq_ids, cluster_score, graph)
-                        VALUES ('{0}',
-                                '{1}',
-                                '{2}',
-                                (SELECT cluster_score FROM data_table WHERE hash = '{0}'),
-                                '{3}'
-                                )""".format(seq_id_hash, str(alignment), str(", ".join(seq_ids)),
-                                            sim_scores.to_csv(header=None, index=False)))
     return sim_scores
 
 
@@ -1102,8 +1096,8 @@ if __name__ == '__main__':
         logging.warning("Generating initial multiple sequence alignment with MAFFT")
         alignbuddy = generate_msa(sequences, broker)
         alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
-
         logging.info("\t-- finished in %s --" % TIMER.split())
+
     if os.path.isfile("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir):
         logging.warning("RESUME: Initial all-by-all similarity graph found")
         scores_data = pd.read_csv("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir,
@@ -1118,18 +1112,18 @@ if __name__ == '__main__':
         scores_data = create_all_by_all_scores(alignbuddy, in_args.outdir, sql_broker=broker)
         scores_data.to_csv("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir,
                            header=None, index=False, sep="\t")
-        broker.query("UPDATE data_table SET graph='{0}' "
-                     "WHERE hash='{1}'".format(scores_data.to_csv(header=None, index=False), seq_ids_hash))
 
         group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data,
                                   taxa_separator=in_args.taxa_separator)
         logging.info("\t-- finished in %s --" % TIMER.split())
 
+    cluster2database(group_0_cluster, broker, alignment=str(alignbuddy),
+                     graph=scores_data.to_csv(header=None, index=False))
+
     # Base cluster score
-    base_score = score_cluster(group_0_cluster, broker)
+    base_score = group_0_cluster.score()
     logging.warning("Base cluster score: %s" % round(base_score, 4))
     # Reset the score of group_0 to account for possible collapse of paralogs
-    score_cluster(group_0_cluster, broker)
     if group_0_cluster.collapsed_genes:
         logging.warning("Reciprocal best-hit cliques of paralogs have been identified in the input sequences.")
         logging.info(" A representative sequence has been selected from each clique, and the remaining")
@@ -1199,8 +1193,8 @@ if __name__ == '__main__':
 
         ind, max_clust = _max[0], final_clusters[_max[0]]
         if max_clust.subgroup_counter == 0:  # Don't want to include parents of subgroups
-            output += "%s\t%s\t" % (max_clust.name(), round(score_cluster(max_clust, broker), 4))
-            final_score += score_cluster(max_clust, broker)
+            output += "%s\t%s\t" % (max_clust.name(), round(max_clust.score(), 4))
+            final_score += max_clust.score()
             for seq_id in sorted(max_clust.seq_ids):
                 output += "%s\t" % seq_id
             output = "%s\n" % output.strip()
