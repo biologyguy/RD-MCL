@@ -509,10 +509,10 @@ def mcmcmc_mcl(args, params):
 
     for indx, cluster_ids in enumerate(clusters):
         cluster_hash = helpers.md5_hash(", ".join(sorted(cluster_ids)))
-        cluster_data = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_hash))
-        if cluster_data and cluster_data[0][0]:
+        graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_hash))
+        if graph and graph[0][0]:
             with LOCK:
-                sim_scores = pd.read_csv(StringIO(cluster_data[0][0]), index_col=False)
+                sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
             score += float()
             cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator)
         else:
@@ -567,7 +567,6 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     master_cluster.set_name()
     temp_dir = br.TempDir()
     master_cluster.sim_scores.to_csv("%s/input.csv" % temp_dir.path, header=None, index=False, sep="\t")
-
     # If there are no paralogs in the cluster, then it is already at its highest score and MCL is unnecessary
     keep_going = False
     for taxon, genes in master_cluster.taxa.items():
@@ -618,7 +617,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         else:
             # All mcl sub clusters are written to database in mcmcmc_mcl(), so no need to check if exists
             graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_ids_hash))[0][0]
-            sim_scores = pd.read_csv(StringIO(graph), index_col=False)
+            sim_scores = pd.read_csv(StringIO(graph), index_col=False, header=None)
             sim_scores.columns = ["seq1", "seq2", "score"]
 
         sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster, taxa_separator=taxa_separator)
@@ -902,10 +901,10 @@ def create_all_by_all_scores(alignment, outdir, gap_open=GAP_OPEN, gap_extend=GA
     # Only calculate if not previously calculated
     seq_ids = sorted([rec.id for rec in alignment.records_iter()])
     seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
-    if sql_broker:
+    if sql_broker:  # ToDo: Not getting into here. Figure out why
         graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
         if graph and graph[0][0]:
-            sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False)
+            sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
             sim_scores.columns = ["seq1", "seq2", "score"]
             return sim_scores
 
@@ -1103,16 +1102,17 @@ if __name__ == '__main__':
         alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
         logging.info("\t-- finished in %s --" % TIMER.split())
 
-    if os.path.isfile("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir):
+    graph_data = broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(seq_ids_hash))
+    if graph_data and graph_data[0][0]:
         logging.warning("RESUME: Initial all-by-all similarity graph found")
-        scores_data = pd.read_csv("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir,
-                                  index_col=False, sep="\t")
+        scores_data = pd.read_csv(StringIO(graph_data[0][0]), index_col=False, header=None)
         scores_data.columns = ["seq1", "seq2", "score"]
 
     else:
-        logging.warning("Generating initial all-by-all similarity graph")
+        num_comparisons = ((len(alignbuddy.alignments[0]) ** 2) - len(alignbuddy.alignments[0])) / 2
+        logging.warning("Generating initial all-by-all similarity graph (%s comparisons)" % int(num_comparisons))
         logging.info(" written to: %s/sim_scores/complete_all_by_all.scores" % in_args.outdir)
-        scores_data = create_all_by_all_scores(alignbuddy, in_args.outdir, sql_broker=broker)
+        scores_data = create_all_by_all_scores(alignbuddy, in_args.outdir)
         scores_data.to_csv("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir,
                            header=None, index=False, sep="\t")
         logging.info("\t-- finished in %s --" % TIMER.split())
@@ -1126,6 +1126,7 @@ if __name__ == '__main__':
     # Then prepare the 'real' group_0 cluster
     group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data,
                               taxa_separator=in_args.taxa_separator)
+
     cluster2database(group_0_cluster, broker, alignment=str(alignbuddy),
                      graph=scores_data.to_csv(header=None, index=False))
 
