@@ -75,7 +75,8 @@ def test_cluster_instantiate_child(hf):
 def test_cluster_get_name(hf):
     parent = rdmcl.Cluster(*hf.base_cluster_args())
     assert parent.name() == "group_0"
-    child = rdmcl.Cluster(['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC'], parent.sim_scores, parent=parent)
+    sub_cluster_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC']
+    child = rdmcl.Cluster(sub_cluster_ids, hf.get_sim_scores(sub_cluster_ids), parent=parent)
     with pytest.raises(AttributeError) as err:
         child.name()
     assert "Cluster has not been named." in str(err)
@@ -91,11 +92,11 @@ def test_cluster_set_name(hf):
                  'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
     sim_scores = pd.read_csv("%sCteno_pannexins_subgroup_sim.scores" % hf.resource_path, index_col=False, header=None)
     sim_scores.columns = ["seq1", "seq2", "score"]
-    group_0_0 = rdmcl.Cluster(child_ids, sim_scores, parent=group_0)
+    group_0_0 = rdmcl.Cluster(child_ids, hf.get_sim_scores(child_ids), parent=group_0)
     assert group_0_0._name is None
 
     grandchild_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB']
-    group_0_0_0 = rdmcl.Cluster(grandchild_ids, sim_scores, parent=group_0_0)
+    group_0_0_0 = rdmcl.Cluster(grandchild_ids, hf.get_sim_scores(grandchild_ids), parent=group_0_0)
     with pytest.raises(ValueError) as err:
         group_0_0_0.set_name()
     assert "Parent of current cluster has not been named." in str(err)
@@ -105,10 +106,11 @@ def test_cluster_set_name(hf):
 
 
 def test_cluster_compare(hf, capsys):
-    subject = rdmcl.Cluster(['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE'],
-                            hf.get_data("cteno_sim_scores"))
-    query = rdmcl.Cluster(['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC', 'Oma-PanxαC', 'Dgl-PanxαE'],
-                          hf.get_data("cteno_sim_scores"))
+    subject_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE']
+    subject = rdmcl.Cluster(subject_ids, hf.get_sim_scores(subject_ids))
+
+    query_ids = ['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC', 'Oma-PanxαC', 'Dgl-PanxαE']
+    query = rdmcl.Cluster(query_ids, hf.get_sim_scores(query_ids))
     assert subject.compare(query) == 0.2
     out, err = capsys.readouterr()
     assert out == "name: group_0, matches: 1, weighted_match: 0.2\n"
@@ -150,7 +152,7 @@ def test_cluster_get_base_cluster(hf):
     # No paralogs
     child_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Edu-PanxαA', 'Hca-PanxαB',
                  'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
-    child = rdmcl.Cluster(child_ids, hf.get_data("cteno_sim_scores"), parent=parent)
+    child = rdmcl.Cluster(child_ids, hf.get_sim_scores(child_ids), parent=parent)
     # First time calling Cluster.score() calculates the score
     assert child.score() == 18282.891448122067
 
@@ -160,24 +162,24 @@ def test_cluster_get_base_cluster(hf):
     # With paralogs
     child_ids = ['BOL-PanxαA', 'BOL-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Edu-PanxαA', 'Hca-PanxαB',
                  'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
-    child = rdmcl.Cluster(child_ids, hf.get_data("cteno_sim_scores"), parent=parent)
+    child = rdmcl.Cluster(child_ids, hf.get_sim_scores(child_ids), parent=parent)
     assert child.score() == 4106.238039160724
 
     # Single sequence
     child_ids = ['BOL-PanxαA']
-    child = rdmcl.Cluster(child_ids, hf.get_data("cteno_sim_scores"), parent=parent)
+    child = rdmcl.Cluster(child_ids, hf.get_sim_scores(child_ids), parent=parent)
     assert child.score() == 0
 
 
 def test_cluster_len(hf):
-    cluster = rdmcl.Cluster(['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC', 'Oma-PanxαC', 'Dgl-PanxαE'],
-                            hf.get_data("cteno_sim_scores"))
+    seq_ids = ['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC', 'Oma-PanxαC', 'Dgl-PanxαE']
+    cluster = rdmcl.Cluster(seq_ids, hf.get_sim_scores(seq_ids))
     assert len(cluster) == 5
 
 
 def test_cluster_str(hf):
-    cluster = rdmcl.Cluster(['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC', 'Oma-PanxαC', 'Dgl-PanxαE'],
-                            hf.get_data("cteno_sim_scores"))
+    seq_ids = ['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC', 'Oma-PanxαC', 'Dgl-PanxαE']
+    cluster = rdmcl.Cluster(seq_ids, hf.get_sim_scores(seq_ids))
     assert str(cluster) == "['Dgl-PanxαE', 'Hru-PanxαA', 'Lcr-PanxαH', 'Oma-PanxαC', 'Tin-PanxαC']"
 
 # #########  PSI-PRED  ########## #

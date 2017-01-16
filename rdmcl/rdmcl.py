@@ -113,6 +113,13 @@ class Cluster(object):
         :param clique: Specify whether cluster is a clique or not
         :type clique: bool
         """
+        # Do an initial sanity check on the incoming graph and list of sequence ids
+
+        expected_num_edges = int(((len(seq_ids)**2) - len(seq_ids)) / 2)
+        if len(sim_scores.index) != expected_num_edges:
+            raise ValueError("The number of incoming sequence ids (%s) does not match the expected graph size of %s"
+                             " columns (observed %s columns)." % (len(seq_ids), expected_num_edges, len(sim_scores.index)))
+
         self.taxa = OrderedDict()
         self.sim_scores = sim_scores
         self.taxa_separator = taxa_separator
@@ -450,20 +457,18 @@ class Cluster(object):
         return str(self.seq_ids)
 
 
-def cluster2database(cluster, sql_broker, alignment=None, graph=None):
-    sql_broker.query("""INSERT OR IGNORE INTO data_table (hash, seq_ids, cluster_score)
-                        VALUES ('{0}', '{1}', '{2}')
-                        """.format(cluster.seq_id_hash, cluster.seq_ids_str, cluster.score()))
-
-    align_query = "SELECT (alignment) FROM data_table WHERE hash='%s'" % cluster.seq_id_hash
-    if alignment and not sql_broker.query(align_query)[0][0]:
-        sql_broker.query("""UPDATE data_table SET alignment='{0}'
-                            WHERE hash='{1}'""".format(alignment, cluster.seq_id_hash))
-
-    graph_query = "SELECT (graph) FROM data_table WHERE hash='%s'" % cluster.seq_id_hash
-    if graph and not sql_broker.query(graph_query)[0][0]:
-        sql_broker.query("""UPDATE data_table SET graph='{0}'
-                            WHERE hash='{1}'""".format(graph, cluster.seq_id_hash))
+def cluster2database(cluster, sql_broker, alignment):
+    """
+    Update the database with a cluster
+    :param cluster: Cluster object
+    :param sql_broker: A running helpers.SQLiteBroker object
+    :param alignment: An alignment as an AlignBuddy object or string
+    :return:
+    """
+    sql_broker.query("""INSERT OR IGNORE INTO data_table (hash, seq_ids, alignment, graph, cluster_score)
+                        VALUES ('{0}', '{1}', '{2}', '{3}', '{4}')
+                        """.format(cluster.seq_id_hash, cluster.seq_ids_str, str(alignment),
+                                   cluster.sim_scores.to_csv(header=None, index=False), cluster.score()))
     return
 
 
@@ -511,8 +516,7 @@ def mcmcmc_mcl(args, params):
         cluster_hash = helpers.md5_hash(", ".join(sorted(cluster_ids)))
         graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_hash))
         if graph and graph[0][0]:
-            with LOCK:
-                sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
+            sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
             score += float()
             cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator)
         else:
@@ -521,7 +525,7 @@ def mcmcmc_mcl(args, params):
             alb_obj = generate_msa(sb_copy, sql_broker)
             sim_scores = create_all_by_all_scores(alb_obj, outdir, sql_broker=sql_broker, quiet=True)
             cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator)
-            cluster2database(cluster, sql_broker, alignment=str(alb_obj), graph=sim_scores.to_csv(header=None, index=False))
+            cluster2database(cluster, sql_broker, alb_obj)
 
         clusters[indx] = cluster
         score += cluster.score()
@@ -1120,15 +1124,13 @@ if __name__ == '__main__':
     # First push in the really raw first alignment, without any collapsing.
     uncollapsed_group_0 = Cluster([rec.id for rec in sequences.records], scores_data,
                                   taxa_separator=in_args.taxa_separator, collapse=False)
-    cluster2database(uncollapsed_group_0, broker, alignment=str(alignbuddy),
-                     graph=scores_data.to_csv(header=None, index=False))
+    cluster2database(uncollapsed_group_0, broker, alignbuddy)
 
     # Then prepare the 'real' group_0 cluster
     group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data,
                               taxa_separator=in_args.taxa_separator)
 
-    cluster2database(group_0_cluster, broker, alignment=str(alignbuddy),
-                     graph=scores_data.to_csv(header=None, index=False))
+    cluster2database(group_0_cluster, broker, alignbuddy)
 
     # Base cluster score
     base_score = group_0_cluster.score()
