@@ -66,3 +66,8 @@ class HelperMethods(object):
             return deepcopy(self._cteno_sim_scores)
         else:
             raise AttributeError("Unknown data type: %s" % data)
+
+    def get_sim_scores(self, id_subset):
+        df = self._cteno_sim_scores.loc[self._cteno_sim_scores['seq1'].isin(id_subset)]
+        df = df.loc[df["seq2"].isin(id_subset)]
+        return df

@@ -32,3 +32,11 @@ def test_helper_get_data(hf):
     with pytest.raises(AttributeError) as err:
         hf.get_data("foo")
     assert "Unknown data type: foo" in str(err)
+
+
+def test_helper_get_sim_scores(hf):
+    assert str(hf.get_sim_scores(['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC'])) == """\
+            seq1        seq2     score
+1351  Bch-PanxαC  BOL-PanxαA  0.880398
+5649  Bab-PanxαB  Bch-PanxαC  0.727946
+5666  Bab-PanxαB  BOL-PanxαA  0.960119"""
