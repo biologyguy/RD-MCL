@@ -49,7 +49,7 @@ def test_cluster_instantiate_group_0(hf):
                                'Pba-PanxαE', 'Pba-PanxαF', 'Pba-PanxαG', 'Tin-PanxαA', 'Tin-PanxαB', 'Tin-PanxαC',
                                'Tin-PanxαD', 'Tin-PanxαE', 'Tin-PanxαF', 'Vpa-PanxαA', 'Vpa-PanxαB', 'Vpa-PanxαC',
                                'Vpa-PanxαD', 'Vpa-PanxαE', 'Vpa-PanxαF', 'Vpa-PanxαG']
-    assert cluster.seq_id_hash == "1433a90160800be5348bc92477a87420"
+    assert cluster.seq_id_hash == "b7636e7de3a0a96e2631db0ba01c0ffc"
 
 
 def test_cluster_instantiate_child(hf):
@@ -69,7 +69,7 @@ def test_cluster_instantiate_child(hf):
     assert cluster.collapsed_genes == OrderedDict([('Mle-Panxα10A', ['Mle-Panxα9'])])
     assert cluster._name is None
     assert cluster.seq_ids == child_ids
-    assert cluster.seq_id_hash == hf.string2hash("".join(sorted(child_ids)))
+    assert cluster.seq_id_hash == hf.string2hash(", ".join(sorted(child_ids)))
 
 
 def test_cluster_get_name(hf):

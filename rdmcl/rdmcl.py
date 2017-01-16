@@ -99,7 +99,7 @@ def scored_clusters():
 
 
 class Cluster(object):
-    def __init__(self, seq_ids, sim_scores, taxa_separator="-", parent=None, clique=False):
+    def __init__(self, seq_ids, sim_scores, taxa_separator="-", parent=None, clique=False, collapse=True):
         """
         - Note that reciprocal best hits between paralogs are collapsed when instantiating group_0, so
           no problem strongly penalizing all paralogs in the scoring algorithm
@@ -147,38 +147,42 @@ class Cluster(object):
             # This next bit collapses all paralog reciprocal best-hit cliques so they don't gum up MCL
             # Set the full cluster score first though, in case it's needed
             self.seq_ids = seq_ids
-
-            breakout = False
-            while not breakout:
-                breakout = True
-                for seq1_id in seq_ids:
-                    seq1_taxa = seq1_id.split(taxa_separator)[0]
-                    paralog_best_hits = []
-                    for hit in self.get_best_hits(seq1_id).itertuples():
-                        seq2_id = hit.seq1 if hit.seq1 != seq1_id else hit.seq2
-                        if seq2_id.split(taxa_separator)[0] != seq1_taxa:
-                            paralog_best_hits = []
-                            break
-                        paralog_best_hits.append(seq2_id)
-
-                    if not paralog_best_hits:
-                        continue
-
-                    breakout = False
-                    self.collapsed_genes.setdefault(seq1_id, [])
-                    self.collapsed_genes[seq1_id] += paralog_best_hits
-                    for paralog in paralog_best_hits:
-                        self.sim_scores = self.sim_scores[(self.sim_scores.seq1 != paralog) &
-                                                          (self.sim_scores.seq2 != paralog)]
-                        del seq_ids[seq_ids.index(paralog)]
-                        del self.taxa[seq1_taxa][self.taxa[seq1_taxa].index(paralog)]
-                        if paralog in self.collapsed_genes:
-                            self.collapsed_genes[seq1_id] += self.collapsed_genes[paralog]
-                            del self.collapsed_genes[paralog]
+            if collapse:
+                seq_ids = self.collapse(seq_ids)
 
         self.seq_ids = seq_ids
-        self.seq_ids_str = str("".join(seq_ids))
+        self.seq_ids_str = str(", ".join(seq_ids))
         self.seq_id_hash = helpers.md5_hash(self.seq_ids_str)
+
+    def collapse(self, seq_ids):
+        breakout = False
+        while not breakout:
+            breakout = True
+            for seq1_id in seq_ids:
+                seq1_taxa = seq1_id.split(self.taxa_separator)[0]
+                paralog_best_hits = []
+                for hit in self.get_best_hits(seq1_id).itertuples():
+                    seq2_id = hit.seq1 if hit.seq1 != seq1_id else hit.seq2
+                    if seq2_id.split(self.taxa_separator)[0] != seq1_taxa:
+                        paralog_best_hits = []
+                        break
+                    paralog_best_hits.append(seq2_id)
+
+                if not paralog_best_hits:
+                    continue
+
+                breakout = False
+                self.collapsed_genes.setdefault(seq1_id, [])
+                self.collapsed_genes[seq1_id] += paralog_best_hits
+                for paralog in paralog_best_hits:
+                    self.sim_scores = self.sim_scores[(self.sim_scores.seq1 != paralog) &
+                                                      (self.sim_scores.seq2 != paralog)]
+                    del seq_ids[seq_ids.index(paralog)]
+                    del self.taxa[seq1_taxa][self.taxa[seq1_taxa].index(paralog)]
+                    if paralog in self.collapsed_genes:
+                        self.collapsed_genes[seq1_id] += self.collapsed_genes[paralog]
+                        del self.collapsed_genes[paralog]
+        return seq_ids
 
     def name(self):
         """
@@ -504,7 +508,7 @@ def mcmcmc_mcl(args, params):
     score = 0
 
     for indx, cluster_ids in enumerate(clusters):
-        cluster_hash = helpers.md5_hash("".join(sorted(cluster_ids)))
+        cluster_hash = helpers.md5_hash(", ".join(sorted(cluster_ids)))
         cluster_data = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_hash))
         if cluster_data and cluster_data[0][0]:
             with LOCK:
@@ -608,12 +612,12 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     mcl_clusters = parse_mcl_clusters("%s/best_group" % temp_dir.path)
     recursion_clusters = []
     for sub_cluster in mcl_clusters:
-        cluster_ids = helpers.md5_hash("".join(sorted(sub_cluster)))
+        cluster_ids_hash = helpers.md5_hash(", ".join(sorted(sub_cluster)))
         if len(sub_cluster) == 1:
             sim_scores = pd.DataFrame(columns=["seq1", "seq2", "score"])
         else:
             # All mcl sub clusters are written to database in mcmcmc_mcl(), so no need to check if exists
-            graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_ids))[0][0]
+            graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_ids_hash))[0][0]
             sim_scores = pd.read_csv(StringIO(graph), index_col=False)
             sim_scores.columns = ["seq1", "seq2", "score"]
 
@@ -694,7 +698,7 @@ def write_mcl_clusters(clusters, path):
     return
 
 
-def place_orphans(clusters, scores):
+def place_orphans(clusters, scores):  # NOT WORKING CORRECTLY
     """
     If a cluster has only one or two sequences in it, it may make sense to fold that cluster into one of the larger
     clusters. To check if this is reasonable, compare the similarity scores between the orphan sequences and the
@@ -864,7 +868,7 @@ def score_sequences(seq_pairs, args):
 
 def generate_msa(seqbuddy, sql_broker):
     seq_ids = sorted([rec.id for rec in seqbuddy.records])
-    seq_id_hash = helpers.md5_hash("".join(seq_ids))
+    seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
 
     alignment = sql_broker.query("SELECT (alignment) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
     if alignment and alignment[0][0]:
@@ -897,7 +901,7 @@ def create_all_by_all_scores(alignment, outdir, gap_open=GAP_OPEN, gap_extend=GA
 
     # Only calculate if not previously calculated
     seq_ids = sorted([rec.id for rec in alignment.records_iter()])
-    seq_id_hash = helpers.md5_hash("".join(seq_ids))
+    seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
     if sql_broker:
         graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
         if graph and graph[0][0]:
@@ -1037,7 +1041,8 @@ if __name__ == '__main__':
     broker.start_broker()
     sequences = Sb.SeqBuddy(in_args.sequences)
     check_sequences(sequences, in_args.taxa_separator)
-    seq_ids_hash = helpers.md5_hash("".join(sorted([rec.id for rec in sequences.records])))
+    seq_ids_str = ", ".join(sorted([rec.id for rec in sequences.records]))
+    seq_ids_hash = helpers.md5_hash(seq_ids_str)
 
     # Check if job has been run already
     if broker.query("SELECT (hash) FROM data_table WHERE hash='{0}'".format(seq_ids_hash)) == seq_ids_hash:
@@ -1103,8 +1108,6 @@ if __name__ == '__main__':
         scores_data = pd.read_csv("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir,
                                   index_col=False, sep="\t")
         scores_data.columns = ["seq1", "seq2", "score"]
-        group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data,
-                                  taxa_separator=in_args.taxa_separator)
 
     else:
         logging.warning("Generating initial all-by-all similarity graph")
@@ -1112,11 +1115,17 @@ if __name__ == '__main__':
         scores_data = create_all_by_all_scores(alignbuddy, in_args.outdir, sql_broker=broker)
         scores_data.to_csv("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir,
                            header=None, index=False, sep="\t")
-
-        group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data,
-                                  taxa_separator=in_args.taxa_separator)
         logging.info("\t-- finished in %s --" % TIMER.split())
 
+    # First push in the really raw first alignment, without any collapsing.
+    uncollapsed_group_0 = Cluster([rec.id for rec in sequences.records], scores_data,
+                                  taxa_separator=in_args.taxa_separator, collapse=False)
+    cluster2database(uncollapsed_group_0, broker, alignment=str(alignbuddy),
+                     graph=scores_data.to_csv(header=None, index=False))
+
+    # Then prepare the 'real' group_0 cluster
+    group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data,
+                              taxa_separator=in_args.taxa_separator)
     cluster2database(group_0_cluster, broker, alignment=str(alignbuddy),
                      graph=scores_data.to_csv(header=None, index=False))
 
@@ -1167,11 +1176,6 @@ if __name__ == '__main__':
     final_clusters += final_cliques
     logging.warning("\t%s cliques extracted" % len(final_cliques))
     '''
-    # Fold singletons and doublets back into groups. This can't be 'resumed', because it changes the clusters
-    if not in_args.supress_singlet_folding:
-        logging.warning("\n** Folding orphan sequences into clusters **")
-        final_clusters = place_orphans(final_clusters, group_0_cluster.sim_scores)
-        logging.warning("\t-- finished in %s --" % TIMER.split())
 
     # Format the clusters and output to file
     logging.warning("\n** Final formatting **")
@@ -1181,6 +1185,12 @@ if __name__ == '__main__':
             for gene_id, paralogs in group_0_cluster.collapsed_genes.items():
                 if gene_id in clust.seq_ids:
                     clust.seq_ids += paralogs
+
+    # Fold singletons and doublets back into groups. This can't be 'resumed', because it changes the clusters
+    if not in_args.supress_singlet_folding:
+        logging.warning("\n** Folding orphan sequences into clusters **")
+        final_clusters = place_orphans(final_clusters, group_0_cluster.sim_scores)
+        logging.warning("\t-- finished in %s --" % TIMER.split())
 
     logging.warning("Preparing final_clusters.txt")
     final_score = 0
