@@ -187,6 +187,7 @@ class MarkovClustering(object):
         tran_mat[tran_mat <= self.edge_sim_threshold] = 0
 
         # This is a 'centering' step that is used by the original MCL algorithm
+        # ToDo: Compare the outcomes of not centering and of skewing the center to higher values
         for i in range(len(tran_mat)):
             tran_mat[i][i] = max(tran_mat[i])
 

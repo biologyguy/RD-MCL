@@ -498,18 +498,11 @@ def mc_psi_pred(seq_obj, args):
 def mcmcmc_mcl(args, params):
     inflation, gq = args
     external_tmp_dir, min_score, seqbuddy, parent_cluster, taxa_separator, sql_broker, outdir, progress = params
-    mcl_tmp_dir = br.TempDir()
 
-    mcl_output = Popen("mcl %s/input.csv --abc -te 2 -tf 'gq(%s)' -I %s -o %s/output.groups" %
-                       (external_tmp_dir, gq, inflation, mcl_tmp_dir.path), shell=True, stderr=PIPE).communicate()
-
+    mcl_obj = helpers.MarkovClustering(parent_cluster.sim_scores, inflation=inflation, edge_sim_threshold=gq)
+    mcl_obj.run()
     progress.update('mcl_runs', 1)
-
-    mcl_output = mcl_output[1].decode()
-    if re.search("\[mclvInflate\] warning", mcl_output) and min_score:
-        return min_score
-
-    clusters = parse_mcl_clusters("%s/output.groups" % mcl_tmp_dir.path)
+    clusters = mcl_obj.clusters
     score = 0
 
     for indx, cluster_ids in enumerate(clusters):
@@ -570,7 +563,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
     master_cluster.set_name()
     temp_dir = br.TempDir()
-    master_cluster.sim_scores.to_csv("%s/input.csv" % temp_dir.path, header=None, index=False, sep="\t")
+
     # If there are no paralogs in the cluster, then it is already at its highest score and MCL is unnecessary
     keep_going = False
     for taxon, genes in master_cluster.taxa.items():
@@ -1018,11 +1011,6 @@ if __name__ == '__main__':
     logging.info("Function call: %s" % " ".join(sys.argv))
     logging.warning("\n** Environment setup **")
     logging.info("Working directory: %s" % os.getcwd())
-    if not shutil.which("mcl"):
-        logging.error("The 'mcl' program is not detected on your system (see http://micans.org/mcl/).")
-        sys.exit()
-    mcl = Popen("mcl --version", stdout=PIPE, shell=True).communicate()[0].decode()
-    logging.info("MCL version: %s" % re.search("mcl (.*)", mcl).group(1))
 
     if not shutil.which("mafft"):
         logging.error("The 'MAFFT' program is not detected "
