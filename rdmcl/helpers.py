@@ -148,69 +148,78 @@ def bit_score(raw_score):
     return bits
 
 
-def markov_clustering(data, inflation, edge_sim_threshold=0.):
-    def compare(matrix1, matrix2):
-        dif_mat = matrix1 - matrix2
-        dif_mat **= 2
-        return dif_mat.sum().sum()
+class MarkovClustering(object):
+    def __init__(self, data, inflation, edge_sim_threshold=0.):
+        self.dataframe = data
+        self.inflation = inflation
+        self.edge_sim_threshold = edge_sim_threshold
+        self.name_order = sorted(list(set(self.dataframe.seq1.tolist() + self.dataframe.seq2.tolist())))
+        self.trans_matrix = self._df_to_transition_matrix()
+        self.sub_states = [pd.DataFrame(self.trans_matrix)]
+        self.clusters = []
 
-    def normalize(matrix):
-        for indx in range(len(matrix)):
-            column = matrix[:, indx]
+    @staticmethod
+    def compare(df1, df2):
+        dif = df1 - df2
+        dif **= 2
+        return dif.sum().sum()
+
+    @staticmethod
+    def normalize(np_matrix):
+        for indx in range(len(np_matrix)):
+            column = np_matrix[:, indx]
             column_sum = column.sum()
             if column_sum != 0:
-                matrix[:, indx] = column / column_sum
-        return matrix
+                np_matrix[:, indx] = column / column_sum
+        return np_matrix
 
-    def mcl_step(matrix):
+    def mcl_step(self):
         # Expand
-        matrix = matrix.dot(matrix)
+        self.trans_matrix = self.trans_matrix.dot(self.trans_matrix)
         # Inflate
-        matrix = matrix ** inflation
+        self.trans_matrix = self.trans_matrix ** self.inflation
         # Re-normalize
-        matrix = normalize(matrix)
-        return matrix
+        self.trans_matrix = self.normalize(self.trans_matrix)
+        return self.trans_matrix
 
-    def apply_edge_sim_threshold(threshold, matrix):
-        matrix[matrix <= threshold] = 1e-308
-        print(matrix)
-        return matrix
-
-    def df_to_transition_matrix(graph_df):
-        size = (sqrt(8 * len(graph_df) + 1) + 1) / 2
+    def _df_to_transition_matrix(self):
+        size = (sqrt(8 * len(self.dataframe) + 1) + 1) / 2
         if not size.is_integer():
             raise ValueError("The provided dataframe is not a symmetric graph")
-        score_sum = graph_df.score.sum()
-        graph_df['transition_prob'] = graph_df.score / score_sum
         size = int(size)
         tran_mat = np.zeros([size, size])
-        name_order = sorted(list(set(graph_df.seq1.tolist() + graph_df.seq2.tolist())))
-        for indx, row in graph_df.iterrows():
-            seq1 = name_order.index(row.seq1)
-            seq2 = name_order.index(row.seq2)
+        for indx, row in self.dataframe.iterrows():
+            seq1 = self.name_order.index(row.seq1)
+            seq2 = self.name_order.index(row.seq2)
             tran_mat[seq1][seq2] = row.score
             tran_mat[seq2][seq1] = row.score
-        tran_mat = apply_edge_sim_threshold(edge_sim_threshold, tran_mat)
-        tran_mat = normalize(tran_mat)
+        tran_mat[tran_mat <= self.edge_sim_threshold] = 1e-308
+        tran_mat = self.normalize(tran_mat)
         return tran_mat
 
-    valve = SafetyValve(global_reps=10)
-    transition_matrix = df_to_transition_matrix(data)
-    sub_states = [pd.DataFrame(transition_matrix)]
-    counter = 1
-    while True:
-        valve.step()
-        transition_matrix = mcl_step(transition_matrix)
-        sub_states.append(pd.DataFrame(transition_matrix))
-        if compare(sub_states[-2], sub_states[-1]) == 0:
-            break
-        counter += 1
-    return sub_states
+    def run(self):
+        valve = SafetyValve(global_reps=10)
+        while True:
+            valve.step()
+            self.trans_matrix = self.mcl_step()
+            self.sub_states.append(pd.DataFrame(self.trans_matrix))
+            if self.compare(self.sub_states[-2], self.sub_states[-1]) == 0:
+                break
+
+        next_cluster = []
+        for i, row in self.sub_states[-1].iterrows():
+            for j, cell in row.items():
+                if cell == 1:
+                    next_cluster.append(self.name_order[j])
+            if next_cluster:
+                self.clusters.append(next_cluster)
+                next_cluster = []
+        return
 
 
 if __name__ == '__main__':
     sample_df = pd.read_csv("../workshop/mcl/complete_all_by_all.scores", sep="\t", header=None, index_col=False)
     sample_df.columns = ["seq1", "seq2", "score"]
-    mcl_steps = markov_clustering(sample_df, 8, 0.6)
-    print(mcl_steps[0])
-    print(mcl_steps[-1])
+    mcl = MarkovClustering(sample_df, 8, 0.6)
+    mcl.run()
+    print(mcl.clusters)
