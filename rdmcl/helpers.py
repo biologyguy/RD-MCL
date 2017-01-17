@@ -173,15 +173,6 @@ class MarkovClustering(object):
                 np_matrix[:, indx] = column / column_sum
         return np_matrix
 
-    def mcl_step(self):
-        # Expand
-        self.trans_matrix = self.trans_matrix.dot(self.trans_matrix)
-        # Inflate
-        self.trans_matrix = self.trans_matrix ** self.inflation
-        # Re-normalize
-        self.trans_matrix = self.normalize(self.trans_matrix)
-        return self.trans_matrix
-
     def _df_to_transition_matrix(self):
         size = (sqrt(8 * len(self.dataframe) + 1) + 1) / 2
         if not size.is_integer():
@@ -194,8 +185,22 @@ class MarkovClustering(object):
             tran_mat[seq1][seq2] = row.score
             tran_mat[seq2][seq1] = row.score
         tran_mat[tran_mat <= self.edge_sim_threshold] = 0
+
+        # This is a 'centering' step that is used by the original MCL algorithm
+        for i in range(len(tran_mat)):
+            tran_mat[i][i] = max(tran_mat[i])
+
         tran_mat = self.normalize(tran_mat)
         return tran_mat
+
+    def mcl_step(self):
+        # Expand
+        self.trans_matrix = self.trans_matrix.dot(self.trans_matrix)
+        # Inflate
+        self.trans_matrix = self.trans_matrix ** self.inflation
+        # Re-normalize
+        self.trans_matrix = self.normalize(self.trans_matrix)
+        return
 
     def run(self):
         valve = SafetyValve(global_reps=1000)
@@ -205,7 +210,7 @@ class MarkovClustering(object):
             except RuntimeError:
                 self.clusters = [self.name_order]
                 return
-            self.trans_matrix = self.mcl_step()
+            self.mcl_step()
             self.sub_state_dfs.append(pd.DataFrame(self.trans_matrix))
             if self.compare(self.sub_state_dfs[-2], self.sub_state_dfs[-1]) == 0:
                 break
