@@ -234,10 +234,3 @@ class MarkovClustering(object):
         with open(ofile, "w") as _ofile:
             for cluster in self.clusters:
                 _ofile.write("%s\n" % "\t".join(cluster))
-
-if __name__ == '__main__':
-    sample_df = pd.read_csv("../workshop/mcl/complete_all_by_all.scores", sep="\t", header=None, index_col=False)
-    sample_df.columns = ["seq1", "seq2", "score"]
-    mcl = MarkovClustering(sample_df, 2, 0.6)
-    mcl.run()
-    print(mcl.clusters)

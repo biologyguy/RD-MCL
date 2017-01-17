@@ -7,11 +7,14 @@ import os
 import buddysuite.SeqBuddy
 import buddysuite.buddy_resources as br
 import sqlite3
+import pandas as pd
+import numpy as np
 from hashlib import md5
 from time import sleep
 from multiprocessing.queues import SimpleQueue
 from multiprocessing import Pipe, Process
 from Bio.SubsMat import SeqMat, MatrixInfo
+from io import StringIO
 
 
 def test_sqlitebroker_init(hf):
@@ -170,3 +173,180 @@ def test_make_full_mat():
 def test_bit_score():
     assert helpers.bit_score(100) == 41.192416298119
 
+
+def test_markov_clustering_init():
+    data = """\
+Bab\tCfu\t1
+Bab\tOma\t1
+Bab\tMle\t0
+Cfu\tMle\t0
+Cfu\tOma\t1
+Oma\tMle\t0"""
+    sample_df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False)
+    sample_df.columns = ["seq1", "seq2", "score"]
+    mcl = helpers.MarkovClustering(sample_df, 2, 0.6)
+    assert str(mcl.dataframe) == str(sample_df)
+    assert mcl.inflation == 2
+    assert mcl.edge_sim_threshold == 0.6
+    assert mcl.name_order == ['Bab', "Cfu", "Mle", "Oma"]
+    assert str(mcl.trans_matrix) == """\
+[[ 0.33333333  0.33333333  0.          0.33333333]
+ [ 0.33333333  0.33333333  0.          0.33333333]
+ [ 0.          0.          0.          0.        ]
+ [ 0.33333333  0.33333333  0.          0.33333333]]"""
+    assert len(mcl.sub_state_dfs) == 1
+    assert str(mcl.sub_state_dfs[0]) == """\
+          0         1    2         3
+0  0.333333  0.333333  0.0  0.333333
+1  0.333333  0.333333  0.0  0.333333
+2  0.000000  0.000000  0.0  0.000000
+3  0.333333  0.333333  0.0  0.333333"""
+    assert mcl.clusters == []
+
+
+def test_markov_clustering_compare():
+    data = """\
+Bab\tCfu\t1
+Bab\tOma\t1
+Bab\tMle\t0
+Cfu\tMle\t0
+Cfu\tOma\t1
+Oma\tMle\t0"""
+    df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False)
+    df.columns = ["seq1", "seq2", "score"]
+
+    mcl = helpers.MarkovClustering(df, 2)
+    df1 = mcl.sub_state_dfs[0]
+    df2 = mcl.sub_state_dfs[0].copy()
+    assert helpers.MarkovClustering.compare(df1, df2) == 0
+
+    df2[0][0] = 1
+    df2[1][3] = 1.5
+    assert round(helpers.MarkovClustering.compare(df1, df2), 1) == 1.8
+
+
+def test_markov_clustering_normalize():
+    matrix = np.matrix([[0., 1., 0., 1.],
+                        [1., 0., 0., 1.],
+                        [0., 0., 0., 0.],
+                        [1., 1., 0., 0.]])
+    normalized = helpers.MarkovClustering.normalize(matrix)
+    assert str(normalized) == """\
+[[ 0.   0.5  0.   0.5]
+ [ 0.5  0.   0.   0.5]
+ [ 0.   0.   0.   0. ]
+ [ 0.5  0.5  0.   0. ]]"""
+
+
+def test_markov_clustering_df_to_transition_matrix():
+    data = """\
+Bab\tCfu\t1
+Bab\tOma\t1
+Bab\tMle\t0
+Cfu\tMle\t0
+Cfu\tOma\t1
+Oma\tMle\t0"""
+    df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False)
+    df.columns = ["seq1", "seq2", "score"]
+
+    mcl = helpers.MarkovClustering(df, 2)
+    assert str(mcl._df_to_transition_matrix()) == """\
+[[ 0.33333333  0.33333333  0.          0.33333333]
+ [ 0.33333333  0.33333333  0.          0.33333333]
+ [ 0.          0.          0.          0.        ]
+ [ 0.33333333  0.33333333  0.          0.33333333]]"""
+
+    mcl.dataframe = mcl.dataframe.ix[1:, :]
+    with pytest.raises(ValueError) as err:
+        mcl._df_to_transition_matrix()
+    assert "The provided dataframe is not a symmetric graph" in str(err)
+
+
+def test_markov_clustering_mcl_step():
+    data = """\
+Bab\tCfu\t1
+Bab\tOma\t1
+Bab\tMle\t0
+Cfu\tMle\t1
+Cfu\tOma\t1
+Oma\tMle\t0"""
+    df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False)
+    df.columns = ["seq1", "seq2", "score"]
+
+    mcl = helpers.MarkovClustering(df, 2)
+    mcl.mcl_step()
+    assert str(mcl.trans_matrix) == """\
+[[ 0.32526882  0.19771242  0.05        0.32526882]
+ [ 0.32526882  0.47222222  0.45        0.32526882]
+ [ 0.02419355  0.13235294  0.45        0.02419355]
+ [ 0.32526882  0.19771242  0.05        0.32526882]]"""
+
+    mcl.mcl_step()
+    assert str(mcl.trans_matrix) == """\
+[[ 0.25608107  0.17964133  0.06652326  0.25608107]
+ [ 0.47164909  0.58116078  0.64254281  0.47164909]
+ [ 0.01618877  0.05955656  0.22441067  0.01618877]
+ [ 0.25608107  0.17964133  0.06652326  0.25608107]]"""
+
+    mcl.mcl_step()
+    assert str(mcl.trans_matrix) == """\
+[[ 0.12636968  0.10544909  0.06773622  0.12636968]
+ [ 0.74296221  0.78150128  0.84387976  0.74296221]
+ [ 0.00429842  0.00760055  0.02064779  0.00429842]
+ [ 0.12636968  0.10544909  0.06773622  0.12636968]]"""
+
+    mcl.mcl_step()
+    assert str(mcl.trans_matrix) == """\
+[[  1.97036886e-02   1.92752312e-02   1.84096262e-02   1.97036886e-02]
+ [  9.60517622e-01   9.61370799e-01   9.63092986e-01   9.60517622e-01]
+ [  7.50011699e-05   7.87382116e-05   8.77612448e-05   7.50011699e-05]
+ [  1.97036886e-02   1.92752312e-02   1.84096262e-02   1.97036886e-02]]"""
+
+
+def test_markov_clustering_run(monkeypatch):
+    data = """\
+Bab\tCfu\t0.9
+Bab\tOma\t0.1
+Bab\tMle\t0.1
+Cfu\tMle\t0.1
+Cfu\tOma\t0.1
+Oma\tMle\t0.9"""
+    df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False)
+    df.columns = ["seq1", "seq2", "score"]
+
+    mcl = helpers.MarkovClustering(df, 2)
+    mcl.run()
+    assert str(mcl.trans_matrix) == """\
+[[ 0.5  0.5  0.   0. ]
+ [ 0.5  0.5  0.   0. ]
+ [ 0.   0.   0.5  0.5]
+ [ 0.   0.   0.5  0.5]]"""
+    assert mcl.clusters == [["Mle", "Oma"], ['Bab', "Cfu"]]
+
+    def safetyvalve_init(self, global_reps):
+        self.counter = 0
+        self.global_reps = 2
+
+    monkeypatch.setattr(br.SafetyValve, "__init__", safetyvalve_init)
+    mcl = helpers.MarkovClustering(df, 2)
+    mcl.run()
+    assert mcl.clusters[0] == ['Bab', "Cfu", "Mle", "Oma"]
+
+
+def test_markov_clustering_write():
+    data = """\
+Bab\tCfu\t0.3
+Bab\tOma\t0.5
+Bab\tMle\t0
+Cfu\tMle\t0.7
+Cfu\tOma\t0.7
+Oma\tMle\t0"""
+    df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False)
+    df.columns = ["seq1", "seq2", "score"]
+
+    mcl = helpers.MarkovClustering(df, 2)
+    mcl.run()
+
+    tmp_file = br.TempFile()
+    mcl.write(tmp_file.path)
+    assert tmp_file.read() == "Bab	Cfu	Mle	Oma\n"
