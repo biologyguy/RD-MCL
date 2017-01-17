@@ -221,8 +221,14 @@ class MarkovClustering(object):
                 self.clusters.append(next_cluster)
                 next_cluster = []
         self.clusters += [[x] for x in not_clustered]
+        self.clusters.sort(key=len)
+        self.clusters.reverse()
         return
 
+    def write(self, ofile="clusters.mcl"):
+        with open(ofile, "w") as _ofile:
+            for cluster in self.clusters:
+                _ofile.write("%s\n" % "\t".join(cluster))
 
 if __name__ == '__main__':
     sample_df = pd.read_csv("../workshop/mcl/complete_all_by_all.scores", sep="\t", header=None, index_col=False)
