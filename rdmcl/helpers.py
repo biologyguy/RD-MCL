@@ -155,7 +155,7 @@ class MarkovClustering(object):
         self.edge_sim_threshold = edge_sim_threshold
         self.name_order = sorted(list(set(self.dataframe.seq1.tolist() + self.dataframe.seq2.tolist())))
         self.trans_matrix = self._df_to_transition_matrix()
-        self.sub_states = [pd.DataFrame(self.trans_matrix)]
+        self.sub_state_dfs = [pd.DataFrame(self.trans_matrix)]
         self.clusters = []
 
     @staticmethod
@@ -193,33 +193,40 @@ class MarkovClustering(object):
             seq2 = self.name_order.index(row.seq2)
             tran_mat[seq1][seq2] = row.score
             tran_mat[seq2][seq1] = row.score
-        tran_mat[tran_mat <= self.edge_sim_threshold] = 1e-308
+        tran_mat[tran_mat <= self.edge_sim_threshold] = 0
         tran_mat = self.normalize(tran_mat)
         return tran_mat
 
     def run(self):
-        valve = SafetyValve(global_reps=10)
+        valve = SafetyValve(global_reps=1000)
         while True:
-            valve.step()
+            try:
+                valve.step()
+            except RuntimeError:
+                self.clusters = [self.name_order]
+                return
             self.trans_matrix = self.mcl_step()
-            self.sub_states.append(pd.DataFrame(self.trans_matrix))
-            if self.compare(self.sub_states[-2], self.sub_states[-1]) == 0:
+            self.sub_state_dfs.append(pd.DataFrame(self.trans_matrix))
+            if self.compare(self.sub_state_dfs[-2], self.sub_state_dfs[-1]) == 0:
                 break
 
         next_cluster = []
-        for i, row in self.sub_states[-1].iterrows():
+        not_clustered = list(self.name_order)
+        for i, row in self.sub_state_dfs[-1].iterrows():
             for j, cell in row.items():
-                if cell == 1:
+                if cell != 0 and self.name_order[j] in not_clustered:
                     next_cluster.append(self.name_order[j])
+                    del not_clustered[not_clustered.index(self.name_order[j])]
             if next_cluster:
                 self.clusters.append(next_cluster)
                 next_cluster = []
+        self.clusters += [[x] for x in not_clustered]
         return
 
 
 if __name__ == '__main__':
     sample_df = pd.read_csv("../workshop/mcl/complete_all_by_all.scores", sep="\t", header=None, index_col=False)
     sample_df.columns = ["seq1", "seq2", "score"]
-    mcl = MarkovClustering(sample_df, 8, 0.6)
+    mcl = MarkovClustering(sample_df, 2, 0.6)
     mcl.run()
     print(mcl.clusters)
