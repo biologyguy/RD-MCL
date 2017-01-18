@@ -19,7 +19,7 @@ from multiprocessing import Process
 
 
 class Variable:
-    def __init__(self, _name, _min, _max, variance_covariate=0.05):
+    def __init__(self, _name, _min, _max, variance_covariate=0.05, r_seed=None):
         self.name = _name
         self.min = _min
         self.max = _max
@@ -27,7 +27,8 @@ class Variable:
         self.variance = _range * variance_covariate
 
         # select a random start value
-        self.current_value = random.random() * _range + _min
+        self.rand_gen = random.Random() if not r_seed else random.Random(r_seed)
+        self.current_value = self.rand_gen.random() * _range + _min
         self.draw_value = self.current_value
         self.history = {"draws": [self.draw_value], "accepts": []}
 
@@ -54,7 +55,7 @@ class Variable:
         return
 
     def draw_random(self):
-        self.current_value = random.random() * (self.max - self.min) + self.min
+        self.current_value = self.rand_gen.random() * (self.max - self.min) + self.min
         self.draw_value = self.current_value
         return
 
@@ -70,7 +71,7 @@ class Variable:
 
 
 class _Chain:
-    def __init__(self, variables, function, params=None, quiet=False):
+    def __init__(self, variables, function, params=None, quiet=False, r_seed=None):
         self.variables = variables
         self.function = function
         self.params = params
@@ -80,7 +81,8 @@ class _Chain:
         self.current_score = 0.
         self.proposed_score = 0.
         self.score_history = []
-        self.name = "".join([random.choice(string.ascii_letters + string.digits) for _ in range(20)])
+        self.rand_gen = random.Random() if not r_seed else random.Random(r_seed)
+        self.name = "".join([self.rand_gen.choice(string.ascii_letters + string.digits) for _ in range(20)])
 
         # Sample `function` for starting min/max scores
         self.raw_min = 0.
@@ -100,6 +102,7 @@ class _Chain:
                 func_args.append(variable.draw_value)
                 output += " %s = %s," % (variable.name, variable.current_value)
 
+            func_args.append(self.rand_gen.randint(1, 999999999999999))  # Always add a new seed for the target function
             score = self.function(func_args) if not self.params else self.function(func_args, self.params)
             self.score_history.append(score)
             output += " Score = %s" % score
@@ -123,6 +126,7 @@ class _Chain:
             variable.draw_new_value()
             func_args.append(variable.draw_value)
 
+        func_args.append(self.rand_gen.randint(1, 999999999999999))  # Always add a new seed for the target function
         self.proposed_raw_score = self.function(func_args) if not self.params else self.function(func_args, self.params)
         if len(self.score_history) >= 1000:
             self.score_history.pop(0)
@@ -138,7 +142,7 @@ class _Chain:
             self.accept()
 
         else:
-            rand_check_val = random.random()
+            rand_check_val = self.rand_gen.random()
             accept_check = self.gaussian_pdf.pdf(self.proposed_score) / self.gaussian_pdf.pdf(self.current_score)
 
             if accept_check > rand_check_val:
@@ -179,7 +183,7 @@ class _Chain:
 
 class MCMCMC:
     def __init__(self, variables, function, params=None, steps=10000, sample_rate=1, num_chains=3,
-                 outfile='./mcmcmc_out.csv', burn_in=100, quiet=False):
+                 outfile='./mcmcmc_out.csv', burn_in=100, quiet=False, r_seed=None):
 
         self.global_variables = variables
         self.steps = steps
@@ -192,8 +196,9 @@ class MCMCMC:
                 heading += "%s\t" % var.name
             heading += "result\n"
             ofile.write(heading)
-
-        self.chains = [_Chain(deepcopy(self.global_variables), function, params=params, quiet=quiet) for _ in range(num_chains)]
+        self.rand_gen = random.Random() if not r_seed else random.Random(r_seed)
+        self.chains = [_Chain(deepcopy(self.global_variables), function, params=params,
+                              quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999)) for _ in range(num_chains)]
         self.best = {"score": 0., "variables": {x.name: 0. for x in variables}}
 
         # Set a cold chain. The cold chain should always be set at index 0, even if a chain swap occurs
@@ -237,7 +242,7 @@ class MCMCMC:
                 _chain.accept()
 
             else:
-                rand_check_val = random.random()
+                rand_check_val = self.rand_gen.random()
                 prop_gaus = _chain.gaussian_pdf.pdf(_chain.proposed_score)
                 cur_gaus = _chain.gaussian_pdf.pdf(_chain.current_score)
                 accept_check = prop_gaus / cur_gaus
@@ -261,6 +266,8 @@ class MCMCMC:
                             variable.draw_new_value()
                             func_args.append(variable.draw_value)
 
+                        # Always add a new seed for the target function
+                        func_args.append(self.rand_gen.randint(1, 999999999999999))
                         outfile = "%s/%s" % (temp_dir.path, chain.name)
                         p = Process(target=mc_step_run, args=(chain, [func_args, outfile]))
                         p.start()
