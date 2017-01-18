@@ -76,6 +76,7 @@ TIMER = helpers.Timer()
 GAP_OPEN = -5
 GAP_EXTEND = 0
 BLOSUM62 = helpers.make_full_mat(SeqMat(MatrixInfo.blosum62))
+MCMCMC_CHAINS = 3
 
 ambiguous_X = {"A": 0, "R": -1, "N": -1, "D": -1, "C": -2, "Q": -1, "E": -1, "G": -1, "H": -1, "I": -1, "L": -1,
                "K": -1, "M": -1, "F": -1, "P": -2, "S": 0, "T": 0, "W": -2, "Y": -1, "V": -1}
@@ -545,8 +546,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                              r_seed=rand_gen.randint(1, 999999999999999))
 
     try:
-        with open("%s/max.txt" % temp_dir.path, "w") as ofile:
-            ofile.write("-1000000000")
+        open("%s/max.txt" % temp_dir.path, "w").close()
         mcmcmc_params = ["%s" % temp_dir.path, False, seqbuddy, master_cluster,
                          taxa_separator, sql_broker, outdir, progress]
         mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1,
@@ -675,13 +675,32 @@ def mcmcmc_mcl(args, params):
         clusters[indx] = cluster
         score += cluster.score()
 
-    with LOCK:  # ToDo: do not do a simple > current max check, because order messes up random seed stuff
+    with LOCK:
         with open("%s/max.txt" % external_tmp_dir, "r") as ifile:
-            current_max = float(ifile.read())
-        if score > current_max:
-            write_mcl_clusters(clusters, "%s/best_group" % external_tmp_dir)
+            results = ifile.readlines()
+            results = [result.strip() for result in results]
+            results.append(",".join([cluster.seq_id_hash for cluster in clusters]))
+
+        if len(results) != MCMCMC_CHAINS:
             with open("%s/max.txt" % external_tmp_dir, "w") as ofile:
-                ofile.write(str(score))
+                ofile.write("\n".join(results))
+        else:
+            best_score = None
+            best_clusters = []
+            for clusters in results:
+                query = "SELECT seq_ids, cluster_score FROM data_table WHERE hash IN ('%s')" % "','".join(clusters.split(","))
+                sql_query = sql_broker.query(query)
+                score_sum = sum([float(score) for ids, score in sql_query])
+                if score_sum == best_score:
+                    best_clusters.append([ids for ids, score in sql_query])
+                elif best_score is None or score_sum > best_score:
+                    best_clusters = [[ids for ids, score in sql_query]]
+                    best_score = score_sum
+
+            best_clusters = sorted(best_clusters)[0]
+            best_clusters = [cluster.replace(', ', '\t') for cluster in best_clusters]
+            with open("%s/best_group" % external_tmp_dir, "w") as ofile:
+                ofile.write('\n'.join(best_clusters))
     return score
 
 
@@ -694,11 +713,9 @@ def parse_mcl_clusters(path):
 
 
 def write_mcl_clusters(clusters, path):
-    clusters_string = ""
-    for cluster in clusters:
-        clusters_string += "%s\n" % "\t".join(cluster.seq_ids)
+    clusters_strings = ["\t".join(cluster.seq_ids) for cluster in clusters]
     with open(path, "w") as ofile:
-        ofile.write(clusters_string.strip())
+        ofile.write("\n".join(clusters_strings))
     return
 
 
