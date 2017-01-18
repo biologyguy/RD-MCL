@@ -738,7 +738,6 @@ def check_sequences(seqbuddy, taxa_separator):
 def generate_msa(seqbuddy, sql_broker):
     seq_ids = sorted([rec.id for rec in seqbuddy.records])
     seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
-
     alignment = sql_broker.query("SELECT (alignment) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
     if alignment and alignment[0][0]:
         alignment = Alb.AlignBuddy(alignment[0][0])
