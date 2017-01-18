@@ -495,44 +495,6 @@ def mc_psi_pred(seq_obj, args):
     return
 
 
-def mcmcmc_mcl(args, params):
-    inflation, gq = args
-    external_tmp_dir, min_score, seqbuddy, parent_cluster, taxa_separator, sql_broker, outdir, progress = params
-
-    mcl_obj = helpers.MarkovClustering(parent_cluster.sim_scores, inflation=inflation, edge_sim_threshold=gq)
-    mcl_obj.run()
-    progress.update('mcl_runs', 1)
-    clusters = mcl_obj.clusters
-    score = 0
-
-    for indx, cluster_ids in enumerate(clusters):
-        cluster_hash = helpers.md5_hash(", ".join(sorted(cluster_ids)))
-        graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_hash))
-        if graph and graph[0][0]:
-            sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
-            score += float()
-            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator)
-        else:
-            sb_copy = Sb.make_copy(seqbuddy)
-            sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster_ids]))
-            alb_obj = generate_msa(sb_copy, sql_broker)
-            sim_scores = create_all_by_all_scores(alb_obj, outdir, sql_broker=sql_broker, quiet=True)
-            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator)
-            cluster2database(cluster, sql_broker, alb_obj)
-
-        clusters[indx] = cluster
-        score += cluster.score()
-
-    with LOCK:
-        with open("%s/max.txt" % external_tmp_dir, "r") as ifile:
-            current_max = float(ifile.read())
-        if score > current_max:
-            write_mcl_clusters(clusters, "%s/best_group" % external_tmp_dir)
-            with open("%s/max.txt" % external_tmp_dir, "w") as ofile:
-                ofile.write(str(score))
-    return score
-
-
 def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progress, outdir,
                       steps=1000, quiet=True, taxa_separator="-"):
     """
@@ -677,6 +639,44 @@ class Progress(object):
                % (_progress['mcl_runs'], _progress['placed'], _progress['total'])
 
 
+def mcmcmc_mcl(args, params):
+    inflation, gq = args
+    external_tmp_dir, min_score, seqbuddy, parent_cluster, taxa_separator, sql_broker, outdir, progress = params
+
+    mcl_obj = helpers.MarkovClustering(parent_cluster.sim_scores, inflation=inflation, edge_sim_threshold=gq)
+    mcl_obj.run()
+    progress.update('mcl_runs', 1)
+    clusters = mcl_obj.clusters
+    score = 0
+
+    for indx, cluster_ids in enumerate(clusters):
+        cluster_hash = helpers.md5_hash(", ".join(sorted(cluster_ids)))
+        graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_hash))
+        if graph and graph[0][0]:
+            sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
+            score += float()
+            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator)
+        else:
+            sb_copy = Sb.make_copy(seqbuddy)
+            sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster_ids]))
+            alb_obj = generate_msa(sb_copy, sql_broker)
+            sim_scores = create_all_by_all_scores(alb_obj, outdir, sql_broker=sql_broker, quiet=True)
+            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator)
+            cluster2database(cluster, sql_broker, alb_obj)
+
+        clusters[indx] = cluster
+        score += cluster.score()
+
+    with LOCK:
+        with open("%s/max.txt" % external_tmp_dir, "r") as ifile:
+            current_max = float(ifile.read())
+        if score > current_max:
+            write_mcl_clusters(clusters, "%s/best_group" % external_tmp_dir)
+            with open("%s/max.txt" % external_tmp_dir, "w") as ofile:
+                ofile.write(str(score))
+    return score
+
+
 def parse_mcl_clusters(path):
     with open(path, "r") as ifile:
         clusters = ifile.read()
@@ -691,6 +691,177 @@ def write_mcl_clusters(clusters, path):
         clusters_string += "%s\n" % "\t".join(cluster.seq_ids)
     with open(path, "w") as ofile:
         ofile.write(clusters_string.strip())
+    return
+
+
+def check_sequences(seqbuddy, taxa_separator):
+    logging.warning("Checking that the format of all sequence ids matches 'taxa%sgene'" % taxa_separator)
+    failures = []
+    for rec in seqbuddy.records:
+        rec_id = rec.id.split(taxa_separator)
+        if len(rec_id) != 2:
+            failures.append(rec.id)
+    if failures:
+        logging.error("Malformed sequence id(s): '%s'\nThe taxa separator character is currently set to '%s',\n"
+                      " which can be changed with the '-ts' flag" % (", ".join(failures), taxa_separator))
+        sys.exit()
+    else:
+        logging.warning("    %s sequences PASSED" % len(seqbuddy))
+    return
+
+
+def generate_msa(seqbuddy, sql_broker):
+    seq_ids = sorted([rec.id for rec in seqbuddy.records])
+    seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
+
+    alignment = sql_broker.query("SELECT (alignment) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
+    if alignment and alignment[0][0]:
+        alignment = Alb.AlignBuddy(alignment[0][0])
+    else:
+        if len(seqbuddy) == 1:
+            alignment = Alb.AlignBuddy(str(seqbuddy))
+        else:
+            alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -2", quiet=True)
+
+        sql_broker.query("""UPDATE data_table SET alignment='{0}'
+                            WHERE hash='{1}'""".format(str(alignment), seq_id_hash))
+    return alignment
+
+
+def create_all_by_all_scores(alignment, outdir, gap_open=GAP_OPEN, gap_extend=GAP_EXTEND, sql_broker=None, quiet=False):
+    """
+    Generate a multiple sequence alignment and pull out all-by-all similarity graph
+    :param alignment: AlignBuddy object
+    :param outdir: Where are files being written to?
+    :param gap_open: Gap initiation penalty
+    :param gap_extend: Gap extension penalty
+    :param sql_broker: Multithread SQL broker that can be queried
+    :param quiet: Supress multicore output
+    :return:
+    """
+    if len(alignment.records()) == 1:
+        sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "score"])
+        return sim_scores
+
+    # Only calculate if not previously calculated
+    seq_ids = sorted([rec.id for rec in alignment.records_iter()])
+    seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
+    if sql_broker:  # ToDo: Not getting into here. Figure out why
+        graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
+        if graph and graph[0][0]:
+            sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
+            sim_scores.columns = ["seq1", "seq2", "score"]
+            return sim_scores
+
+    # Don't want to modify the alignbuddy object in place
+    alignment = Alb.make_copy(alignment)
+
+    # Need to specify what columns the PsiPred files map to now that there are gaps.
+    psi_pred_files = OrderedDict()
+    for rec in alignment.records_iter():
+        ss_file = pd.read_csv("%s/psi_pred/%s.ss2" % (outdir, rec.id), comment="#",
+                              header=None, delim_whitespace=True)
+        ss_file.columns = ["indx", "aa", "ss", "coil_prob", "helix_prob", "sheet_prob"]
+        ss_counter = 0
+        for indx, residue in enumerate(rec.seq):
+            if residue != "-":
+                ss_file.set_value(ss_counter, "indx", indx)
+                ss_counter += 1
+        psi_pred_files[rec.id] = ss_file
+
+    # Scored seem to be improved by removing gaps. Need to test this explicitly for the paper though
+    alignment = Alb.trimal(alignment, "gappyout")
+
+    # Re-update PsiPred files, now that some columns are removed
+    for rec in alignment.records_iter():
+        new_psi_pred = []
+        for row in psi_pred_files[rec.id].itertuples():
+            if alignment.alignments[0].position_map[int(row[1])][1]:
+                new_psi_pred.append(list(row)[1:])
+        psi_pred_files[rec.id] = pd.DataFrame(new_psi_pred, columns=["indx", "aa", "ss", "coil_prob",
+                                                                     "helix_prob", "sheet_prob"])
+    ids1 = [rec.id for rec in alignment.records_iter()]
+    ids2 = [rec.id for rec in alignment.records_iter()]
+    all_by_all = []
+    for rec1 in ids1:
+        del ids2[ids2.index(rec1)]
+        for rec2 in ids2:
+            all_by_all.append((rec1, rec2))
+
+    all_by_all_outdir = br.TempDir()
+    if all_by_all:
+        n = ceil(len(all_by_all) / CPUS)
+        all_by_all = [all_by_all[i:i + n] for i in range(0, len(all_by_all), n)] if all_by_all else []
+        score_sequences_params = [alignment, psi_pred_files, all_by_all_outdir.path, gap_open, gap_extend]
+        br.run_multicore_function(all_by_all, score_sequences, score_sequences_params,
+                                  quiet=quiet)
+    sim_scores_file = br.TempFile()
+    sim_scores_file.write("seq1,seq2,score")
+    aba_root, aba_dirs, aba_files = next(os.walk(all_by_all_outdir.path))
+    for aba_file in aba_files:
+        with open("%s/%s" % (aba_root, aba_file), "r") as ifile:
+            sim_scores_file.write(ifile.read())
+    sim_scores = pd.read_csv(sim_scores_file.get_handle("r"), index_col=False)
+    return sim_scores
+
+
+def score_sequences(seq_pairs, args):
+    # Calculate the best possible scores, and divide by the observed scores
+    alb_obj, psi_pred_files, output_dir, gap_open, gap_extend = args
+    file_name = helpers.md5_hash(str(seq_pairs))
+    ofile = open("%s/%s" % (output_dir, file_name), "w")
+    for seq_pair in seq_pairs:
+        id1, id2 = seq_pair
+        id_regex = "^%s$|^%s$" % (id1, id2)
+        alb_copy = Alb.make_copy(alb_obj)
+        Alb.pull_records(alb_copy, id_regex)
+        observed_score = 0
+        seq1_best = 0
+        seq2_best = 0
+        seq1, seq2 = alb_copy.records()
+        prev_aa1 = "-"
+        prev_aa2 = "-"
+
+        for aa_pos in range(alb_copy.lengths()[0]):
+            aa1 = seq1.seq[aa_pos]
+            aa2 = seq2.seq[aa_pos]
+
+            if aa1 != "-":
+                seq1_best += BLOSUM62[aa1, aa1]
+            if aa2 != "-":
+                seq2_best += BLOSUM62[aa2, aa2]
+
+            if aa1 == "-" or aa2 == "-":
+                if prev_aa1 == "-" or prev_aa2 == "-":
+                    observed_score += gap_extend
+                else:
+                    observed_score += gap_open
+            else:
+                observed_score += BLOSUM62[aa1, aa2]
+            prev_aa1 = str(aa1)
+            prev_aa2 = str(aa2)
+
+        subs_mat_score = ((observed_score / seq1_best) + (observed_score / seq1_best)) / 2
+
+        # PSI PRED comparison
+        num_gaps = 0
+        ss_score = 0
+        for row1 in psi_pred_files[id1].itertuples():
+            if (psi_pred_files[id2]["indx"] == row1.indx).any():
+                row2 = psi_pred_files[id2].loc[psi_pred_files[id2]["indx"] == row1.indx]
+                row_score = 0
+                row_score += 1 - abs(float(row1.coil_prob) - float(row2.coil_prob))
+                row_score += 1 - abs(float(row1.helix_prob) - float(row2.helix_prob))
+                row_score += 1 - abs(float(row1.sheet_prob) - float(row2.sheet_prob))
+                ss_score += row_score / 3
+            else:
+                num_gaps += 1
+
+        align_len = len(psi_pred_files[id2]) + num_gaps
+        ss_score /= align_len
+        pair_score = (ss_score * 0.3) + (subs_mat_score * 0.7)
+        ofile.write("\n%s,%s,%s" % (id1, id2, pair_score))
+    ofile.close()
     return
 
 
@@ -801,176 +972,6 @@ def place_orphans(clusters, scores):  # NOT WORKING CORRECTLY
     return clusters
 # NOTE: There used to be a support function. Check the workscripts GitHub history
 
-
-def score_sequences(seq_pairs, args):
-    # Calculate the best possible scores, and divide by the observed scores
-    alb_obj, psi_pred_files, output_dir, gap_open, gap_extend = args
-    file_name = helpers.md5_hash(str(seq_pairs))
-    ofile = open("%s/%s" % (output_dir, file_name), "w")
-    for seq_pair in seq_pairs:
-        id1, id2 = seq_pair
-        id_regex = "^%s$|^%s$" % (id1, id2)
-        alb_copy = Alb.make_copy(alb_obj)
-        Alb.pull_records(alb_copy, id_regex)
-        observed_score = 0
-        seq1_best = 0
-        seq2_best = 0
-        seq1, seq2 = alb_copy.records()
-        prev_aa1 = "-"
-        prev_aa2 = "-"
-
-        for aa_pos in range(alb_copy.lengths()[0]):
-            aa1 = seq1.seq[aa_pos]
-            aa2 = seq2.seq[aa_pos]
-
-            if aa1 != "-":
-                seq1_best += BLOSUM62[aa1, aa1]
-            if aa2 != "-":
-                seq2_best += BLOSUM62[aa2, aa2]
-
-            if aa1 == "-" or aa2 == "-":
-                if prev_aa1 == "-" or prev_aa2 == "-":
-                    observed_score += gap_extend
-                else:
-                    observed_score += gap_open
-            else:
-                observed_score += BLOSUM62[aa1, aa2]
-            prev_aa1 = str(aa1)
-            prev_aa2 = str(aa2)
-
-        subs_mat_score = ((observed_score / seq1_best) + (observed_score / seq1_best)) / 2
-
-        # PSI PRED comparison
-        num_gaps = 0
-        ss_score = 0
-        for row1 in psi_pred_files[id1].itertuples():
-            if (psi_pred_files[id2]["indx"] == row1.indx).any():
-                row2 = psi_pred_files[id2].loc[psi_pred_files[id2]["indx"] == row1.indx]
-                row_score = 0
-                row_score += 1 - abs(float(row1.coil_prob) - float(row2.coil_prob))
-                row_score += 1 - abs(float(row1.helix_prob) - float(row2.helix_prob))
-                row_score += 1 - abs(float(row1.sheet_prob) - float(row2.sheet_prob))
-                ss_score += row_score / 3
-            else:
-                num_gaps += 1
-
-        align_len = len(psi_pred_files[id2]) + num_gaps
-        ss_score /= align_len
-        pair_score = (ss_score * 0.3) + (subs_mat_score * 0.7)
-        ofile.write("\n%s,%s,%s" % (id1, id2, pair_score))
-    ofile.close()
-    return
-
-
-def generate_msa(seqbuddy, sql_broker):
-    seq_ids = sorted([rec.id for rec in seqbuddy.records])
-    seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
-
-    alignment = sql_broker.query("SELECT (alignment) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
-    if alignment and alignment[0][0]:
-        alignment = Alb.AlignBuddy(alignment[0][0])
-    else:
-        if len(seqbuddy) == 1:
-            alignment = Alb.AlignBuddy(str(seqbuddy))
-        else:
-            alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -2", quiet=True)
-
-        sql_broker.query("""UPDATE data_table SET alignment='{0}'
-                            WHERE hash='{1}'""".format(str(alignment), seq_id_hash))
-    return alignment
-
-
-def create_all_by_all_scores(alignment, outdir, gap_open=GAP_OPEN, gap_extend=GAP_EXTEND, sql_broker=None, quiet=False):
-    """
-    Generate a multiple sequence alignment and pull out all-by-all similarity graph
-    :param alignment: AlignBuddy object
-    :param outdir: Where are files being written to?
-    :param gap_open: Gap initiation penalty
-    :param gap_extend: Gap extension penalty
-    :param sql_broker: Multithread SQL broker that can be queried
-    :param quiet: Supress multicore output
-    :return:
-    """
-    if len(alignment.records()) == 1:
-        sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "score"])
-        return sim_scores
-
-    # Only calculate if not previously calculated
-    seq_ids = sorted([rec.id for rec in alignment.records_iter()])
-    seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
-    if sql_broker:  # ToDo: Not getting into here. Figure out why
-        graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
-        if graph and graph[0][0]:
-            sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
-            sim_scores.columns = ["seq1", "seq2", "score"]
-            return sim_scores
-
-    # Don't want to modify the alignbuddy object in place
-    alignment = Alb.make_copy(alignment)
-
-    # Need to specify what columns the PsiPred files map to now that there are gaps.
-    psi_pred_files = OrderedDict()
-    for rec in alignment.records_iter():
-        ss_file = pd.read_csv("%s/psi_pred/%s.ss2" % (outdir, rec.id), comment="#",
-                              header=None, delim_whitespace=True)
-        ss_file.columns = ["indx", "aa", "ss", "coil_prob", "helix_prob", "sheet_prob"]
-        ss_counter = 0
-        for indx, residue in enumerate(rec.seq):
-            if residue != "-":
-                ss_file.set_value(ss_counter, "indx", indx)
-                ss_counter += 1
-        psi_pred_files[rec.id] = ss_file
-
-    # Scored seem to be improved by removing gaps. Need to test this explicitly for the paper though
-    alignment = Alb.trimal(alignment, "gappyout")
-
-    # Re-update PsiPred files, now that some columns are removed
-    for rec in alignment.records_iter():
-        new_psi_pred = []
-        for row in psi_pred_files[rec.id].itertuples():
-            if alignment.alignments[0].position_map[int(row[1])][1]:
-                new_psi_pred.append(list(row)[1:])
-        psi_pred_files[rec.id] = pd.DataFrame(new_psi_pred, columns=["indx", "aa", "ss", "coil_prob",
-                                                                     "helix_prob", "sheet_prob"])
-    ids1 = [rec.id for rec in alignment.records_iter()]
-    ids2 = [rec.id for rec in alignment.records_iter()]
-    all_by_all = []
-    for rec1 in ids1:
-        del ids2[ids2.index(rec1)]
-        for rec2 in ids2:
-            all_by_all.append((rec1, rec2))
-
-    all_by_all_outdir = br.TempDir()
-    if all_by_all:
-        n = ceil(len(all_by_all) / CPUS)
-        all_by_all = [all_by_all[i:i + n] for i in range(0, len(all_by_all), n)] if all_by_all else []
-        score_sequences_params = [alignment, psi_pred_files, all_by_all_outdir.path, gap_open, gap_extend]
-        br.run_multicore_function(all_by_all, score_sequences, score_sequences_params,
-                                  quiet=quiet)
-    sim_scores_file = br.TempFile()
-    sim_scores_file.write("seq1,seq2,score")
-    aba_root, aba_dirs, aba_files = next(os.walk(all_by_all_outdir.path))
-    for aba_file in aba_files:
-        with open("%s/%s" % (aba_root, aba_file), "r") as ifile:
-            sim_scores_file.write(ifile.read())
-    sim_scores = pd.read_csv(sim_scores_file.get_handle("r"), index_col=False)
-    return sim_scores
-
-
-def check_sequences(seqbuddy, taxa_separator):
-    logging.warning("Checking that the format of all sequence ids matches 'taxa%sgene'" % taxa_separator)
-    failures = []
-    for rec in seqbuddy.records:
-        rec_id = rec.id.split(taxa_separator)
-        if len(rec_id) != 2:
-            failures.append(rec.id)
-    if failures:
-        logging.error("Malformed sequence id(s): '%s'\nThe taxa separator character is currently set to '%s',\n"
-                      " which can be changed with the '-ts' flag" % (", ".join(failures), taxa_separator))
-        sys.exit()
-    else:
-        logging.warning("    %s sequences PASSED" % len(seqbuddy))
-    return
 
 if __name__ == '__main__':
 
