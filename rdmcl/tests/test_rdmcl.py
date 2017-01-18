@@ -335,14 +335,25 @@ def test_generate_msa(hf):
     broker.stop_broker()
 
 
+def test_create_all_by_all_scores(hf):
+    seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
+    rdmcl.Sb.pull_recs(seqbuddy, "Mle")
+    alignbuddy = rdmcl.Alb.generate_msa(seqbuddy, "mafft", params="--globalpair --thread -2", quiet=True)
+
+    sim_scores = rdmcl.create_all_by_all_scores(alignbuddy, hf.resource_path)
+    assert len(sim_scores.index) == 66  # This is for 12 starting sequences
+    compare = sim_scores.loc[:][(sim_scores['seq1'] == "Mle-Panxα2") & (sim_scores['seq2'] == "Mle-Panxα12")]
+    assert compare.iloc[0]['score'] == 0.5482746552213027
+
+
 # #########  MCL stuff  ########## #
 def test_parse_mcl_clusters(hf):
-    clusters = rdmcl.parse_mcl_clusters("{0}{1}Cteno_pannexins_mcl_clusters.clus".format(hf.resource_path, hf.sep))
+    clusters = rdmcl.parse_mcl_clusters("%sCteno_pannexins_mcl_clusters.clus" % hf.resource_path)
     assert clusters[6] == ["BOL-PanxαH", "Dgl-PanxαH", "Edu-PanxαC", "Hca-PanxαF", "Mle-Panxα8", "Pba-PanxαC"]
 
 
 def test_write_mcl_clusters(hf):
-    clusters = rdmcl.parse_mcl_clusters("{0}{1}Cteno_pannexins_mcl_clusters.clus".format(hf.resource_path, hf.sep))
+    clusters = rdmcl.parse_mcl_clusters("%sCteno_pannexins_mcl_clusters.clus" % hf.resource_path)
     clusters = [rdmcl.Cluster(cluster, hf.get_sim_scores(cluster)) for cluster in clusters]
     tmp_file = br.TempFile()
     rdmcl.write_mcl_clusters(clusters, tmp_file.path)
