@@ -252,67 +252,42 @@ class MCMCMC:
             return
 
         temp_dir = TempDir()
-        max_processes = usable_cpu_count()
         counter = 0
         while counter <= self.steps:
             running_processes = 0
             child_list = {}
-            for chain in self.chains:
-                while 1:     # Only fork a new process when there is a free processor.
-                    if running_processes < max_processes:
-                        # Start new process
-                        func_args = []
-                        for variable in chain.variables:
-                            variable.draw_new_value()
-                            func_args.append(variable.draw_value)
+            for chain in self.chains:  # Note that this will spin off as many new processes as there are chains
+                # Start new process
+                func_args = []
+                for variable in chain.variables:
+                    variable.draw_new_value()
+                    func_args.append(variable.draw_value)
 
-                        # Always add a new seed for the target function
-                        func_args.append(self.rand_gen.randint(1, 999999999999999))
-                        outfile = "%s/%s" % (temp_dir.path, chain.name)
-                        p = Process(target=mc_step_run, args=(chain, [func_args, outfile]))
-                        p.start()
-                        child_list[chain.name] = p
-                        running_processes += 1
-                        break
+                # Always add a new seed for the target function
+                func_args.append(self.rand_gen.randint(1, 999999999999999))
+                outfile = "%s/%s" % (temp_dir.path, chain.name)
+                p = Process(target=mc_step_run, args=(chain, [func_args, outfile]))
+                p.start()
+                child_list[chain.name] = p
+                running_processes += 1
 
-                    else:
-                        # processor wait loop
-                        while 1:
-                            del_index = False
-                            for i in child_list:
-                                if child_list[i].is_alive():
-                                    continue
-                                else:
-                                    for finished_chain in self.chains:
-                                        if finished_chain.name == i:
-                                            step_parse(finished_chain)
-                                            running_processes -= 1
-                                            del_index = i
-                                            break
-
-                            if del_index:
-                                del child_list[del_index]
-
-                            if running_processes < max_processes:
-                                break
-
-            # wait for remaining processes to complete --> this is the same code as the processor wait loop above
+            # wait for remaining processes to complete
+            finished_processes = []
             while len(child_list) > 0:
-                del_index = False
                 for i in child_list:
                     if child_list[i].is_alive():
                         continue
                     else:
-                        for finished_chain in self.chains:
-                            if finished_chain.name == i:
-                                step_parse(finished_chain)
-                                running_processes -= 1
-                                del_index = i
-                                break
+                        finished_processes.append(child_list[i])
+                        del child_list[i]
+                        break
 
-                        if del_index:
-                            del child_list[del_index]
-                            break  # need to break out of the for-loop, because the child_list index is changed by del
+            # By sorting on PID (ie. name), a specific order is ensured so r_seed works
+            finished_processes = sorted(finished_processes, key=lambda l: l.name)
+            for finished_chain in self.chains:
+                for fin_process in finished_processes:
+                    if finished_chain.name == fin_process:
+                        step_parse(finished_chain)
 
             for chain in self.chains:
                 if chain.current_raw_score > self.best["score"]:
