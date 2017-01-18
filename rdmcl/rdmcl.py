@@ -34,7 +34,7 @@ import sqlite3
 from io import StringIO
 from subprocess import Popen, PIPE, check_output, CalledProcessError
 from multiprocessing import Lock, Pipe
-from random import random, gauss
+from random import gauss, Random, randint
 from math import ceil
 from collections import OrderedDict
 
@@ -99,7 +99,7 @@ def scored_clusters():
 
 
 class Cluster(object):
-    def __init__(self, seq_ids, sim_scores, taxa_separator="-", parent=None, clique=False, collapse=True):
+    def __init__(self, seq_ids, sim_scores, taxa_separator="-", parent=None, clique=False, collapse=True, r_seed=None):
         """
         - Note that reciprocal best hits between paralogs are collapsed when instantiating group_0, so
           no problem strongly penalizing all paralogs in the scoring algorithm
@@ -112,6 +112,9 @@ class Cluster(object):
         :type parent: Cluster
         :param clique: Specify whether cluster is a clique or not
         :type clique: bool
+        :param collapse: Specify whether reciprocal best hit paralogs should be combined
+        :type collapse: bool
+        :param r_seed: Set the random generator seed value
         """
         # Do an initial sanity check on the incoming graph and list of sequence ids
 
@@ -132,6 +135,7 @@ class Cluster(object):
         # self.cliques = []
         self.cluster_score = None
         self.collapsed_genes = OrderedDict()  # If paralogs are reciprocal best hits, collapse them
+        self.rand_gen = Random() if not r_seed else Random(r_seed)
         self._name = None
 
         seq_ids = sorted(seq_ids)
@@ -273,8 +277,7 @@ class Cluster(object):
                 global_best_hits = self.recursive_best_hits(_edge.seq2, global_best_hits, tested_ids)
         return global_best_hits
 
-    @staticmethod
-    def perturb(scores):
+    def perturb(self, scores):
         """
         Add a very small bit of variance into score values when std == 0
         :param scores: Similarity scores
@@ -285,7 +288,7 @@ class Cluster(object):
         while scores.score.std() == 0:
             valve.step("Failed to perturb:\n%s" % scores)
             for indx, score in scores.score.iteritems():
-                scores.set_value(indx, "score", gauss(score, (score * 0.0000001)))
+                scores.set_value(indx, "score", self.rand_gen.gauss(score, (score * 0.0000001)))
         return scores
 
     def get_base_cluster(self):
@@ -496,7 +499,7 @@ def mc_psi_pred(seq_obj, args):
 
 
 def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progress, outdir,
-                      steps=1000, quiet=True, taxa_separator="-"):
+                      steps=1000, quiet=True, taxa_separator="-", r_seed=None):
     """
     Run MCMCMC on MCL to find the best orthogroups
     :param master_cluster: The group to be subdivided
@@ -509,6 +512,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     :param steps: How many MCMCMC iterations to run TODO: calculate this on the fly
     :param quiet: Suppress StdErr
     :param taxa_separator: The string that separates taxon names from gene names
+    :param r_seed: Set the random generator seed value
     :return: list of sequence_ids objects
     """
     def save_cluster():
@@ -523,6 +527,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         progress.update("placed", update)
         return
 
+    rand_gen = Random() if not r_seed else Random(r_seed)
     master_cluster.set_name()
     temp_dir = br.TempDir()
 
@@ -535,9 +540,9 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     if not keep_going:
         save_cluster()
         return cluster_list
-
-    inflation_var = mcmcmc.Variable("I", 1.1, 20)
-    gq_var = mcmcmc.Variable("gq", min(master_cluster.sim_scores.score), max(master_cluster.sim_scores.score))
+    inflation_var = mcmcmc.Variable("I", 1.1, 20, r_seed=rand_gen.randint(1, 999999999999999))
+    gq_var = mcmcmc.Variable("gq", min(master_cluster.sim_scores.score), max(master_cluster.sim_scores.score),
+                             r_seed=rand_gen.randint(1, 999999999999999))
 
     try:
         with open("%s/max.txt" % temp_dir.path, "w") as ofile:
@@ -545,8 +550,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         mcmcmc_params = ["%s" % temp_dir.path, False, seqbuddy, master_cluster,
                          taxa_separator, sql_broker, outdir, progress]
         mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1,
-                                       params=mcmcmc_params,
-                                       quiet=quiet, outfile="%s/mcmcmc_out.csv" % temp_dir.path)
+                                       params=mcmcmc_params, quiet=quiet, outfile="%s/mcmcmc_out.csv" % temp_dir.path,
+                                       r_seed=rand_gen.randint(1, 999999999999999))
 
     except RuntimeError:  # Happens when mcmcmc fails to find different initial chain parameters
         save_cluster()
@@ -579,7 +584,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
             sim_scores = pd.read_csv(StringIO(graph), index_col=False, header=None)
             sim_scores.columns = ["seq1", "seq2", "score"]
 
-        sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster, taxa_separator=taxa_separator)
+        sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster,
+                              taxa_separator=taxa_separator, r_seed=rand_gen.randint(1, 999999999999999))
         if sub_cluster.seq_id_hash == master_cluster.seq_id_hash:
             raise ArithmeticError("The sub_cluster and master_cluster are the same, but are returning different "
                                   "scores\nsub-cluster score: %s, master score: %s\n%s"
@@ -606,7 +612,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         # Recursion... Reassign cluster_list, as all clusters are returned at the end of a call to orthogroup_caller
         cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, sql_broker=sql_broker,
                                          progress=progress, outdir=outdir, steps=steps, quiet=quiet,
-                                         taxa_separator=taxa_separator)
+                                         taxa_separator=taxa_separator, r_seed=rand_gen.randint(1, 999999999999999))
 
     save_cluster()
     return cluster_list
@@ -640,9 +646,9 @@ class Progress(object):
 
 
 def mcmcmc_mcl(args, params):
-    inflation, gq = args
+    inflation, gq, r_seed = args
     external_tmp_dir, min_score, seqbuddy, parent_cluster, taxa_separator, sql_broker, outdir, progress = params
-
+    rand_gen = Random(r_seed)
     mcl_obj = helpers.MarkovClustering(parent_cluster.sim_scores, inflation=inflation, edge_sim_threshold=gq)
     mcl_obj.run()
     progress.update('mcl_runs', 1)
@@ -655,19 +661,21 @@ def mcmcmc_mcl(args, params):
         if graph and graph[0][0]:
             sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
             score += float()
-            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator)
+            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator,
+                              r_seed=rand_gen.randint(1, 999999999999999))
         else:
             sb_copy = Sb.make_copy(seqbuddy)
             sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster_ids]))
             alb_obj = generate_msa(sb_copy, sql_broker)
             sim_scores = create_all_by_all_scores(alb_obj, outdir, sql_broker=sql_broker, quiet=True)
-            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator)
+            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator,
+                              r_seed=rand_gen.randint(1, 999999999999999))
             cluster2database(cluster, sql_broker, alb_obj)
 
         clusters[indx] = cluster
         score += cluster.score()
 
-    with LOCK:
+    with LOCK:  # ToDo: do not do a simple > current max check, because order messes up random seed stuff
         with open("%s/max.txt" % external_tmp_dir, "r") as ifile:
             current_max = float(ifile.read())
         if score > current_max:
@@ -998,6 +1006,7 @@ if __name__ == '__main__':
                         type=float, default=GAP_EXTEND)
     parser.add_argument("-ts", "--taxa_separator", action="store", default="-",
                         help="Specify a string that separates taxa ids from gene names")
+    parser.add_argument("-rs", "--r_seed", help="Specify a random seed for repeating a specific run", type=int)
     parser.add_argument("-f", "--force", action="store_true",
                         help="Overwrite previous run")
     parser.add_argument("-q", "--quiet", action="store_true",
@@ -1011,21 +1020,23 @@ if __name__ == '__main__':
     logging.info("********************************************************************************************\n")
     logging.info("Function call: %s" % " ".join(sys.argv))
     logging.warning("\n** Environment setup **")
-    logging.info("Working directory: %s" % os.getcwd())
+    if not in_args.r_seed:
+        in_args.r_seed = randint(1, 999999999999)
+    logging.warning("Random seed used for this run: %s" % in_args.r_seed)
+
+    logging.info("\nWorking directory: %s" % os.getcwd())
+    if not os.path.isdir(in_args.outdir):
+        logging.info("Output directory: %s" % in_args.outdir)
+        os.makedirs(in_args.outdir)
 
     if not shutil.which("mafft"):
         logging.error("The 'MAFFT' program is not detected "
                       "on your system (see http://mafft.cbrc.jp/alignment/software/).")
         sys.exit()
     mafft = Popen("mafft --version", stderr=PIPE, shell=True).communicate()[1].decode()
-    logging.info("MAFFT version: %s" % mafft.strip())
+    logging.info("\nMAFFT version: %s" % mafft.strip())
 
-    if not os.path.isdir(in_args.outdir):
-        logging.info("Creating output directory: %s" % in_args.outdir)
-        os.makedirs(in_args.outdir)
-
-    logging.info("")  # Just want to insert an extra line break for asthetics
-    logging.warning("Launching SQLite Daemon")
+    logging.warning("\nLaunching SQLite Daemon")
 
     broker = helpers.SQLiteBroker(db_file="{0}/sqlite_db.sqlite".format(in_args.outdir))
     broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
@@ -1112,12 +1123,12 @@ if __name__ == '__main__':
 
     # First push in the really raw first alignment, without any collapsing.
     uncollapsed_group_0 = Cluster([rec.id for rec in sequences.records], scores_data,
-                                  taxa_separator=in_args.taxa_separator, collapse=False)
+                                  taxa_separator=in_args.taxa_separator, collapse=False, r_seed=in_args.r_seed)
     cluster2database(uncollapsed_group_0, broker, alignbuddy)
 
     # Then prepare the 'real' group_0 cluster
     group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data,
-                              taxa_separator=in_args.taxa_separator)
+                              taxa_separator=in_args.taxa_separator, r_seed=in_args.r_seed)
 
     cluster2database(group_0_cluster, broker, alignbuddy)
 
@@ -1146,7 +1157,7 @@ if __name__ == '__main__':
     run_time.start()
     final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences, sql_broker=broker,
                                        progress=progress_tracker, outdir=in_args.outdir, steps=in_args.mcmcmc_steps, quiet=True,
-                                       taxa_separator=in_args.taxa_separator)
+                                       taxa_separator=in_args.taxa_separator, r_seed=in_args.r_seed)
     run_time.end()
 
     progress_dict = progress_tracker.read()
