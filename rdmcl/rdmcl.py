@@ -37,6 +37,7 @@ from multiprocessing import Lock, Pipe
 from random import gauss, Random, randint
 from math import ceil
 from collections import OrderedDict
+from copy import deepcopy
 
 # 3rd party
 import pandas as pd
@@ -508,6 +509,12 @@ def run_psi_pred(seq_rec):
     return result
 
 
+def read_ss2_file(path):
+    ss_file = pd.read_csv(path, comment="#", header=None, delim_whitespace=True)
+    ss_file.columns = ["indx", "aa", "ss", "coil_prob", "helix_prob", "sheet_prob"]
+    return ss_file
+
+
 def compare_psi_pred(psi1_df, psi2_df):
     num_gaps = 0
     ss_score = 0
@@ -527,7 +534,7 @@ def compare_psi_pred(psi1_df, psi2_df):
 # ################ END PSI-PRED FUNCTIONS ################ #
 
 
-def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progress, outdir,
+def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progress, outdir, psi_pred_ss2_dfs,
                       steps=1000, quiet=True, taxa_separator="-", r_seed=None):
     """
     Run MCMCMC on MCL to find the best orthogroups
@@ -538,6 +545,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     :param sql_broker: Multithread SQL broker that can be queried
     :param progress: Progress class
     :param outdir: where are files being written to?
+    :param psi_pred_ss2_dfs: OrdredDict of all ss2 dataframes with record IDs as key
     :param steps: How many MCMCMC iterations to run TODO: calculate this on the fly
     :param quiet: Suppress StdErr
     :param taxa_separator: The string that separates taxon names from gene names
@@ -576,7 +584,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     try:
         open("%s/max.txt" % temp_dir.path, "w").close()
         mcmcmc_params = ["%s" % temp_dir.path, False, seqbuddy, master_cluster,
-                         taxa_separator, sql_broker, outdir, progress]
+                         taxa_separator, sql_broker, psi_pred_ss2_dfs, progress]
         mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1,
                                        params=mcmcmc_params, quiet=quiet, outfile="%s/mcmcmc_out.csv" % temp_dir.path,
                                        r_seed=rand_gen.randint(1, 999999999999999))
@@ -591,7 +599,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         worst_score = chain.raw_min if chain.raw_min < worst_score else worst_score
 
     mcmcmc_factory.reset_params(["%s" % temp_dir.path, worst_score, seqbuddy, master_cluster,
-                                 taxa_separator, sql_broker, outdir, progress])
+                                 taxa_separator, sql_broker, psi_pred_ss2_dfs, progress])
     mcmcmc_factory.run()
     mcmcmc_output = pd.read_csv("%s/mcmcmc_out.csv" % temp_dir.path, "\t")
 
@@ -640,7 +648,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         # Recursion... Reassign cluster_list, as all clusters are returned at the end of a call to orthogroup_caller
         cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, sql_broker=sql_broker,
                                          progress=progress, outdir=outdir, steps=steps, quiet=quiet,
-                                         taxa_separator=taxa_separator, r_seed=rand_gen.randint(1, 999999999999999))
+                                         taxa_separator=taxa_separator, r_seed=rand_gen.randint(1, 999999999999999),
+                                         psi_pred_ss2_dfs=psi_pred_ss2_dfs)
 
     save_cluster()
     return cluster_list
@@ -675,7 +684,7 @@ class Progress(object):
 
 def mcmcmc_mcl(args, params):
     inflation, gq, r_seed = args
-    external_tmp_dir, min_score, seqbuddy, parent_cluster, taxa_separator, sql_broker, outdir, progress = params
+    exter_tmp_dir, min_score, seqbuddy, parent_cluster, taxa_separator, sql_broker, psi_pred_ss2_dfs, progress = params
     rand_gen = Random(r_seed)
     mcl_obj = helpers.MarkovClustering(parent_cluster.sim_scores, inflation=inflation, edge_sim_threshold=gq)
     mcl_obj.run()
@@ -695,7 +704,7 @@ def mcmcmc_mcl(args, params):
             sb_copy = Sb.make_copy(seqbuddy)
             sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster_ids]))
             alb_obj = generate_msa(sb_copy, sql_broker)
-            sim_scores = create_all_by_all_scores(alb_obj, outdir, quiet=True)
+            sim_scores = create_all_by_all_scores(alb_obj, psi_pred_ss2_dfs, quiet=True)
             cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator,
                               r_seed=rand_gen.randint(1, 999999999999999))
             cluster2database(cluster, sql_broker, alb_obj)
@@ -704,13 +713,13 @@ def mcmcmc_mcl(args, params):
         score += cluster.score()
 
     with LOCK:
-        with open("%s/max.txt" % external_tmp_dir, "r") as ifile:
+        with open("%s/max.txt" % exter_tmp_dir, "r") as ifile:
             results = ifile.readlines()
             results = [result.strip() for result in results]
             results.append(",".join([cluster.seq_id_hash for cluster in clusters]))
 
         if len(results) != MCMCMC_CHAINS:
-            with open("%s/max.txt" % external_tmp_dir, "w") as ofile:
+            with open("%s/max.txt" % exter_tmp_dir, "w") as ofile:
                 ofile.write("\n".join(results))
         else:
             best_score = None
@@ -727,7 +736,7 @@ def mcmcmc_mcl(args, params):
 
             best_clusters = sorted(best_clusters)[0]
             best_clusters = [cluster.replace(', ', '\t') for cluster in best_clusters]
-            with open("%s/best_group" % external_tmp_dir, "w") as ofile:
+            with open("%s/best_group" % exter_tmp_dir, "w") as ofile:
                 ofile.write('\n'.join(best_clusters))
     return score
 
@@ -781,11 +790,11 @@ def generate_msa(seqbuddy, sql_broker):
 
 
 # ################ SCORING FUNCTIONS ################ #
-def create_all_by_all_scores(alignment, outdir, gap_open=GAP_OPEN, gap_extend=GAP_EXTEND, quiet=False):
+def create_all_by_all_scores(alignment, psi_pred_ss2_dfs, gap_open=GAP_OPEN, gap_extend=GAP_EXTEND, quiet=False):
     """
     Generate a multiple sequence alignment and pull out all-by-all similarity graph
     :param alignment: AlignBuddy object
-    :param outdir: Where are files being written to?
+    :param psi_pred_ss2_dfs: OrderedDict of {seqID: ss2 dataframes}
     :param gap_open: Gap initiation penalty
     :param gap_extend: Gap extension penalty
     :param quiet: Supress multicore output
@@ -799,32 +808,31 @@ def create_all_by_all_scores(alignment, outdir, gap_open=GAP_OPEN, gap_extend=GA
     alignment = Alb.make_copy(alignment)
 
     # Need to specify what columns the PsiPred files map to now that there are gaps.
-    psi_pred_files = OrderedDict()
+    psi_pred_ss2_dfs = deepcopy(psi_pred_ss2_dfs)  # Don't modify in place...
+
     for rec in alignment.records_iter():
-        ss_file = pd.read_csv("%s/psi_pred/%s.ss2" % (outdir, rec.id), comment="#",
-                              header=None, delim_whitespace=True)
-        ss_file.columns = ["indx", "aa", "ss", "coil_prob", "helix_prob", "sheet_prob"]
+        ss_file = psi_pred_ss2_dfs[rec.id]
         ss_counter = 0
         for indx, residue in enumerate(rec.seq):
             if residue != "-":
-                ss_file.set_value(ss_counter, "indx", indx)
+                psi_pred_ss2_dfs[rec.id].set_value(ss_counter, "indx", indx)
                 ss_counter += 1
-        psi_pred_files[rec.id] = ss_file
+        psi_pred_ss2_dfs[rec.id] = ss_file
 
     # Scores seem to be improved by removing gaps. Need to test this explicitly for the paper though
     alignment = Alb.trimal(alignment, "gappyout")
 
     # Re-update PsiPred files, now that some columns are removed
     for rec in alignment.records_iter():
-        new_psi_pred = [0 for _ in range(len(psi_pred_files[rec.id].index))]  # Instantiate list of max possible size
+        new_psi_pred = [0 for _ in range(len(psi_pred_ss2_dfs[rec.id].index))]  # Instantiate list of max possible size
         indx = 0
-        for row in psi_pred_files[rec.id].itertuples():
+        for row in psi_pred_ss2_dfs[rec.id].itertuples():
             if alignment.alignments[0].position_map[int(row[1])][1]:
                 new_psi_pred[indx] = list(row)[1:]
                 indx += 1
         new_psi_pred = new_psi_pred[:indx]
-        psi_pred_files[rec.id] = pd.DataFrame(new_psi_pred, columns=["indx", "aa", "ss", "coil_prob",
-                                                                     "helix_prob", "sheet_prob"])
+        psi_pred_ss2_dfs[rec.id] = pd.DataFrame(new_psi_pred, columns=["indx", "aa", "ss", "coil_prob",
+                                                                       "helix_prob", "sheet_prob"])
     ids1 = [rec.id for rec in alignment.records_iter()]
     ids2 = [rec.id for rec in alignment.records_iter()]
     all_by_all = [0 for _ in range(int((len(ids1)**2 - len(ids1)) / 2))]
@@ -839,7 +847,7 @@ def create_all_by_all_scores(alignment, outdir, gap_open=GAP_OPEN, gap_extend=GA
     if all_by_all:
         n = ceil(len(all_by_all) / CPUS)
         all_by_all = [all_by_all[i:i + n] for i in range(0, len(all_by_all), n)] if all_by_all else []
-        score_sequences_params = [alignment, psi_pred_files, all_by_all_outdir.path, gap_open, gap_extend]
+        score_sequences_params = [alignment, psi_pred_ss2_dfs, all_by_all_outdir.path, gap_open, gap_extend]
         br.run_multicore_function(all_by_all, mc_score_sequences, score_sequences_params,
                                   quiet=quiet)
     sim_scores_file = br.TempFile()
@@ -854,7 +862,7 @@ def create_all_by_all_scores(alignment, outdir, gap_open=GAP_OPEN, gap_extend=GA
 
 def mc_score_sequences(seq_pairs, args):
     # Calculate the best possible scores, and divide by the observed scores
-    alb_obj, psi_pred_files, output_dir, gap_open, gap_extend = args
+    alb_obj, psi_pred_ss2_dfs, output_dir, gap_open, gap_extend = args
     file_name = helpers.md5_hash(str(seq_pairs))
     ofile = open("%s/%s" % (output_dir, file_name), "w")
     for seq_pair in seq_pairs:
@@ -866,7 +874,7 @@ def mc_score_sequences(seq_pairs, args):
         subs_mat_score = compare_pairwise_alignment(alb_copy, gap_open, gap_extend)
 
         # PSI PRED comparison
-        ss_score = compare_psi_pred(psi_pred_files[id1], psi_pred_files[id2])
+        ss_score = compare_psi_pred(psi_pred_ss2_dfs[id1], psi_pred_ss2_dfs[id2])
         pair_score = (ss_score * 0.3) + (subs_mat_score * 0.7)  # Magic number weights...
         ofile.write("\n%s,%s,%s" % (id1, id2, pair_score))
     ofile.close()
@@ -1123,6 +1131,9 @@ if __name__ == '__main__':
         logging.info("\tfiles saved to %s" % "%s/psi_pred/" % in_args.outdir)
     else:
         logging.warning("RESUME: All PSI-Pred .ss2 files found in %s/psi_pred/" % in_args.outdir)
+    psi_pred_files = [(record.id, read_ss2_file("%s/psi_pred/%s.ss2" % (in_args.outdir, record.id)))
+                      for record in sequences.records]
+    psi_pred_files = OrderedDict(psi_pred_files)
 
     # Initial alignment
     logging.warning("\n** All-by-all graph **")
@@ -1148,7 +1159,7 @@ if __name__ == '__main__':
         num_comparisons = ((len(alignbuddy.alignments[0]) ** 2) - len(alignbuddy.alignments[0])) / 2
         logging.warning("Generating initial all-by-all similarity graph (%s comparisons)" % int(num_comparisons))
         logging.info(" written to: %s/sim_scores/complete_all_by_all.scores" % in_args.outdir)
-        scores_data = create_all_by_all_scores(alignbuddy, in_args.outdir)
+        scores_data = create_all_by_all_scores(alignbuddy, psi_pred_files)
         scores_data.to_csv("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir,
                            header=None, index=False, sep="\t")
         logging.info("\t-- finished in %s --\n" % TIMER.split())
@@ -1188,8 +1199,9 @@ if __name__ == '__main__':
     run_time = br.RunTime(prefix=progress_tracker.__str__, _sleep=0.3, final_clear=True)
     run_time.start()
     final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences, sql_broker=broker,
-                                       progress=progress_tracker, outdir=in_args.outdir, steps=in_args.mcmcmc_steps, quiet=True,
-                                       taxa_separator=in_args.taxa_separator, r_seed=in_args.r_seed)
+                                       progress=progress_tracker, outdir=in_args.outdir, steps=in_args.mcmcmc_steps,
+                                       quiet=True, taxa_separator=in_args.taxa_separator, r_seed=in_args.r_seed,
+                                       psi_pred_ss2_dfs=psi_pred_files,)
     run_time.end()
 
     progress_dict = progress_tracker.read()

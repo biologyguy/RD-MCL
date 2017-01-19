@@ -256,6 +256,26 @@ def test_mc_psi_pred(hf):
         assert hf.string2hash(output) == "af9666d37426caa2bbf6b9075ce8df96", print(output)
 
 
+def test_read_ss2_file(hf):
+    ss2 = rdmcl.read_ss2_file("%spsi_pred%sMle-Panxα10A.ss2" % (hf.resource_path, hf.sep))
+    assert type(ss2) == pd.DataFrame
+    assert list(ss2.columns) == ["indx", "aa", "ss", "coil_prob", "helix_prob", "sheet_prob"]
+    assert len(ss2.index) == 429
+    assert str(ss2.loc[1]) == """\
+indx              2
+aa                R
+ss                C
+coil_prob     0.906
+helix_prob    0.037
+sheet_prob    0.028
+Name: 1, dtype: object"""
+
+
+def test_compare_psi_pred(hf):
+    ss2_1 = rdmcl.read_ss2_file("%spsi_pred%sMle-Panxα10A.ss2" % (hf.resource_path, hf.sep))
+    ss2_2 = rdmcl.read_ss2_file("%spsi_pred%sMle-Panxα8.ss2" % (hf.resource_path, hf.sep))
+    assert rdmcl.compare_psi_pred(ss2_1, ss2_2) == 0.691672882672883
+
 # #########  Orthogroup caller  ########## #
 
 
@@ -346,8 +366,11 @@ def test_create_all_by_all_scores(hf):
     seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
     rdmcl.Sb.pull_recs(seqbuddy, "Mle")
     alignbuddy = rdmcl.Alb.generate_msa(seqbuddy, "mafft", params="--globalpair --thread -2", quiet=True)
+    psi_pred_files = [(rec.id, rdmcl.read_ss2_file("%spsi_pred%s%s.ss2" % (hf.resource_path, hf.sep, rec.id)))
+                      for rec in alignbuddy.records()]
+    psi_pred_files = OrderedDict(psi_pred_files)
 
-    sim_scores = rdmcl.create_all_by_all_scores(alignbuddy, hf.resource_path)
+    sim_scores = rdmcl.create_all_by_all_scores(alignbuddy, psi_pred_files)
     assert len(sim_scores.index) == 66  # This is for 12 starting sequences
     compare = sim_scores.loc[:][(sim_scores['seq1'] == "Mle-Panxα2") & (sim_scores['seq2'] == "Mle-Panxα12")]
     assert compare.iloc[0]['score'] == 0.5482746552213027
