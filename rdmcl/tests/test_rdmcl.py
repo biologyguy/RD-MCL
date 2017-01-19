@@ -362,6 +362,38 @@ def test_generate_msa(hf):
     broker.stop_broker()
 
 
+def test_mc_score_sequence(hf):
+    seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
+    rdmcl.Sb.pull_recs(seqbuddy, "Mle")
+    alignbuddy = rdmcl.Alb.generate_msa(seqbuddy, "mafft", params="--globalpair --thread -2", quiet=True)
+    psi_pred_files = [(rec.id, rdmcl.read_ss2_file("%spsi_pred%s%s.ss2" % (hf.resource_path, hf.sep, rec.id)))
+                      for rec in alignbuddy.records()]
+    psi_pred_files = OrderedDict(psi_pred_files)
+    tmp_dir = br.TempDir()
+
+    seq_pairs = [("Mle-Panxα2", "Mle-Panxα12"), ("Mle-Panxα1", "Mle-Panxα3")]
+    args = [alignbuddy, psi_pred_files, tmp_dir.path, -5, 0]
+    rdmcl.mc_score_sequences(seq_pairs, args)
+    assert os.path.isfile("%s%s50687872cdaaed1fee7e809b5a032377" % (tmp_dir.path, hf.sep))
+    with open("%s%s50687872cdaaed1fee7e809b5a032377" % (tmp_dir.path, hf.sep), "r") as ifile:
+        assert ifile.read() == """
+Mle-Panxα2,Mle-Panxα12,0.4789936469710511
+Mle-Panxα1,Mle-Panxα3,0.3706607994410156"""
+
+
+def test_compare_pairwise_alignment(hf):
+    seqbuddy = rdmcl.Sb.SeqBuddy(">seq1\nMPQMSASWI\n>Seq2\nMPPQISASI")
+    alignbuddy = rdmcl.Alb.generate_msa(seqbuddy, "mafft", params="--globalpair --op 0 --thread -2", quiet=True)
+    assert str(alignbuddy) == """\
+>seq1
+MP-QMSASWI
+>Seq2
+MPPQISAS-I
+"""
+    subs_mat_score = rdmcl.compare_pairwise_alignment(alignbuddy, -5, 0)
+    assert subs_mat_score == 0.5176252319109462
+
+
 def test_create_all_by_all_scores(hf):
     seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
     rdmcl.Sb.pull_recs(seqbuddy, "Mle")
@@ -373,7 +405,11 @@ def test_create_all_by_all_scores(hf):
     sim_scores = rdmcl.create_all_by_all_scores(alignbuddy, psi_pred_files)
     assert len(sim_scores.index) == 66  # This is for 12 starting sequences
     compare = sim_scores.loc[:][(sim_scores['seq1'] == "Mle-Panxα2") & (sim_scores['seq2'] == "Mle-Panxα12")]
-    assert compare.iloc[0]['score'] == 0.5482746552213027
+    assert compare.iloc[0]['score'] == 0.54706454433078899
+
+    rdmcl.Alb.pull_records(alignbuddy, "Mle-Panxα2")
+    sim_scores = rdmcl.create_all_by_all_scores(alignbuddy, psi_pred_files)
+    assert len(sim_scores.index) == 0
 
 
 # #########  MCL stuff  ########## #

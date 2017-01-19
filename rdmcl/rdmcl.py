@@ -908,7 +908,7 @@ def compare_pairwise_alignment(alb_obj, gap_open, gap_extend):
         prev_aa1 = str(aa1)
         prev_aa2 = str(aa2)
 
-    subs_mat_score = ((observed_score / seq1_best) + (observed_score / seq1_best)) / 2
+    subs_mat_score = ((observed_score / seq1_best) + (observed_score / seq2_best)) / 2
     return subs_mat_score
 # ################ END SCORING FUNCTIONS ################ #
 
