@@ -476,27 +476,38 @@ def cluster2database(cluster, sql_broker, alignment):
     return
 
 
+# ################ PSI-PRED FUNCTIONS ################ #
 def mc_psi_pred(seq_obj, args):
     outdir = args[0]
     if os.path.isfile("{0}{1}psi_pred{1}{2}.ss2".format(outdir, os.sep, seq_obj.id)):
         return
+    result = run_psi_pred(seq_obj)
+    with open("{0}{1}psi_pred{1}{2}.ss2".format(outdir, os.sep, seq_obj.id), "w") as ofile:
+        ofile.write(result)
+    return
+
+
+def run_psi_pred(seq_rec):
     temp_dir = br.TempDir()
     pwd = os.getcwd()
     psipred_dir = os.path.abspath("%s%spsipred" % (os.path.dirname(__file__), os.sep))
     os.chdir(temp_dir.path)
     with open("sequence.fa", "w") as ofile:
-        ofile.write(seq_obj.format("fasta"))
+        ofile.write(seq_rec.format("fasta"))
 
     command = '''\
 {0}{3}bin{3}seq2mtx sequence.fa > {1}{3}{2}.mtx;
 {0}{3}bin{3}psipred {1}{3}{2}.mtx {0}{3}data{3}weights.dat {0}{3}data{3}weights.dat2 {0}{3}data{3}weights.dat3 > {1}{3}{2}.ss;
 {0}{3}bin{3}psipass2 {0}{3}data{3}weights_p2.dat 1 1.0 1.0 {1}{3}{2}.ss2 {1}{3}{2}.ss > {1}{3}{2}.horiz;
-'''.format(psipred_dir, temp_dir.path, seq_obj.id, os.sep)
+'''.format(psipred_dir, temp_dir.path, seq_rec.id, os.sep)
 
     Popen(command, shell=True).wait()
     os.chdir(pwd)
-    shutil.move("%s%s%s.ss2" % (temp_dir.path, os.sep, seq_obj.id), "{0}{1}psi_pred{1}".format(outdir, os.sep))
-    return
+    with open("%s%s%s.ss2" % (temp_dir.path, os.sep, seq_rec.id), "r") as ifile:
+        result = ifile.read()
+    return result
+
+# ################ END PSI-PRED FUNCTIONS ################ #
 
 
 def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progress, outdir,

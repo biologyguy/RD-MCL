@@ -231,7 +231,14 @@ def test_psipred_bins(binary, hf):
     assert os.path.isfile("{0}..{1}..{1}psipred{1}bin{1}{2}".format(hf.resource_path, hf.sep, binary))
 
 
-def test_psi_pred(hf):
+def test_run_psi_pred(hf):
+    seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
+    rdmcl.Sb.pull_recs(seqbuddy, "Bab-PanxαA")
+    ss2_file = rdmcl.run_psi_pred(seqbuddy.records[0])
+    assert hf.string2hash(ss2_file) == "b50f39dc22e4d16be325efdd14f7900d"
+
+
+def test_mc_psi_pred(hf):
     tmpdir = br.TempDir()
     tmpdir.subdir("psi_pred")
     rdmcl.mc_psi_pred(hf.get_data("cteno_panxs").to_dict()["BOL-PanxαB"], [tmpdir.path])
