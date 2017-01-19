@@ -752,6 +752,7 @@ def generate_msa(seqbuddy, sql_broker):
     return alignment
 
 
+# ################ SCORING FUNCTIONS ################ #
 def create_all_by_all_scores(alignment, outdir, gap_open=GAP_OPEN, gap_extend=GAP_EXTEND, sql_broker=None, quiet=False):
     """
     Generate a multiple sequence alignment and pull out all-by-all similarity graph
@@ -817,7 +818,7 @@ def create_all_by_all_scores(alignment, outdir, gap_open=GAP_OPEN, gap_extend=GA
         n = ceil(len(all_by_all) / CPUS)
         all_by_all = [all_by_all[i:i + n] for i in range(0, len(all_by_all), n)] if all_by_all else []
         score_sequences_params = [alignment, psi_pred_files, all_by_all_outdir.path, gap_open, gap_extend]
-        br.run_multicore_function(all_by_all, score_sequences, score_sequences_params,
+        br.run_multicore_function(all_by_all, mc_score_sequences, score_sequences_params,
                                   quiet=quiet)
     sim_scores_file = br.TempFile()
     sim_scores_file.write("seq1,seq2,score")
@@ -829,7 +830,7 @@ def create_all_by_all_scores(alignment, outdir, gap_open=GAP_OPEN, gap_extend=GA
     return sim_scores
 
 
-def score_sequences(seq_pairs, args):
+def mc_score_sequences(seq_pairs, args):
     # Calculate the best possible scores, and divide by the observed scores
     alb_obj, psi_pred_files, output_dir, gap_open, gap_extend = args
     file_name = helpers.md5_hash(str(seq_pairs))
@@ -837,56 +838,67 @@ def score_sequences(seq_pairs, args):
     for seq_pair in seq_pairs:
         id1, id2 = seq_pair
         id_regex = "^%s$|^%s$" % (id1, id2)
+        # Alignment comparison
         alb_copy = Alb.make_copy(alb_obj)
         Alb.pull_records(alb_copy, id_regex)
-        observed_score = 0
-        seq1_best = 0
-        seq2_best = 0
-        seq1, seq2 = alb_copy.records()
-        prev_aa1 = "-"
-        prev_aa2 = "-"
-
-        for aa_pos in range(alb_copy.lengths()[0]):
-            aa1 = seq1.seq[aa_pos]
-            aa2 = seq2.seq[aa_pos]
-
-            if aa1 != "-":
-                seq1_best += BLOSUM62[aa1, aa1]
-            if aa2 != "-":
-                seq2_best += BLOSUM62[aa2, aa2]
-
-            if aa1 == "-" or aa2 == "-":
-                if prev_aa1 == "-" or prev_aa2 == "-":
-                    observed_score += gap_extend
-                else:
-                    observed_score += gap_open
-            else:
-                observed_score += BLOSUM62[aa1, aa2]
-            prev_aa1 = str(aa1)
-            prev_aa2 = str(aa2)
-
-        subs_mat_score = ((observed_score / seq1_best) + (observed_score / seq1_best)) / 2
+        subs_mat_score = compare_pairwise_alignment(alb_copy, gap_open, gap_extend)
 
         # PSI PRED comparison
-        num_gaps = 0
-        ss_score = 0
-        for row1 in psi_pred_files[id1].itertuples():
-            if (psi_pred_files[id2]["indx"] == row1.indx).any():
-                row2 = psi_pred_files[id2].loc[psi_pred_files[id2]["indx"] == row1.indx]
-                row_score = 0
-                row_score += 1 - abs(float(row1.coil_prob) - float(row2.coil_prob))
-                row_score += 1 - abs(float(row1.helix_prob) - float(row2.helix_prob))
-                row_score += 1 - abs(float(row1.sheet_prob) - float(row2.sheet_prob))
-                ss_score += row_score / 3
-            else:
-                num_gaps += 1
-
-        align_len = len(psi_pred_files[id2]) + num_gaps
-        ss_score /= align_len
-        pair_score = (ss_score * 0.3) + (subs_mat_score * 0.7)
+        ss_score = compare_psi_pred(psi_pred_files[id1], psi_pred_files[id2])
+        pair_score = (ss_score * 0.3) + (subs_mat_score * 0.7)  # Magic number weights...
         ofile.write("\n%s,%s,%s" % (id1, id2, pair_score))
     ofile.close()
     return
+
+
+def compare_pairwise_alignment(alb_obj, gap_open, gap_extend):
+    observed_score = 0
+    seq1_best = 0
+    seq2_best = 0
+    seq1, seq2 = alb_obj.records()
+    prev_aa1 = "-"
+    prev_aa2 = "-"
+
+    for aa_pos in range(alb_obj.lengths()[0]):
+        aa1 = seq1.seq[aa_pos]
+        aa2 = seq2.seq[aa_pos]
+
+        if aa1 != "-":
+            seq1_best += BLOSUM62[aa1, aa1]
+        if aa2 != "-":
+            seq2_best += BLOSUM62[aa2, aa2]
+
+        if aa1 == "-" or aa2 == "-":
+            if prev_aa1 == "-" or prev_aa2 == "-":
+                observed_score += gap_extend
+            else:
+                observed_score += gap_open
+        else:
+            observed_score += BLOSUM62[aa1, aa2]
+        prev_aa1 = str(aa1)
+        prev_aa2 = str(aa2)
+
+    subs_mat_score = ((observed_score / seq1_best) + (observed_score / seq1_best)) / 2
+    return subs_mat_score
+
+
+def compare_psi_pred(psi1_df, psi2_df):
+    num_gaps = 0
+    ss_score = 0
+    for row1 in psi1_df.itertuples():
+        if (psi2_df["indx"] == row1.indx).any():
+            row2 = psi2_df.loc[psi2_df["indx"] == row1.indx]
+            row_score = 0
+            row_score += 1 - abs(float(row1.coil_prob) - float(row2.coil_prob))
+            row_score += 1 - abs(float(row1.helix_prob) - float(row2.helix_prob))
+            row_score += 1 - abs(float(row1.sheet_prob) - float(row2.sheet_prob))
+            ss_score += row_score / 3
+        else:
+            num_gaps += 1
+    align_len = len(psi2_df) + num_gaps
+    ss_score /= align_len
+    return ss_score
+# ################ END SCORING FUNCTIONS ################ #
 
 
 def place_orphans(clusters, scores):  # NOT WORKING CORRECTLY
@@ -1120,7 +1132,7 @@ if __name__ == '__main__':
         logging.warning("Generating initial multiple sequence alignment with MAFFT")
         alignbuddy = generate_msa(sequences, broker)
         alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
-        logging.info("\t-- finished in %s --" % TIMER.split())
+        logging.info("\t-- finished in %s --\n" % TIMER.split())
 
     graph_data = broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(seq_ids_hash))
     if graph_data and graph_data[0][0]:
@@ -1135,7 +1147,7 @@ if __name__ == '__main__':
         scores_data = create_all_by_all_scores(alignbuddy, in_args.outdir)
         scores_data.to_csv("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir,
                            header=None, index=False, sep="\t")
-        logging.info("\t-- finished in %s --" % TIMER.split())
+        logging.info("\t-- finished in %s --\n" % TIMER.split())
 
     # First push in the really raw first alignment, without any collapsing.
     uncollapsed_group_0 = Cluster([rec.id for rec in sequences.records], scores_data,
@@ -1153,7 +1165,7 @@ if __name__ == '__main__':
     logging.warning("Base cluster score: %s" % round(base_score, 4))
     # Reset the score of group_0 to account for possible collapse of paralogs
     if group_0_cluster.collapsed_genes:
-        logging.warning("Reciprocal best-hit cliques of paralogs have been identified in the input sequences.")
+        logging.warning("\nReciprocal best-hit cliques of paralogs have been identified in the input sequences.")
         logging.info(" A representative sequence has been selected from each clique, and the remaining")
         logging.info(" sequences will be placed in the final clusters at the end of the run.")
         with open("%s/paralog_cliques.json" % in_args.outdir, "w") as outfile:
