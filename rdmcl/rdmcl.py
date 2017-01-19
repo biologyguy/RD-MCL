@@ -507,6 +507,23 @@ def run_psi_pred(seq_rec):
         result = ifile.read()
     return result
 
+
+def compare_psi_pred(psi1_df, psi2_df):
+    num_gaps = 0
+    ss_score = 0
+    for row1 in psi1_df.itertuples():
+        if (psi2_df["indx"] == row1.indx).any():
+            row2 = psi2_df.loc[psi2_df["indx"] == row1.indx]
+            row_score = 0
+            row_score += 1 - abs(float(row1.coil_prob) - float(row2.coil_prob))
+            row_score += 1 - abs(float(row1.helix_prob) - float(row2.helix_prob))
+            row_score += 1 - abs(float(row1.sheet_prob) - float(row2.sheet_prob))
+            ss_score += row_score / 3
+        else:
+            num_gaps += 1
+    align_len = len(psi2_df) + num_gaps
+    ss_score /= align_len
+    return ss_score
 # ################ END PSI-PRED FUNCTIONS ################ #
 
 
@@ -794,24 +811,29 @@ def create_all_by_all_scores(alignment, outdir, gap_open=GAP_OPEN, gap_extend=GA
                 ss_counter += 1
         psi_pred_files[rec.id] = ss_file
 
-    # Scored seem to be improved by removing gaps. Need to test this explicitly for the paper though
+    # Scores seem to be improved by removing gaps. Need to test this explicitly for the paper though
     alignment = Alb.trimal(alignment, "gappyout")
 
     # Re-update PsiPred files, now that some columns are removed
     for rec in alignment.records_iter():
-        new_psi_pred = []
+        new_psi_pred = [0 for _ in range(len(psi_pred_files[rec.id].index))]  # Instantiate list of max possible size
+        indx = 0
         for row in psi_pred_files[rec.id].itertuples():
             if alignment.alignments[0].position_map[int(row[1])][1]:
-                new_psi_pred.append(list(row)[1:])
+                new_psi_pred[indx] = list(row)[1:]
+                indx += 1
+        new_psi_pred = new_psi_pred[:indx]
         psi_pred_files[rec.id] = pd.DataFrame(new_psi_pred, columns=["indx", "aa", "ss", "coil_prob",
                                                                      "helix_prob", "sheet_prob"])
     ids1 = [rec.id for rec in alignment.records_iter()]
     ids2 = [rec.id for rec in alignment.records_iter()]
-    all_by_all = []
+    all_by_all = [0 for _ in range(int((len(ids1)**2 - len(ids1)) / 2))]
+    indx = 0
     for rec1 in ids1:
         del ids2[ids2.index(rec1)]
         for rec2 in ids2:
-            all_by_all.append((rec1, rec2))
+            all_by_all[indx] = (rec1, rec2)
+            indx += 1
 
     all_by_all_outdir = br.TempDir()
     if all_by_all:
@@ -880,24 +902,6 @@ def compare_pairwise_alignment(alb_obj, gap_open, gap_extend):
 
     subs_mat_score = ((observed_score / seq1_best) + (observed_score / seq1_best)) / 2
     return subs_mat_score
-
-
-def compare_psi_pred(psi1_df, psi2_df):
-    num_gaps = 0
-    ss_score = 0
-    for row1 in psi1_df.itertuples():
-        if (psi2_df["indx"] == row1.indx).any():
-            row2 = psi2_df.loc[psi2_df["indx"] == row1.indx]
-            row_score = 0
-            row_score += 1 - abs(float(row1.coil_prob) - float(row2.coil_prob))
-            row_score += 1 - abs(float(row1.helix_prob) - float(row2.helix_prob))
-            row_score += 1 - abs(float(row1.sheet_prob) - float(row2.sheet_prob))
-            ss_score += row_score / 3
-        else:
-            num_gaps += 1
-    align_len = len(psi2_df) + num_gaps
-    ss_score /= align_len
-    return ss_score
 # ################ END SCORING FUNCTIONS ################ #
 
 
