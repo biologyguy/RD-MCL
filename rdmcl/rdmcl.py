@@ -667,7 +667,7 @@ def mcmcmc_mcl(args, params):
             sb_copy = Sb.make_copy(seqbuddy)
             sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster_ids]))
             alb_obj = generate_msa(sb_copy, sql_broker)
-            sim_scores = create_all_by_all_scores(alb_obj, outdir, sql_broker=sql_broker, quiet=True)
+            sim_scores = create_all_by_all_scores(alb_obj, outdir, quiet=True)
             cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator,
                               r_seed=rand_gen.randint(1, 999999999999999))
             cluster2database(cluster, sql_broker, alb_obj)
@@ -753,30 +753,19 @@ def generate_msa(seqbuddy, sql_broker):
 
 
 # ################ SCORING FUNCTIONS ################ #
-def create_all_by_all_scores(alignment, outdir, gap_open=GAP_OPEN, gap_extend=GAP_EXTEND, sql_broker=None, quiet=False):
+def create_all_by_all_scores(alignment, outdir, gap_open=GAP_OPEN, gap_extend=GAP_EXTEND, quiet=False):
     """
     Generate a multiple sequence alignment and pull out all-by-all similarity graph
     :param alignment: AlignBuddy object
     :param outdir: Where are files being written to?
     :param gap_open: Gap initiation penalty
     :param gap_extend: Gap extension penalty
-    :param sql_broker: Multithread SQL broker that can be queried
     :param quiet: Supress multicore output
     :return:
     """
     if len(alignment.records()) == 1:
         sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "score"])
         return sim_scores
-
-    # Only calculate if not previously calculated
-    seq_ids = sorted([rec.id for rec in alignment.records_iter()])
-    seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
-    if sql_broker:  # ToDo: Not getting into here. Figure out why
-        graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
-        if graph and graph[0][0]:
-            sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
-            sim_scores.columns = ["seq1", "seq2", "score"]
-            return sim_scores
 
     # Don't want to modify the alignbuddy object in place
     alignment = Alb.make_copy(alignment)
