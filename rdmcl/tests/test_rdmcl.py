@@ -9,7 +9,7 @@ import sqlite3
 import pandas as pd
 from collections import OrderedDict
 from buddysuite import buddy_resources as br
-
+from copy import copy
 
 # #########  Mock classes and functions  ########## #
 class MockLogging(object):
@@ -424,3 +424,77 @@ def test_write_mcl_clusters(hf):
     tmp_file = br.TempFile()
     rdmcl.write_mcl_clusters(clusters, tmp_file.path)
     assert hf.string2hash(tmp_file.read()) == "4024a3aa15d605fd8924d8fc6cb9361e"
+
+
+# #########  Orphan placement  ########## #
+def test_place_orphans(hf, capsys):
+    # This is in progress...
+    return
+    parent = rdmcl.Cluster(*hf.base_cluster_args())
+    seq_ids = []
+
+    cluster1 = ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE', 'Bfr-PanxαA']
+    seq_ids += cluster1
+    cluster1 = rdmcl.Cluster(cluster1, hf.get_sim_scores(cluster1), parent=parent)
+    cluster1.set_name()
+
+    cluster2 = ['Lla-PanxαA', 'Mle-Panxα11', 'Oma-PanxαD', 'Pba-PanxαB', 'Tin-PanxαF']
+    seq_ids += cluster2
+    cluster2 = rdmcl.Cluster(cluster2, hf.get_sim_scores(cluster2), parent=parent)
+    cluster2.set_name()
+
+    cluster3 = ['Vpa-PanxαD']  # This should be placed in cluster 2
+    seq_ids += cluster3
+    cluster3 = rdmcl.Cluster(cluster3, hf.get_sim_scores(cluster3), parent=parent)
+    cluster3.set_name()
+
+    cluster4 = ['Hca-PanxαA', 'Lcr-PanxαG']  # This should be placed in cluster 1
+    seq_ids += cluster4
+    cluster4 = rdmcl.Cluster(cluster4, hf.get_sim_scores(cluster4), parent=parent)
+    cluster4.set_name()
+
+    cluster5 = ['Hvu-PanxβA']  # This should not be placed in a cluster
+    seq_ids += cluster5
+    cluster5 = rdmcl.Cluster(cluster5, hf.get_sim_scores(cluster5), parent=parent)
+    cluster5.set_name()
+
+    clusters = [cluster1, cluster2, cluster3, cluster4, cluster5]
+    scores = hf.get_sim_scores(seq_ids)
+
+    seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
+    rdmcl.Sb.pull_recs(seqbuddy, "|".join(seq_ids))
+    tmpdir = br.TempDir()
+    broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
+    broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
+                                       "graph TEXT", "cluster_score TEXT"])
+    broker.start_broker()
+
+    psi_pred_files = [(seq_id, rdmcl.read_ss2_file("%spsi_pred%s%s.ss2" % (hf.resource_path, hf.sep, seq_id)))
+                      for seq_id in seq_ids]
+    psi_pred_files = OrderedDict(psi_pred_files)
+
+    orphans = rdmcl.Orphans(seqbuddy, clusters, broker, psi_pred_files)
+    orphans.place_orphans()
+    print(orphans.large_clusters['group_0_0'].seq_ids)
+    print(orphans.large_clusters['group_0_1'].seq_ids)
+    print(orphans.small_clusters['group_0_4'].seq_ids)
+    broker.close()
+    assert False
+    fostered = rdmcl.place_orphans(clusters, scores)
+    for clust in fostered:
+        print(clust.seq_ids)
+
+    assert fostered[0].seq_ids == ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE',
+                                   'Bfr-PanxαA', 'Hca-PanxαA', 'Lcr-PanxαG']
+    assert fostered[1].seq_ids == ['Lla-PanxαA', 'Mle-Panxα11', 'Oma-PanxαD', 'Pba-PanxαB', 'Tin-PanxαF', 'Vpa-PanxαD']
+    assert fostered[2].seq_ids == ["Hvu-PanxβA"]
+    out, err = capsys.readouterr()
+    assert err == """\
+WARNING:root:4 orphaned sequences present
+WARNING:root:3 orphaned sequences were placed in orthogroups.
+"""
+    assert False
+
+
+def test_orphans_class(hf, capsys):
+    parent = rdmcl.Cluster(*hf.base_cluster_args())

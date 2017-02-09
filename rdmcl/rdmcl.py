@@ -913,111 +913,171 @@ def compare_pairwise_alignment(alb_obj, gap_open, gap_extend):
 # ################ END SCORING FUNCTIONS ################ #
 
 
-def place_orphans(clusters, scores):  # NOT WORKING CORRECTLY
-    """
-    If a cluster has only one or two sequences in it, it may make sense to fold that cluster into one of the larger
-    clusters. To check if this is reasonable, compare the similarity scores between the orphan sequences and the
-    sequences in each larger cluster. Perform a Tukey HSD test among all of these comparisons and see if one cluster
-    has significantly higher similarity scores than ALL of the other clusters.
-    NOTE: Placing an orphan into a cluster obviously changes the content of that larger cluster, but this change is
-    ignored. Perhaps this function could be run repeatedly until there are no more changes, but for now it's only
-    called once.
-    :param clusters: The entire complement of clusters returned by RD-MCL (list of Cluster objects)
-    :param scores: The initial all-by-all similarity graph used for RD-MCL
-    :return: Updated clusters list
-    """
-    small_clusters = OrderedDict()
-    large_clusters = OrderedDict()
-    for cluster in clusters:
-        if len(cluster.seq_ids) > 2:
-            large_clusters[cluster.name()] = cluster
+class Orphans(object):
+    def __init__(self, seqbuddy, clusters, sql_broker, psi_pred_ss2_dfs, quiet=False):
+        self.seqbuddy = seqbuddy
+        self.clusters = clusters
+        self.sql_broker = sql_broker
+        self.psi_pred_ss2_dfs = psi_pred_ss2_dfs
+        self.num_orphans = 0
+        self.small_clusters = OrderedDict()
+        self.large_clusters = OrderedDict()
+        self._separate_large_small()
+        self.printer = br.DynamicPrint(quiet=quiet)
+        self.tmp_file = br.TempFile()
+
+    def _separate_large_small(self):
+        for cluster in self.clusters:
+            if len(cluster.seq_ids) > 2:
+                self.large_clusters[cluster.name()] = cluster
+            else:
+                self.small_clusters[cluster.name()] = cluster
+
+        if not self.small_clusters:
+            logging.warning("No orphaned sequences present")
+        elif not self.large_clusters:
+            logging.warning("All clusters have only 1 or 2 sequences present, suggesting there are issues with your data")
+            logging.info(" Are there a large number of paralogs and only a small number of taxa present?")
+        elif len(self.large_clusters) == 1:
+            logging.warning("Only one orthogroup with >2 sequences present, suggesting there are issues with your data")
+            logging.info(" Are there a large number of taxa and only a small number of orthologs present?")
         else:
-            small_clusters[cluster.name()] = cluster
+            self.num_orphans = sum([len(cluster) for group_name, cluster in self.small_clusters.items()])
+            logging.warning("%s orphaned sequences present" % self.num_orphans)
+        return
 
-    if not small_clusters:
-        logging.warning("No orphaned sequences present")
-        return clusters
-    elif not large_clusters:
-        logging.warning("All clusters have only 1 or 2 sequences present, suggesting there are issues with your data")
-        logging.info(" Are there a large number of paralogs and only a small number of taxa present?")
-        return clusters
-    elif len(large_clusters) == 1:
-        logging.warning("Only one orthogroup with >2 sequences present, suggesting there are issues with your data")
-        logging.info(" Are there a large number of taxa and only a small number of orthologs present?")
-        return clusters
-    else:
-        num_orphans = sum([len(cluster) for group_name, cluster in small_clusters.items()])
-        logging.warning("%s orphaned sequences present" % num_orphans)
+    def _check_orphan(self, small_cluster):
+        # First prepare the data for each large cluster so they can be compared
+        self.tmp_file.write("%s\n" % small_cluster.seq_ids)
+        data_dict = OrderedDict()
+        large_clust_scores = self._large_clust_scores()  # Will use this for t-test in the loop
+        self.tmp_file.write("\tTotal large cluster scores\n%s\n" % large_clust_scores)
+        for group_name, large_cluster in self.large_clusters.items():
+            self.tmp_file.write("\t%s\n" % large_cluster.seq_ids)
+            # Read or create an alignment containing the sequences in the small and large clusters being checked
+            seq_ids = sorted(large_cluster.seq_ids + small_cluster.seq_ids)
+            seqbuddy = Sb.make_copy(self.seqbuddy)
+            regex = "^%s$" % "$|^".join(seq_ids)
+            Sb.pull_recs(seqbuddy, regex)
+            alb_obj = generate_msa(seqbuddy, self.sql_broker)
 
-    # Create lists of similarity scores for each orphan cluster against each larger cluster
-    def get_score(seq1, seq2):
-        sim_score = scores.loc[:][scores.seq1 == seq1]
-        sim_score = sim_score.loc[:][sim_score.seq2 == seq2]
+            # If a graph already exists, use it. Otherwise, make a new one for this subset of sequences.
+            graph = self.sql_broker.query("SELECT (graph) FROM data_table "
+                                          "WHERE hash='{0}'".format(helpers.md5_hash(", ".join(seq_ids))))
+            if graph and graph[0][0]:
+                sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
+                sim_scores.columns = ["seq1", "seq2", "score"]
+            else:
+                sim_scores = create_all_by_all_scores(alb_obj, self.psi_pred_ss2_dfs, quiet=True)
+                cluster2database(Cluster(seq_ids, sim_scores, collapse=False), self.sql_broker, alb_obj)
 
-        if sim_score.empty:
-            sim_score = scores.loc[:][scores.seq1 == seq2]
-            sim_score = sim_score.loc[:][sim_score.seq2 == seq1]
+            # Pull out the similarity scores between just the large and small cluster sequences
+            lrg2sml_group_data = sim_scores.loc[(sim_scores['seq1'].isin(small_cluster.seq_ids)) | (sim_scores['seq2'].isin(small_cluster.seq_ids))]
+            lrg2sml_group_data = lrg2sml_group_data.loc[(lrg2sml_group_data['seq1'].isin(large_cluster.seq_ids)) | (lrg2sml_group_data['seq2'].isin(large_cluster.seq_ids))]
+            self.tmp_file.write("\tlrg2sml_group_data:\n%s\n" % lrg2sml_group_data)
 
-        if sim_score.empty:
-            sim_score = 0.
-        else:
-            sim_score = float(sim_score.score)
-        return sim_score
+            # Confirm that the orphans are sufficiently similar to large group to warrant consideration using t-test
+            t_test = scipy.stats.ttest_ind(lrg2sml_group_data.score, large_clust_scores)
+            self.tmp_file.write("\t%s\n\n" % str(t_test))
+            if t_test.pvalue >= 0.01:
+                # Convert group_data to a numpy array so sm.stats can read it
+                data_dict[group_name] = (t_test.pvalue, np.array(lrg2sml_group_data.score))
 
-    large_clusters_ordered_dict = OrderedDict([(group_name, []) for group_name in large_clusters])
-    small_to_large_map = [(group_name, large_clusters_ordered_dict.copy()) for group_name in small_clusters]
-    small_to_large_map = OrderedDict(small_to_large_map)
-    for sgroup, sclust in small_clusters.items():           # Get small cluster
-        for sgene in sclust.seq_ids:                        # Get gene id from small cluster
-            for lgroup, lclust in large_clusters.items():   # Get large cluster
-                for lgene in lclust.seq_ids:                # Get gene id from large cluster
-                    small_to_large_map[sgroup][lgroup].append(get_score(sgene, lgene))  # Update appropriate list
+        if len(data_dict) == 0:
+            self.tmp_file.write("No Matches\n###########################\n\n")
+            return False
 
-    for sgroup, l_clusts in small_to_large_map.items():
-        # Convert data into list of numpy arrays that sm.stats can read, also get average scores for each sequence_ids
-        data = [np.array(x) for x in l_clusts.values()]
+        elif len(data_dict) == 1:
+            group_name, group = list(data_dict.items())[0]
+            self.tmp_file.write("%s\n###########################\n\n" % group_name)
+            return group_name, group[0]
 
-        # Only need to test the cluster with the highest average similarity scores, so find which cluster that is.
+        # We only need to test the large cluster with the highest average similarity score, so find that cluster.
         averages = pd.Series()
-        for j, group in enumerate(data):
-            key = list(l_clusts.keys())[j]
-            averages = averages.append(pd.Series(np.mean(group), index=[key]))
-            data[j] = pd.DataFrame(group, columns=['observations'])
-            data[j]['grouplabel'] = key
+        df = pd.DataFrame(columns=['observations', 'grouplabel'])
+        for group_name, group in data_dict.items():
+            averages = averages.append(pd.Series(np.mean(group[1]), index=[group_name]))
+            tmp_df = pd.DataFrame(group[1], columns=['observations'])
+            tmp_df['grouplabel'] = group_name
+            df = df.append(tmp_df)
         max_ave = averages.argmax()
-        df = pd.DataFrame()
-        for group in data:
-            df = df.append(group)
-
         # Run pairwise Tukey HSD and parse the results
+        # The max_ave cluster must be significantly different from all other clusters
         result = sm.stats.multicomp.pairwise_tukeyhsd(df.observations, df.grouplabel)
+
+        test_group_pvalues = []  # To keep track of which groups have the highest support downstream
         for line in str(result).split("\n")[4:-1]:
             line = re.sub("^ *", "", line.strip())
             line = re.sub(" +", "\t", line)
-            line = line.split("\t")
+            self.tmp_file.write("%s\n" % line)
+            line = line.split("\t")  # Each line --> ['group1', 'group2', 'meandiff', 'lower', 'upper', 'reject]
             if max_ave in line and 'False' in line:
                 break  # Insufficient support to group the gene with max_ave group
+            elif max_ave in line:
+                test_group_pvalues.append(abs(float(line[2])))  # Take the abs because sign isn't meaningful
+        else:
+            # If the 'break' command is not encountered, the gene can be grouped with the max_ave cluster
+            # Return the group name and average meandiff (allow calling code to actually do the grouping)
+            self.tmp_file.write("%s\n###########################\n\n" % max_ave)
+            return max_ave, data_dict[max_ave][0]
+        self.tmp_file.write("No Matches\n###########################\n\n")
+        return False
 
-        else:  # If the 'break' command is not encountered, the gene can be grouped with the max_ave cluster
-            large_clusters[max_ave].seq_ids += small_clusters[sgroup].seq_ids
-            for taxon, seq_ids in small_clusters[sgroup].taxa.items():
-                large_clusters[max_ave].taxa.setdefault(taxon, [])
-                large_clusters[max_ave].taxa[taxon] += seq_ids
-            logging.info("\t%s added to %s" % (" and ".join(small_clusters[sgroup].seq_ids), max_ave))
-            del small_clusters[sgroup]
+    def _large_clust_scores(self):
+        scores = pd.Series()
+        for group_name, cluster in self.large_clusters.items():
+            graph = self.sql_broker.query("SELECT (graph) FROM data_table "
+                                          "WHERE hash='{0}'".format(cluster.seq_id_hash))
+            graph = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
+            graph.columns = ["seq1", "seq2", "score"]
 
-    clusters = [cluster for key, cluster in large_clusters.items()]
-    clusters += [cluster for key, cluster in small_clusters.items()]
-    fostered_orphans = num_orphans - sum([len(cluster) for key, cluster in small_clusters.items()])
-    if not fostered_orphans:
-        logging.warning("No orphaned sequences were placed in orthogroups.")
-    elif fostered_orphans == 1:
-        logging.warning("1 orphaned sequence was placed in an orthogroups.")
-    else:
-        logging.warning("%s orphaned sequences have found new homes in orthogroups!" % fostered_orphans)
-        logging.warning("\tNote that all of the saved alignment, mcmcmc, and sim_score\n"
-                        "\tfiles will only include the original sequences.")
-    return clusters
+            # Pull out the similarity scores among just the large cluster sequences
+            graph = cluster.sim_scores.loc[(cluster.sim_scores['seq1'].isin(cluster.seq_ids)) &
+                                                        (cluster.sim_scores['seq1'].isin(cluster.seq_ids))]
+            scores = scores.append(graph.score)
+        return scores
+
+    def place_orphans(self):
+        if not self.small_clusters:
+            return
+        best_cluster = {"small_name": None, "large_name": None, "meandiff": 0}
+        fostered_orphans = 0
+        while True:
+            self.printer.write("Remaining orphans: %s" %
+                               sum([len(sm_clust.seq_ids) for group, sm_clust in self.small_clusters.items()]))
+            for small_name, next_small_cluster in self.small_clusters.items():
+                foster_score = self._check_orphan(next_small_cluster)
+                if foster_score and foster_score[1] > best_cluster["meandiff"]:
+                    best_cluster = {"small_name": small_name, "large_name": foster_score[0], "meandiff": foster_score[1]}
+
+            if best_cluster["small_name"]:
+                small_name = best_cluster["small_name"]
+                large_name = best_cluster["large_name"]
+                self.large_clusters[large_name].seq_ids += self.small_clusters[small_name].seq_ids
+
+                for taxon, seq_ids in self.small_clusters[small_name].taxa.items():
+                    self.large_clusters[large_name].taxa.setdefault(taxon, [])
+                    self.large_clusters[large_name].taxa[taxon] += seq_ids
+                logging.info("\t%s added to %s" % (" and ".join(self.small_clusters[small_name].seq_ids), large_name))
+                fostered_orphans += len(self.small_clusters[small_name].seq_ids)
+                del self.small_clusters[small_name]
+                best_cluster = {"small_name": None, "large_name": None, "meandiff": 0}
+            else:
+                break
+        self.printer.clear()
+        self.clusters = [cluster for group, cluster in self.small_clusters.items()] + \
+                        [cluster for group, cluster in self.large_clusters.items()]
+
+        if not fostered_orphans:
+            logging.warning("No orphaned sequences were placed in orthogroups.")
+        elif fostered_orphans == 1:
+            logging.warning("1 orphaned sequence was placed in an orthogroups.")
+        else:
+            logging.warning("%s orphaned sequences have found new homes in orthogroups!" % fostered_orphans)
+            logging.warning("\tNote that all of the saved alignment, mcmcmc, and sim_score\n"
+                            "\tfiles will only include the original sequences.")
+        return
+
 # NOTE: There used to be a support function. Check the workscripts GitHub history
 
 
@@ -1202,6 +1262,7 @@ if __name__ == '__main__':
                                        progress=progress_tracker, outdir=in_args.outdir, steps=in_args.mcmcmc_steps,
                                        quiet=True, taxa_separator=in_args.taxa_separator, r_seed=in_args.r_seed,
                                        psi_pred_ss2_dfs=psi_pred_files,)
+    final_clusters = [cluster for cluster in final_clusters if cluster.subgroup_counter == 0]
     run_time.end()
 
     progress_dict = progress_tracker.read()
@@ -1224,20 +1285,23 @@ if __name__ == '__main__':
     logging.warning("\t%s cliques extracted" % len(final_cliques))
     '''
 
-    # Format the clusters and output to file
-    logging.warning("\n** Final formatting **")
+    # #################### Format the clusters and output to file #################### #
+    # Fold singletons and doublets back into groups. This can't be 'resumed', because it changes the clusters
+    if not in_args.supress_singlet_folding:
+        logging.warning("\n** Folding orphan sequences into clusters **")
+        orphans = Orphans(seqbuddy=sequences, clusters=final_clusters,
+                          sql_broker=broker, psi_pred_ss2_dfs=psi_pred_files)
+        orphans.place_orphans()
+        orphans.tmp_file.save("temp.log")
+        final_clusters = orphans.clusters
+        logging.warning("\t-- finished in %s --" % TIMER.split())
+
     if group_0_cluster.collapsed_genes:
-        logging.warning("Placing collapsed paralogs into their respective clusters")
+        logging.warning("\nPlacing collapsed paralogs into their respective clusters")
         for clust in final_clusters:
             for gene_id, paralogs in group_0_cluster.collapsed_genes.items():
                 if gene_id in clust.seq_ids:
                     clust.seq_ids += paralogs
-
-    # Fold singletons and doublets back into groups. This can't be 'resumed', because it changes the clusters
-    if not in_args.supress_singlet_folding:
-        logging.warning("\n** Folding orphan sequences into clusters **")
-        final_clusters = place_orphans(final_clusters, group_0_cluster.sim_scores)
-        logging.warning("\t-- finished in %s --" % TIMER.split())
 
     logging.warning("Preparing final_clusters.txt")
     final_score = 0
