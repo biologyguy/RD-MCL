@@ -125,7 +125,6 @@ class Cluster(object):
             raise ValueError("The number of incoming sequence ids (%s) does not match the expected graph size of %s"
                              " columns (observed %s columns)." % (len(seq_ids), expected_num_edges, len(sim_scores.index)))
 
-        self.taxa = OrderedDict()
         self.sim_scores = sim_scores
         self.taxa_separator = taxa_separator
         self.parent = parent
@@ -140,6 +139,7 @@ class Cluster(object):
         self.rand_gen = Random() if not r_seed else Random(r_seed)
         self._name = None
 
+        self.taxa = OrderedDict()  # key = taxa id. value = list of genes coming fom that taxa.
         seq_ids = sorted(seq_ids)
         for next_seq_id in seq_ids:
             taxa = next_seq_id.split(taxa_separator)[0]
@@ -294,6 +294,11 @@ class Cluster(object):
         return scores
 
     def get_base_cluster(self):
+        """
+        MAYBE NOT NEEDED. DELETE?
+        This traces back to group_0 (the initial base cluster), which is important for calculating cluster scores.
+        :return: The base cluster as a Cluster object
+        """
         cluster = self
         while True:
             if not cluster.parent:
@@ -313,17 +318,40 @@ class Cluster(object):
             self.cluster_score = 0
             return 0
 
-        taxa = OrderedDict()
-        for gene in self.seq_ids:
-            taxon = gene.split(self.taxa_separator)[0]
-            taxa.setdefault(taxon, [])
-            taxa[taxon].append(gene)
+        #taxa = OrderedDict()
+        #for gene in self.seq_ids:
+        #    taxon = gene.split(self.taxa_separator)[0]
+        #    taxa.setdefault(taxon, [])
+        #    taxa[taxon].append(gene)
 
         # sequence_ids should never consist of a single taxa because reciprocal best hit paralogs have been removed
-        # Update: Apparently not true. New paralog best hit cliques can form after the group is broken up some.
+        # Update: Apparently not true. New paralog best hit cliques can form after the group is broken up.
         # if len(taxa) == 1:
         #    raise ReferenceError("Only a single taxa found in sequence_ids...\n%s" % taxa)
 
+        unique_taxa = 0
+        replicate_taxa = 0
+        base_cluster = self.parent if self.parent else self
+        for taxon, genes in self.taxa.items():
+            if len(genes) == 1:
+                """
+                When a given taxon is unique in the cluster, it gets a score relative to how many other genes are
+                present in the base cluster from the same taxon. More genes == larger score.
+                """
+                unique_taxa += 1 / (len(genes) / len(base_cluster.taxa[taxon]))
+                unique_taxa *= 1.1  # Marginal improvement for larger clusters
+            else:
+                """
+                When there is a duplicate taxon in a cluster, it gets a negative score relative to how many other genes
+                are present in the base cluster form the same taxon. Fewer genes == larger negative score
+                """
+                replicate_taxa += len(genes) ** (2 * (len(genes) / len(base_cluster.taxa[taxon])))
+                replicate_taxa *= 1.1  # The more duplicates, the worse.
+
+        # Increase scores for large clusters somehow.
+        self.cluster_score = unique_taxa - replicate_taxa
+
+        '''
         unique_scores = 1
         paralog_scores = -1
         for taxon, genes in taxa.items():
@@ -332,6 +360,7 @@ class Cluster(object):
             else:
                 paralog_scores *= len(genes) * (len(genes) / len(self.base_cluster.taxa[taxon]))
         self.cluster_score = unique_scores + paralog_scores
+        '''
         return self.cluster_score
 
     """
@@ -519,8 +548,8 @@ def compare_psi_pred(psi1_df, psi2_df):
     num_gaps = 0
     ss_score = 0
     for row1 in psi1_df.itertuples():
-        if (psi2_df["indx"] == row1.indx).any():
-            row2 = psi2_df.loc[psi2_df["indx"] == row1.indx]
+        row2 = psi2_df.loc[psi2_df["indx"] == row1.indx]
+        if not row2.empty:
             row_score = 0
             row_score += 1 - abs(float(row1.coil_prob) - float(row2.coil_prob))
             row_score += 1 - abs(float(row1.helix_prob) - float(row2.helix_prob))
@@ -723,15 +752,23 @@ def mcmcmc_mcl(args, params):
                 ofile.write("\n".join(results))
         else:
             best_score = None
-            best_clusters = []
+            best_clusters = []  # Hopefully just find a single best cluster, but could be more
             for clusters in results:
-                query = "SELECT seq_ids, cluster_score FROM data_table WHERE hash IN ('%s')" % "','".join(clusters.split(","))
-                sql_query = sql_broker.query(query)
-                score_sum = sum([float(score) for ids, score in sql_query])
+                score_sum = 0
+                cluster_ids = []
+                for cluster in clusters.split(","):
+                    sql_query = sql_broker.query("SELECT seq_ids, graph FROM data_table WHERE hash='{0}'".format(cluster))
+                    seq_ids = sql_query[0][0].split(", ")
+                    cluster_ids.append(sql_query[0][0])
+                    if len(seq_ids) > 1:  # Prevent crash if pulling a cluster with a single sequence
+                        sim_scores = pd.read_csv(StringIO(sql_query[0][1]), index_col=False, header=None)
+                        cluster = Cluster(seq_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator)
+                        score_sum += cluster.score()
+
                 if score_sum == best_score:
-                    best_clusters.append([ids for ids, score in sql_query])
+                    best_clusters.append(cluster_ids)
                 elif best_score is None or score_sum > best_score:
-                    best_clusters = [[ids for ids, score in sql_query]]
+                    best_clusters = [cluster_ids]
                     best_score = score_sum
 
             best_clusters = sorted(best_clusters)[0]
@@ -1033,7 +1070,7 @@ class Orphans(object):
 
             # Pull out the similarity scores among just the large cluster sequences
             graph = cluster.sim_scores.loc[(cluster.sim_scores['seq1'].isin(cluster.seq_ids)) &
-                                                        (cluster.sim_scores['seq1'].isin(cluster.seq_ids))]
+                                           (cluster.sim_scores['seq1'].isin(cluster.seq_ids))]
             scores = scores.append(graph.score)
         return scores
 
@@ -1042,10 +1079,13 @@ class Orphans(object):
             return
         best_cluster = {"small_name": None, "large_name": None, "meandiff": 0}
         fostered_orphans = 0
+        starting_orphans = sum([len(sm_clust.seq_ids) for group, sm_clust in self.small_clusters.items()])
         while True:
-            self.printer.write("Remaining orphans: %s" %
-                               sum([len(sm_clust.seq_ids) for group, sm_clust in self.small_clusters.items()]))
+            remaining_orphans = sum([len(sm_clust.seq_ids) for group, sm_clust in self.small_clusters.items()])
+            indx = 1
             for small_name, next_small_cluster in self.small_clusters.items():
+                self.printer.write("%s of %s orphans remain. Checking %s/%s " %
+                                   (remaining_orphans, starting_orphans, indx, len(self.small_clusters)))
                 foster_score = self._check_orphan(next_small_cluster)
                 if foster_score and foster_score[1] > best_cluster["meandiff"]:
                     best_cluster = {"small_name": small_name, "large_name": foster_score[0], "meandiff": foster_score[1]}
@@ -1224,7 +1264,7 @@ if __name__ == '__main__':
                            header=None, index=False, sep="\t")
         logging.info("\t-- finished in %s --\n" % TIMER.split())
 
-    # First push in the really raw first alignment, without any collapsing.
+    # First push the really raw first alignment in the database, without any collapsing.
     uncollapsed_group_0 = Cluster([rec.id for rec in sequences.records], scores_data,
                                   taxa_separator=in_args.taxa_separator, collapse=False, r_seed=in_args.r_seed)
     cluster2database(uncollapsed_group_0, broker, alignbuddy)
@@ -1302,6 +1342,8 @@ if __name__ == '__main__':
             for gene_id, paralogs in group_0_cluster.collapsed_genes.items():
                 if gene_id in clust.seq_ids:
                     clust.seq_ids += paralogs
+                    clust.taxa[gene_id.split(in_args.taxa_separator)[0]].append(gene_id)
+            clust.score(force=True)
 
     logging.warning("Preparing final_clusters.txt")
     final_score = 0
