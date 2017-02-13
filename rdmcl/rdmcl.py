@@ -1059,7 +1059,7 @@ class Orphans(object):
     def place_orphans(self):
         if not self.small_clusters:
             return
-        best_cluster = {"small_name": None, "large_name": None, "meandiff": 0}
+        best_cluster = OrderedDict([("small_name", None), ("large_name", None), ("meandiff", 0)])
         fostered_orphans = 0
         starting_orphans = sum([len(sm_clust.seq_ids) for group, sm_clust in self.small_clusters.items()])
         while True:
@@ -1071,7 +1071,8 @@ class Orphans(object):
                 indx += 1
                 foster_score = self._check_orphan(next_small_cluster)
                 if foster_score and foster_score[1] > best_cluster["meandiff"]:
-                    best_cluster = {"small_name": small_name, "large_name": foster_score[0], "meandiff": foster_score[1]}
+                    best_cluster = OrderedDict([("small_name", small_name), ("large_name", foster_score[0]),
+                                                ("meandiff", foster_score[1])])
 
             if best_cluster["small_name"]:
                 small_name = best_cluster["small_name"]
@@ -1084,7 +1085,7 @@ class Orphans(object):
                 logging.info("\t%s added to %s" % (" and ".join(self.small_clusters[small_name].seq_ids), large_name))
                 fostered_orphans += len(self.small_clusters[small_name].seq_ids)
                 del self.small_clusters[small_name]
-                best_cluster = {"small_name": None, "large_name": None, "meandiff": 0}
+                best_cluster = OrderedDict([("small_name", None), ("large_name", None), ("meandiff", 0)])
             else:
                 break
         self.printer.clear()

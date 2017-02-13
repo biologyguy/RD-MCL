@@ -16,6 +16,7 @@ from scipy.stats import norm
 from buddysuite.buddy_resources import DynamicPrint, TempDir, usable_cpu_count
 from copy import deepcopy
 from multiprocessing import Process
+from collections import OrderedDict
 
 
 class Variable:
@@ -30,7 +31,7 @@ class Variable:
         self.rand_gen = random.Random() if not r_seed else random.Random(r_seed)
         self.current_value = self.rand_gen.random() * _range + _min
         self.draw_value = self.current_value
-        self.history = {"draws": [self.draw_value], "accepts": []}
+        self.history = OrderedDict([("draws", [self.draw_value]), ("accepts", [])])
 
     def draw_new_value(self):
         #  NOTE: Might need to tune _variance if the acceptance rate is to low or high.
@@ -208,7 +209,7 @@ class MCMCMC:
         self.burn_in = burn_in
         self.quiet = quiet
 
-        self.samples = {"vars": [], "score": []}
+        self.samples = OrderedDict([("vars", []), ("score", [])])
         self.printer = DynamicPrint("stderr", quiet=quiet)
 
     def run(self):
@@ -255,7 +256,7 @@ class MCMCMC:
         counter = 0
         while counter <= self.steps:
             running_processes = 0
-            child_list = {}
+            child_list = OrderedDict()
             for chain in self.chains:  # Note that this will spin off as many new processes as there are chains
                 # Start new process
                 func_args = []
@@ -292,7 +293,7 @@ class MCMCMC:
             for chain in self.chains:
                 if chain.current_raw_score > self.best["score"]:
                     self.best["score"] = chain.current_raw_score
-                    self.best["variables"] = {x.name: x.current_value for x in chain.variables}
+                    self.best["variables"] = OrderedDict([(x.name, x.current_value) for x in chain.variables])
 
                 # Pseudo burn in, replace
                 if counter == self.burn_in:
