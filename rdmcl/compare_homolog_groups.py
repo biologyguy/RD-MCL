@@ -21,6 +21,8 @@ take the average (not currently implemented).
 
 import MyFuncs
 import os
+import re
+import sys
 
 
 class Clusters(object):
@@ -83,6 +85,53 @@ class Clusters(object):
         return count if count > 0 else None
 
 
+def write_difference(subject, query):
+    with open(subject, "r") as ifile:
+        subject = ifile.readlines()
+    if subject[-1] == "\n":
+        del subject[-1]
+
+    for indx, line in enumerate(subject):
+        line = re.sub("group_.*?\t", "", line)
+        line = re.sub("-*[0-9]+\.[0-9]*\t", "", line)
+        line = line.split()
+        subject[indx] = line
+
+    with open(query, "r") as ifile:
+        query = ifile.readlines()
+    if query[-1] == "\n":
+        del query[-1]
+
+    for indx, line in enumerate(query):
+        line = re.sub("group_.*?\t", "", line)
+        line = re.sub("-*[0-9]+\.[0-9]*\t", "", line)
+        line = line.split()
+        query[indx] = line
+
+    # For each query cluster, find the subject cluster with the most overlap
+    final_clusters = [[] for _ in range(len(query))]
+    for query_indx, cluster in enumerate(query):
+        intersections = [list(filter(lambda x: x in cluster, sublist)) for sublist in subject]
+        max_match = 0
+        max_match_indx = None
+        for sub_indx, intersect in enumerate(intersections):
+            if len(intersect) > max_match:
+                max_match = len(intersect)
+                max_match_indx = sub_indx
+
+        for seq_id in cluster:
+            if max_match_indx is None or seq_id not in subject[max_match_indx]:
+                final_clusters[query_indx].append("\033[91m%s\033[39m" % seq_id)
+            else:
+                final_clusters[query_indx].append("\033[92m%s\033[39m" % seq_id)
+        if max_match_indx is not None:
+            subject[max_match_indx] = []
+
+    for cluster in final_clusters:
+        print("\t".join(cluster))
+    return
+
+
 if __name__ == '__main__':
     import argparse
 
@@ -103,7 +152,9 @@ if __name__ == '__main__':
 
     ofile = None if not in_args.output_file else os.path.abspath(in_args.output_file)
 
-    groups1 = Clusters(in_args.subject, in_args.group_split, in_args.taxa_split)
-    groups2 = Clusters(in_args.query, in_args.group_split, in_args.taxa_split)
+    #groups1 = Clusters(in_args.subject, in_args.group_split, in_args.taxa_split)
+    #groups2 = Clusters(in_args.query, in_args.group_split, in_args.taxa_split)
 
-    print("Score: %s\n%s" % (groups1.compare(groups2, ofile), timer.total_elapsed()))
+    #print("Score: %s\n%s" % (groups1.compare(groups2, ofile), timer.total_elapsed()))
+
+    write_difference(in_args.subject, in_args.query)
