@@ -953,6 +953,12 @@ class Orphans(object):
         self._separate_large_small()
         self.printer = br.DynamicPrint(quiet=quiet)
         self.tmp_file = br.TempFile()
+        self.all_sim_scores = pd.Series()  # This is used for a t-test later
+        graph = self.sql_broker.query("SELECT (graph) FROM data_table "
+                                      "WHERE hash='{0}'".format(self.clusters[0].parent.seq_id_hash))
+        graph = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
+        graph.columns = ["seq1", "seq2", "score"]
+        self.all_sim_scores = self.all_sim_scores.append(graph.score)
 
     def _separate_large_small(self):
         for cluster in self.clusters:
@@ -978,8 +984,7 @@ class Orphans(object):
         # First prepare the data for each large cluster so they can be compared
         self.tmp_file.write("%s\n" % small_cluster.seq_ids)
         data_dict = OrderedDict()
-        large_clust_scores = self._large_clust_scores()  # Will use this for t-test in the loop
-        self.tmp_file.write("\tTotal large cluster scores\n%s\n" % large_clust_scores)
+        self.tmp_file.write("\tTotal large cluster scores\n%s\n" % self.all_sim_scores)
         for group_name, large_cluster in self.large_clusters.items():
             self.tmp_file.write("\t%s\n" % large_cluster.seq_ids)
             # Read or create an alignment containing the sequences in the small and large clusters being checked
@@ -1005,9 +1010,9 @@ class Orphans(object):
             self.tmp_file.write("\tlrg2sml_group_data:\n%s\n" % lrg2sml_group_data)
 
             # Confirm that the orphans are sufficiently similar to large group to warrant consideration using t-test
-            t_test = scipy.stats.ttest_ind(lrg2sml_group_data.score, large_clust_scores)
+            t_test = scipy.stats.ttest_ind(lrg2sml_group_data.score, self.all_sim_scores)
             self.tmp_file.write("\t%s\n\n" % str(t_test))
-            if t_test.pvalue >= 0:  # This is essentially commented out... ToDo: fix or remove
+            if t_test.pvalue >= 0.05:  # Therefore, when we fail to reject the null, we consider the group.
                 # Convert group_data to a numpy array so sm.stats can read it
                 data_dict[group_name] = (t_test.pvalue, np.array(lrg2sml_group_data.score))
 
@@ -1050,20 +1055,6 @@ class Orphans(object):
             return max_ave, data_dict[max_ave][0]
         self.tmp_file.write("No Matches\n###########################\n\n")
         return False
-
-    def _large_clust_scores(self):
-        scores = pd.Series()
-        for group_name, cluster in self.large_clusters.items():
-            graph = self.sql_broker.query("SELECT (graph) FROM data_table "
-                                          "WHERE hash='{0}'".format(cluster.seq_id_hash))
-            graph = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
-            graph.columns = ["seq1", "seq2", "score"]
-
-            # Pull out the similarity scores among just the large cluster sequences
-            graph = cluster.sim_scores.loc[(cluster.sim_scores['seq1'].isin(cluster.seq_ids)) &
-                                           (cluster.sim_scores['seq1'].isin(cluster.seq_ids))]
-            scores = scores.append(graph.score)
-        return scores
 
     def place_orphans(self):
         if not self.small_clusters:
