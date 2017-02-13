@@ -8,7 +8,7 @@ import shutil
 import pandas as pd
 import numpy as np
 from math import log, sqrt
-from time import time
+from time import time, sleep
 from copy import copy
 from hashlib import md5
 from multiprocessing import SimpleQueue, Process, Pipe
@@ -51,8 +51,13 @@ class SQLiteBroker(object):
                     try:
                         self.cursor.execute(query['sql'])
                     except sqlite3.OperationalError as err:
-                        print("Failed query: %s" % query['sql'])
-                        raise err
+                        if "database is locked" in str(err):
+                            # Wait a few seconds and try one more time, it might get through.
+                            sleep(5)
+                            self.cursor.execute(query['sql'])
+                        else:
+                            print("Failed query: %s" % query['sql'])
+                            raise err
                     response = self.cursor.fetchall()
                     pipe.send(json.dumps(response))
                 elif query['mode'] == 'stop':
