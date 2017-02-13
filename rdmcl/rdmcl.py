@@ -35,7 +35,7 @@ from io import StringIO
 from subprocess import Popen, PIPE, check_output, CalledProcessError
 from multiprocessing import Lock, Pipe
 from random import gauss, Random, randint
-from math import ceil
+from math import ceil, log2
 from collections import OrderedDict
 from copy import deepcopy
 
@@ -314,16 +314,6 @@ class Cluster(object):
         if self.cluster_score and not force:
             return self.cluster_score
 
-        if len(self.seq_ids) == 1:
-            self.cluster_score = 0
-            return 0
-
-        #taxa = OrderedDict()
-        #for gene in self.seq_ids:
-        #    taxon = gene.split(self.taxa_separator)[0]
-        #    taxa.setdefault(taxon, [])
-        #    taxa[taxon].append(gene)
-
         # sequence_ids should never consist of a single taxa because reciprocal best hit paralogs have been removed
         # Update: Apparently not true. New paralog best hit cliques can form after the group is broken up.
         # if len(taxa) == 1:
@@ -332,35 +322,36 @@ class Cluster(object):
         unique_taxa = 0
         replicate_taxa = 0
         base_cluster = self.parent if self.parent else self
+        score = 1
         for taxon, genes in self.taxa.items():
             if len(genes) == 1:
                 """
                 When a given taxon is unique in the cluster, it gets a score relative to how many other genes are
                 present in the base cluster from the same taxon. More genes == larger score.
                 """
-                unique_taxa += 1 / (len(genes) / len(base_cluster.taxa[taxon]))
-                unique_taxa *= 1.1  # Marginal improvement for larger clusters
+                score += len(base_cluster.taxa[taxon])
+                unique_taxa += 1  # Extra improvement for larger clusters
             else:
                 """
                 When there is a duplicate taxon in a cluster, it gets a negative score relative to how many other genes
                 are present in the base cluster form the same taxon. Fewer genes == larger negative score
                 """
                 replicate_taxa += len(genes) ** (2 * (len(genes) / len(base_cluster.taxa[taxon])))
-                replicate_taxa *= 1.1  # The more duplicates, the worse.
 
-        # Increase scores for large clusters somehow.
-        self.cluster_score = unique_taxa - replicate_taxa
+        score *= (1.2 ** unique_taxa)
+        if replicate_taxa:
+            score /= replicate_taxa
 
-        '''
-        unique_scores = 1
-        paralog_scores = -1
-        for taxon, genes in taxa.items():
-            if len(genes) == 1:
-                unique_scores *= 2 * (1 + (len(self.base_cluster.taxa[taxon]) / len(self.base_cluster)))
-            else:
-                paralog_scores *= len(genes) * (len(genes) / len(self.base_cluster.taxa[taxon]))
-        self.cluster_score = unique_scores + paralog_scores
-        '''
+        # Modify cluster score based on size. 'Perfect' size = half of parent
+        if self.parent:  # Obviously group_0 can't be modified this way
+            half_par = (len(self.parent) / 2)
+            if len(self) != len(self.parent):
+                score *= ((half_par - abs(len(self) - half_par)) / half_par)
+            else:  # To prevent exception with log2 below
+                score *= 1 / half_par
+        score = log2(score)  # Convert fractions to negative scores
+        score = score ** 2 if score > 0 else -1 * (score ** 2)  # Linearize the data
+        self.cluster_score = score
         return self.cluster_score
 
     """
@@ -1016,7 +1007,7 @@ class Orphans(object):
             # Confirm that the orphans are sufficiently similar to large group to warrant consideration using t-test
             t_test = scipy.stats.ttest_ind(lrg2sml_group_data.score, large_clust_scores)
             self.tmp_file.write("\t%s\n\n" % str(t_test))
-            if t_test.pvalue >= 0.01:
+            if t_test.pvalue >= 0:  # This is essentially commented out... ToDo: fix or remove
                 # Convert group_data to a numpy array so sm.stats can read it
                 data_dict[group_name] = (t_test.pvalue, np.array(lrg2sml_group_data.score))
 
@@ -1084,8 +1075,9 @@ class Orphans(object):
             remaining_orphans = sum([len(sm_clust.seq_ids) for group, sm_clust in self.small_clusters.items()])
             indx = 1
             for small_name, next_small_cluster in self.small_clusters.items():
-                self.printer.write("%s of %s orphans remain. Checking %s/%s " %
+                self.printer.write("%s of %s orphans remain. Checking %s/%s orphan groups" %
                                    (remaining_orphans, starting_orphans, indx, len(self.small_clusters)))
+                indx += 1
                 foster_score = self._check_orphan(next_small_cluster)
                 if foster_score and foster_score[1] > best_cluster["meandiff"]:
                     best_cluster = {"small_name": small_name, "large_name": foster_score[0], "meandiff": foster_score[1]}
