@@ -55,9 +55,10 @@ from buddysuite import buddy_resources as br
 
 # Globals
 try:
-    script_path = os.path.abspath(__file__).split("/")
-    script_path = "/".join(script_path[:-1])
-    git_commit = check_output(['git', '--git-dir=%s/../.git' % script_path, 'rev-parse', '--short', 'HEAD']).decode().strip()
+    script_path = os.path.abspath(__file__).split(os.sep)
+    script_path = os.sep + os.path.join(*script_path[:-1])
+    git_commit = check_output(['git', '--git-dir={0}{1}..{1}.git'.format(script_path, os.sep), 'rev-parse',
+                               '--short', 'HEAD']).decode().strip()
     git_commit = " (git %s)" % git_commit if git_commit else ""
     VERSION = "1.alpha%s" % git_commit
 except CalledProcessError:
@@ -574,11 +575,11 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     """
     def save_cluster():
         cluster_list.append(master_cluster)
-        if not os.path.isdir("%s/mcmcmc/%s" % (outdir, master_cluster.name())):
-            temp_dir.save("%s/mcmcmc/%s" % (outdir, master_cluster.name()))
+        if not os.path.isdir(os.path.join(outdir, "mcmcmc", master_cluster.name())):
+            temp_dir.save(os.path.join(outdir, "mcmcmc", master_cluster.name()))
         alignment = generate_msa(seqbuddy, sql_broker)
-        alignment.write("%s/alignments/%s.aln" % (outdir, master_cluster.name()))
-        master_cluster.sim_scores.to_csv("%s/sim_scores/%s.scores" % (outdir, master_cluster.name()),
+        alignment.write(os.path.join(outdir, "alignments", master_cluster.name()))
+        master_cluster.sim_scores.to_csv(os.path.join(outdir, "sim_scores", "%s.scores" % master_cluster.name()),
                                          header=None, index=False, sep="\t")
         update = len(master_cluster.seq_ids) if not master_cluster.subgroup_counter else 0
         progress.update("placed", update)
@@ -602,12 +603,12 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                              r_seed=rand_gen.randint(1, 999999999999999))
 
     try:
-        open("%s/max.txt" % temp_dir.path, "w").close()
+        open(os.path.join(temp_dir.path, "max.txt"), "w").close()
         mcmcmc_params = ["%s" % temp_dir.path, False, seqbuddy, master_cluster,
                          taxa_separator, sql_broker, psi_pred_ss2_dfs, progress]
         mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1,
-                                       params=mcmcmc_params, quiet=quiet, outfile="%s/mcmcmc_out.csv" % temp_dir.path,
-                                       r_seed=rand_gen.randint(1, 999999999999999))
+                                       params=mcmcmc_params, outfile=os.path.join(temp_dir.path, "mcmcmc_out.csv"),
+                                       quiet=quiet, r_seed=rand_gen.randint(1, 999999999999999))
 
     except RuntimeError:  # Happens when mcmcmc fails to find different initial chain parameters
         save_cluster()
@@ -621,14 +622,13 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     mcmcmc_factory.reset_params(["%s" % temp_dir.path, worst_score, seqbuddy, master_cluster,
                                  taxa_separator, sql_broker, psi_pred_ss2_dfs, progress])
     mcmcmc_factory.run()
-    mcmcmc_output = pd.read_csv("%s/mcmcmc_out.csv" % temp_dir.path, "\t")
-
+    mcmcmc_output = pd.read_csv(os.path.join(temp_dir.path, "mcmcmc_out.csv"), "\t", index_col=False)
     best_score = max(mcmcmc_output["result"])
     if best_score <= master_cluster.score():
         save_cluster()
         return cluster_list
 
-    mcl_clusters = parse_mcl_clusters("%s/best_group" % temp_dir.path)
+    mcl_clusters = parse_mcl_clusters(os.path.join(temp_dir.path, "best_group"))
     recursion_clusters = []
     for sub_cluster in mcl_clusters:
         cluster_ids_hash = helpers.md5_hash(", ".join(sorted(sub_cluster)))
@@ -678,22 +678,22 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 class Progress(object):
     def __init__(self, outdir, base_cluster):
         self.outdir = outdir
-        with open("%s/.progress" % self.outdir, "w") as progress_file:
+        with open(os.path.join(self.outdir, ".progress"), "w") as progress_file:
             _progress = {"mcl_runs": 0, "placed": 0, "total": len(base_cluster)}
             json.dump(_progress, progress_file)
 
     def update(self, key, value):
         with LOCK:
-            with open("%s/.progress" % self.outdir, "r") as ifile:
+            with open(os.path.join(self.outdir, ".progress"), "r") as ifile:
                 _progress = json.load(ifile)
                 _progress[key] += value
-            with open("%s/.progress" % self.outdir, "w") as _ofile:
+            with open(os.path.join(self.outdir, ".progress"), "w") as _ofile:
                 json.dump(_progress, _ofile)
         return
 
     def read(self):
         with LOCK:
-            with open("%s/.progress" % self.outdir, "r") as ifile:
+            with open(os.path.join(self.outdir, ".progress"), "r") as ifile:
                 return json.load(ifile)
 
     def __str__(self):
@@ -733,13 +733,13 @@ def mcmcmc_mcl(args, params):
         score += cluster.score()
 
     with LOCK:
-        with open("%s/max.txt" % exter_tmp_dir, "r") as ifile:
+        with open(os.path.join(exter_tmp_dir, "max.txt"), "r") as ifile:
             results = ifile.readlines()
             results = [result.strip() for result in results]
             results.append(",".join([cluster.seq_id_hash for cluster in clusters]))
 
         if len(results) != MCMCMC_CHAINS:
-            with open("%s/max.txt" % exter_tmp_dir, "w") as ofile:
+            with open(os.path.join(exter_tmp_dir, "max.txt"), "w") as ofile:
                 ofile.write("\n".join(results))
         else:
             best_score = None
@@ -764,7 +764,7 @@ def mcmcmc_mcl(args, params):
 
             best_clusters = sorted(best_clusters)[0]
             best_clusters = [cluster.replace(', ', '\t') for cluster in best_clusters]
-            with open("%s/best_group" % exter_tmp_dir, "w") as ofile:
+            with open(os.path.join(exter_tmp_dir, "best_group"), "w") as ofile:
                 ofile.write('\n'.join(best_clusters))
     return score
 
@@ -882,7 +882,7 @@ def create_all_by_all_scores(alignment, psi_pred_ss2_dfs, gap_open=GAP_OPEN, gap
     sim_scores_file.write("seq1,seq2,score")
     aba_root, aba_dirs, aba_files = next(os.walk(all_by_all_outdir.path))
     for aba_file in aba_files:
-        with open("%s/%s" % (aba_root, aba_file), "r") as ifile:
+        with open(os.path.join(aba_root, aba_file), "r") as ifile:
             sim_scores_file.write(ifile.read())
     sim_scores = pd.read_csv(sim_scores_file.get_handle("r"), index_col=False)
     return sim_scores
@@ -892,7 +892,7 @@ def mc_score_sequences(seq_pairs, args):
     # Calculate the best possible scores, and divide by the observed scores
     alb_obj, psi_pred_ss2_dfs, output_dir, gap_open, gap_extend = args
     file_name = helpers.md5_hash(str(seq_pairs))
-    ofile = open("%s/%s" % (output_dir, file_name), "w")
+    ofile = open(os.path.join(output_dir, file_name), "w")
     for seq_pair in seq_pairs:
         id1, id2 = seq_pair
         id_regex = "^%s$|^%s$" % (id1, id2)
@@ -1112,7 +1112,7 @@ if __name__ == '__main__':
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument("sequences", help="Location of sequence file", action="store")
-    parser.add_argument("outdir", action="store", default="%s/rd-mcd" % os.getcwd(),
+    parser.add_argument("outdir", action="store", default=os.path.join(os.getcwd(), "rd-mcd"),
                         help="Where should results be written?")
     parser.add_argument("-mcs", "--mcmcmc_steps", default=1000, type=int,
                         help="Specify how deeply to sample MCL parameters")
@@ -1162,7 +1162,7 @@ if __name__ == '__main__':
 
     logging.warning("\nLaunching SQLite Daemon")
 
-    broker = helpers.SQLiteBroker(db_file="{0}/sqlite_db.sqlite".format(in_args.outdir))
+    broker = helpers.SQLiteBroker(db_file=os.path.join(in_args.outdir, "sqlite_db.sqlite"))
     broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
                                        "graph TEXT", "cluster_score TEXT"])
     broker.start_broker()
@@ -1177,7 +1177,7 @@ if __name__ == '__main__':
                         "        All cached resources will be reused.")
 
     # Make sure all the necessary directories are present and emptied of old run files
-    for _path in ["%s%s" % (in_args.outdir, x) for x in ["", "/alignments", "/mcmcmc", "/sim_scores", "/psi_pred"]]:
+    for _path in [os.path.join(in_args.outdir, x) for x in ["", "alignments", "mcmcmc", "sim_scores", "psi_pred"]]:
         if not os.path.isdir(_path):
             logging.info("mkdir %s" % _path)
             os.makedirs(_path)
@@ -1185,13 +1185,13 @@ if __name__ == '__main__':
         root, dirs, files = next(os.walk(_path))
         for _file in files:
             if "group" in _file:
-                os.remove("%s/%s" % (root, _file))
+                os.remove(os.path.join(root, _file))
         for _dir in dirs:
             if "group" in _dir:
-                shutil.rmtree("%s/%s" % (root, _dir))
+                shutil.rmtree(os.path.join(root, _dir))
 
     # Move log file into output directory
-    logger_obj.move_log("%s/rdmcl.log" % in_args.outdir)
+    logger_obj.move_log(os.path.join(in_args.outdir, "rdmcl.log"))
 
     # clique_check = True if not in_args.supress_clique_check else False
     # recursion_check = True if not in_args.supress_recursion else False
@@ -1201,7 +1201,7 @@ if __name__ == '__main__':
     records_missing_ss_files = []
     records_with_ss_files = []
     for record in sequences.records:
-        if os.path.isfile("%s/psi_pred/%s.ss2" % (in_args.outdir, record.id)):
+        if os.path.isfile(os.path.join(in_args.outdir, "psi_pred", "%s.ss2" % record.id)):
             records_with_ss_files.append(record.id)
         else:
             records_missing_ss_files.append(record)
@@ -1212,10 +1212,10 @@ if __name__ == '__main__':
         logging.warning("Executing PSI-Pred on %s sequences" % len(records_missing_ss_files))
         br.run_multicore_function(records_missing_ss_files, mc_psi_pred, [in_args.outdir])
         logging.info("\t-- finished in %s --" % TIMER.split())
-        logging.info("\tfiles saved to %s" % "%s/psi_pred/" % in_args.outdir)
+        logging.info("\tfiles saved to {0}{1}psi_pred{1}".format(in_args.outdir, os.sep))
     else:
-        logging.warning("RESUME: All PSI-Pred .ss2 files found in %s/psi_pred/" % in_args.outdir)
-    psi_pred_files = [(record.id, read_ss2_file("%s/psi_pred/%s.ss2" % (in_args.outdir, record.id)))
+        logging.warning("RESUME: All PSI-Pred .ss2 files found in {0}{1}psi_pred{1}".format(in_args.outdir, os.sep))
+    psi_pred_files = [(record.id, read_ss2_file(os.path.join(in_args.outdir, "psi_pred", "%s.ss2" % record.id)))
                       for record in sequences.records]
     psi_pred_files = OrderedDict(psi_pred_files)
 
@@ -1230,7 +1230,7 @@ if __name__ == '__main__':
     else:
         logging.warning("Generating initial multiple sequence alignment with MAFFT")
         alignbuddy = generate_msa(sequences, broker)
-        alignbuddy.write("%s/alignments/group_0.aln" % in_args.outdir)
+        alignbuddy.write(os.path.join(in_args.outdir, "alignments", "group_0.aln"))
         logging.info("\t-- finished in %s --\n" % TIMER.split())
 
     graph_data = broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(seq_ids_hash))
@@ -1242,9 +1242,9 @@ if __name__ == '__main__':
     else:
         num_comparisons = ((len(alignbuddy.alignments[0]) ** 2) - len(alignbuddy.alignments[0])) / 2
         logging.warning("Generating initial all-by-all similarity graph (%s comparisons)" % int(num_comparisons))
-        logging.info(" written to: %s/sim_scores/complete_all_by_all.scores" % in_args.outdir)
+        logging.info(" written to: {0}{1}sim_scores{1}complete_all_by_all.scores".format(in_args.outdir, os.sep))
         scores_data = create_all_by_all_scores(alignbuddy, psi_pred_files)
-        scores_data.to_csv("%s/sim_scores/complete_all_by_all.scores" % in_args.outdir,
+        scores_data.to_csv(os.path.join(in_args.outdir, "sim_scores", "complete_all_by_all.scores"),
                            header=None, index=False, sep="\t")
         logging.info("\t-- finished in %s --\n" % TIMER.split())
 
@@ -1267,9 +1267,9 @@ if __name__ == '__main__':
         logging.warning("\nReciprocal best-hit cliques of paralogs have been identified in the input sequences.")
         logging.info(" A representative sequence has been selected from each clique, and the remaining")
         logging.info(" sequences will be placed in the final clusters at the end of the run.")
-        with open("%s/paralog_cliques.json" % in_args.outdir, "w") as outfile:
+        with open(os.path.join(in_args.outdir, "paralog_cliques.json"), "w") as outfile:
             json.dump(group_0_cluster.collapsed_genes, outfile)
-            logging.warning(" Cliques written to: %s/paralog_cliques.json" % in_args.outdir)
+            logging.warning(" Cliques written to: %s%sparalog_cliques.json" % (in_args.outdir, os.sep))
 
     # taxa_count = [x.split(in_args.taxa_separator)[0] for x in group_0_cluster.seq_ids]
     # taxa_count = pd.Series(taxa_count)
@@ -1281,7 +1281,8 @@ if __name__ == '__main__':
     progress_tracker = Progress(in_args.outdir, group_0_cluster)
 
     run_time = br.RunTime(prefix=progress_tracker.__str__, _sleep=0.3, final_clear=True)
-    run_time.start()
+    if not in_args.quiet:
+        run_time.start()
     final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences, sql_broker=broker,
                                        progress=progress_tracker, outdir=in_args.outdir, steps=in_args.mcmcmc_steps,
                                        quiet=True, taxa_separator=in_args.taxa_separator, r_seed=in_args.r_seed,
@@ -1350,12 +1351,12 @@ if __name__ == '__main__':
     logging.warning("\t-- finished in %s --" % TIMER.split())
 
     logging.warning("\nTotal execution time: %s" % TIMER.total_elapsed())
-    with open("%s/final_clusters.txt" % in_args.outdir, "w") as outfile:
+    with open(os.path.join(in_args.outdir, "final_clusters.txt"), "w") as outfile:
         outfile.write(output)
         logging.warning("Final score: %s" % round(final_score, 4))
         if final_score < base_score:
             logging.warning("    This is lower than the initial base score after"
                             " the inclusion of collapsed paralogs")
-        logging.warning("Clusters written to: %s/final_clusters.txt" % in_args.outdir)
+        logging.warning("Clusters written to: %s%sfinal_clusters.txt" % (in_args.outdir, os.sep))
 
     broker.close()

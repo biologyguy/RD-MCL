@@ -28,7 +28,7 @@ class Variable:
         self.variance = _range * variance_covariate
 
         # select a random start value
-        self.rand_gen = random.Random() if not r_seed else random.Random(r_seed)
+        self.rand_gen = random.Random() if r_seed is None else random.Random(r_seed)
         self.current_value = self.rand_gen.random() * _range + _min
         self.draw_value = self.current_value
         self.history = OrderedDict([("draws", [self.draw_value]), ("accepts", [])])
@@ -70,6 +70,19 @@ class Variable:
         self.history["accepts"].append(self.current_value)
         return
 
+    def __str__(self):
+        return """
+Name: {}
+Min: {}
+Max: {}
+Variance: {}
+Random: {}
+Current value: {}
+Draw value: {}
+History: {}
+""".format(self.name, self.min, self.max, self.variance, self.rand_gen.getstate(),
+           self.current_value, self.draw_value, self.history)
+
 
 class _Chain:
     def __init__(self, variables, function, params=None, quiet=False, r_seed=None):
@@ -82,7 +95,7 @@ class _Chain:
         self.current_score = 0.
         self.proposed_score = 0.
         self.score_history = []
-        self.rand_gen = random.Random() if not r_seed else random.Random(r_seed)
+        self.rand_gen = random.Random() if r_seed is None else random.Random(r_seed)
         self.name = "".join([self.rand_gen.choice(string.ascii_letters + string.digits) for _ in range(20)])
 
         # Sample `function` for starting min/max scores
@@ -197,7 +210,7 @@ class MCMCMC:
                 heading += "%s\t" % var.name
             heading += "result\n"
             ofile.write(heading)
-        self.rand_gen = random.Random() if not r_seed else random.Random(r_seed)
+        self.rand_gen = random.Random() if r_seed is None else random.Random(r_seed)
         self.chains = [_Chain(deepcopy(self.global_variables), function, params=params,
                               quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999)) for _ in range(num_chains)]
         self.best = {"score": 0., "variables": {x.name: 0. for x in variables}}
@@ -226,7 +239,7 @@ class MCMCMC:
             return
 
         def step_parse(_chain):
-            with open("%s/%s" % (temp_dir.path, _chain.name), "r") as ifile:
+            with open(os.path.join(temp_dir.path, _chain.name), "r") as ifile:
                 _chain.proposed_raw_score = float(ifile.read())
 
             if len(_chain.score_history) >= 1000:
@@ -266,7 +279,7 @@ class MCMCMC:
 
                 # Always add a new seed for the target function
                 func_args.append(self.rand_gen.randint(1, 999999999999999))
-                outfile = "%s/%s" % (temp_dir.path, chain.name)
+                outfile = os.path.join(temp_dir.path, chain.name)
                 p = Process(target=mc_step_run, args=(chain, [func_args, outfile]))
                 p.start()
                 child_list[chain.name] = p
