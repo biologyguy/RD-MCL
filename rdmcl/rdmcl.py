@@ -137,7 +137,7 @@ class Cluster(object):
         # self.cliques = []
         self.cluster_score = None
         self.collapsed_genes = OrderedDict()  # If paralogs are reciprocal best hits, collapse them
-        self.rand_gen = Random() if not r_seed else Random(r_seed)
+        self.rand_gen = Random(r_seed)
         self._name = None
 
         self.taxa = OrderedDict()  # key = taxa id. value = list of genes coming fom that taxa.
@@ -585,7 +585,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         progress.update("placed", update)
         return
 
-    rand_gen = Random() if not r_seed else Random(r_seed)
+    rand_gen = Random(r_seed)
     master_cluster.set_name()
     temp_dir = br.TempDir()
 
@@ -742,6 +742,8 @@ def mcmcmc_mcl(args, params):
             with open(os.path.join(exter_tmp_dir, "max.txt"), "w") as ofile:
                 ofile.write("\n".join(results))
         else:
+            results = sorted(results)
+            #print(results)
             best_score = None
             best_clusters = []  # Hopefully just find a single best cluster, but could be more
             for clusters in results:
@@ -753,7 +755,8 @@ def mcmcmc_mcl(args, params):
                     cluster_ids.append(sql_query[0][0])
                     if len(seq_ids) > 1:  # Prevent crash if pulling a cluster with a single sequence
                         sim_scores = pd.read_csv(StringIO(sql_query[0][1]), index_col=False, header=None)
-                        cluster = Cluster(seq_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator)
+                        cluster = Cluster(seq_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator,
+                                          r_seed=rand_gen.randint(1, 999999999999))
                         score_sum += cluster.score()
 
                 if score_sum == best_score:
@@ -762,10 +765,11 @@ def mcmcmc_mcl(args, params):
                     best_clusters = [cluster_ids]
                     best_score = score_sum
 
-            best_clusters = sorted(best_clusters)[0]
-            best_clusters = [cluster.replace(', ', '\t') for cluster in best_clusters]
+            #best_clusters = sorted(best_clusters)[0]
+            best_clusters = [cluster.replace(', ', '\t') for cluster in best_clusters[0]]
             with open(os.path.join(exter_tmp_dir, "best_group"), "w") as ofile:
                 ofile.write('\n'.join(best_clusters))
+    #print(round(inflation, 2), round(gq, 2), round(r_seed/10000000000), round(score, 2))
     return score
 
 

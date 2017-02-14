@@ -28,7 +28,7 @@ class Variable:
         self.variance = _range * variance_covariate
 
         # select a random start value
-        self.rand_gen = random.Random() if r_seed is None else random.Random(r_seed)
+        self.rand_gen = random.Random(r_seed)
         self.current_value = self.rand_gen.random() * _range + _min
         self.draw_value = self.current_value
         self.history = OrderedDict([("draws", [self.draw_value]), ("accepts", [])])
@@ -95,7 +95,7 @@ class _Chain:
         self.current_score = 0.
         self.proposed_score = 0.
         self.score_history = []
-        self.rand_gen = random.Random() if r_seed is None else random.Random(r_seed)
+        self.rand_gen = random.Random(r_seed)
         self.name = "".join([self.rand_gen.choice(string.ascii_letters + string.digits) for _ in range(20)])
 
         # Sample `function` for starting min/max scores
@@ -134,6 +134,7 @@ class _Chain:
 
         self.gaussian_pdf = norm(trans_max, trans_max * self.heat)
 
+    """ I think this is deprecated by MCMCMC.run.step_parse()
     def step(self):
         func_args = []
         for variable in self.variables:
@@ -163,6 +164,7 @@ class _Chain:
                 self.accept()
 
         return
+    """
 
     def accept(self):
         for variable in self.variables:
@@ -210,15 +212,21 @@ class MCMCMC:
                 heading += "%s\t" % var.name
             heading += "result\n"
             ofile.write(heading)
-        self.rand_gen = random.Random() if r_seed is None else random.Random(r_seed)
-        self.chains = [_Chain(deepcopy(self.global_variables), function, params=params,
-                              quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999)) for _ in range(num_chains)]
-        self.best = {"score": 0., "variables": {x.name: 0. for x in variables}}
+        self.rand_gen = random.Random(r_seed)
+        self.chains = []
+        for _ in range(num_chains):  # The deepcopy below duplicates r_seed, so chains need to be updated with a new one
+            chain = _Chain(deepcopy(self.global_variables), function, params=params,
+                           quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999))
+            for variable in chain.variables:
+                variable.rand_gen.seed(self.rand_gen.randint(1, 999999999999999))
+            self.chains.append(chain)
+
+        self.best = OrderedDict([("score", None), ("variables", OrderedDict([(x.name, None) for x in variables]))])
 
         # Set a cold chain. The cold chain should always be set at index 0, even if a chain swap occurs
         self.cold_heat = 0.1
-        self.hot_heat = 0.32
-        self.chains[0].set_heat(self.cold_heat)
+        self.hot_heat = 0.32  # Default given to each new Chain on instantiation
+        self.chains[0].set_heat(self.cold_heat)  # Set a cold chain
         self.burn_in = burn_in
         self.quiet = quiet
 
@@ -256,7 +264,8 @@ class MCMCMC:
                 _chain.accept()
 
             else:
-                rand_check_val = self.rand_gen.random()
+                rand_check_val = _chain.rand_gen.random()
+                #print(rand_check_val)
                 prop_gaus = _chain.gaussian_pdf.pdf(_chain.proposed_score)
                 cur_gaus = _chain.gaussian_pdf.pdf(_chain.current_score)
                 accept_check = prop_gaus / cur_gaus
@@ -264,7 +273,7 @@ class MCMCMC:
                 if accept_check > rand_check_val:
                     _chain.accept()
             return
-
+        # self.chains = sorted(self.chains, key=lambda l: l.name)  # Ensure that all chains are in the correct order
         temp_dir = TempDir()
         counter = 0
         while counter <= self.steps:
@@ -296,50 +305,48 @@ class MCMCMC:
                         del child_list[i]
                         break
 
-            # By sorting on PID (ie. name), a specific order is ensured so r_seed works
-            finished_processes = sorted(finished_processes, key=lambda l: l.name)
-            for finished_chain in self.chains:
-                for fin_process in finished_processes:
-                    if finished_chain.name == fin_process:
-                        step_parse(finished_chain)
-
             for chain in self.chains:
-                if chain.current_raw_score > self.best["score"]:
+                step_parse(chain)
+                if self.best["score"] is None or chain.current_raw_score > self.best["score"]:
                     self.best["score"] = chain.current_raw_score
                     self.best["variables"] = OrderedDict([(x.name, x.current_value) for x in chain.variables])
 
-                # Pseudo burn in, replace
+                # Pseudo burn in, ToDo: replace this with real burn in
                 if counter == self.burn_in:
                     chain.score_history = [chain.raw_max - np.std(chain.score_history), chain.raw_max]
 
             # Swap any hot chain into the cold chain position if the hot chain score is better than the cold chain score
-            best_score = self.chains[0].current_score
-            best_chain_index = 0
-            for i in range(1, len(self.chains[1:])):
-                if self.chains[i].current_score > best_score:
-                    best_score = self.chains[i].current_score
-                    best_chain_index = i
-            if best_chain_index != 0:
-                self.chains[0].set_heat(self.hot_heat)
-                best_chain = self.chains.pop(best_chain_index)
-                self.chains.insert(0, best_chain)
+            cold_chain_indx = None
+            best_chain_index = None
+            best_score = max([chain.current_raw_score for chain in self.chains])
+            for indx, chain in enumerate(self.chains):
+                if best_score == chain.current_raw_score:
+                    best_chain_index = indx
+                if chain.heat == self.cold_heat:
+                    cold_chain_indx = indx
+
+            assert cold_chain_indx is not None and best_chain_index is not None  # Just ensure that these have been set
+
+            if best_chain_index != cold_chain_indx:
+                self.chains[best_chain_index].set_heat(self.cold_heat)
+                self.chains[cold_chain_indx].set_heat(self.hot_heat)
 
             # Send output to file
             if counter % self.sample_rate == 0:
-                self.samples["vars"].append(self.chains[0].variables)
-                self.samples["score"].append(self.chains[0].current_raw_score)
+                self.samples["vars"].append(self.chains[best_chain_index].variables)
+                self.samples["score"].append(self.chains[best_chain_index].current_raw_score)
 
                 self.output += "%s\t" % counter
-                for var in self.chains[0].variables:
+                for var in self.chains[best_chain_index].variables:
                     self.output += "%s\t" % var.current_value
-                self.output += "%s\n" % self.chains[0].current_raw_score
+                self.output += "%s\n" % self.chains[best_chain_index].current_raw_score
                 self.write()
 
             printer_vars = ""
-            for x in self.chains[0].variables:
+            for x in self.chains[best_chain_index].variables:
                 printer_vars += "%s: %6.3f\t" % (x.name, round(x.current_value, 3))
 
-            self.printer.write("%5.0f: %8.3f\t(%s)" % (counter, round(self.chains[0].current_raw_score, 3), printer_vars.strip()))
+            self.printer.write("%5.0f: %8.3f\t(%s)" % (counter, round(self.chains[best_chain_index].current_raw_score, 3), printer_vars.strip()))
             counter += 1
 
         self.printer.new_line()
