@@ -345,8 +345,8 @@ class Cluster(object):
 
         # Modify cluster score based on size. 'Perfect' size = half of parent
         if self.parent:  # Obviously group_0 can't be modified this way
-            half_par = (len(self.parent) / 2)
-            if len(self) != len(self.parent):
+            half_par = (len(self.parent) / 2) if len(self) <= len(self.parent) else (len(self) / 2)
+            if len(self) != half_par * 2:
                 score *= ((half_par - abs(len(self) - half_par)) / half_par)
             else:  # To prevent exception with log2 below
                 score *= 1 / half_par
@@ -354,6 +354,88 @@ class Cluster(object):
         score = score ** 2 if score > 0 else -1 * (score ** 2)  # Linearize the data
         self.cluster_score = score
         return self.cluster_score
+
+    def create_rbh_cliques(self):
+        results = []
+        # Anything less than 4 sequences cannot be subdivided into smaller cliques
+        if len(self) < 4:
+            return [self]
+
+        paralogs = OrderedDict()
+        for taxa_id, group in self.taxa.items():
+            if len(group) > 1:
+                paralogs[taxa_id] = [self.recursive_best_hits(gene,
+                                                              pd.DataFrame(columns=["seq1", "seq2", "score"]),
+                                                              [gene]) for gene in group]
+
+        # If there aren't any paralogs, we can't break up the group
+        if not paralogs:
+            return [self]
+
+        # RBHCs with any overlap cannot be separated from the cluster
+        seqs_to_remove = []
+        for taxa_id, rbhc_dfs in paralogs.items():  # ToDo: This needs to go further, and compare any cliques between taxa_id...
+            marked_for_del = []
+            for i, df_i in enumerate(rbhc_dfs):
+                genes_i = set(list(df_i.seq1.values) + list(df_i.seq2.values))
+                if len(genes_i) < 3:  # Do not separate cliques of 2
+                    marked_for_del.append(i)  # Don't need to do this for df_j, because all sets checked already
+                for j, df_j in enumerate(rbhc_dfs[i+1:]):
+                    genes_j = set(list(df_j.seq1.values) + list(df_j.seq2.values))
+                    if list(genes_i & genes_j):
+                        marked_for_del += [i, i + j]
+
+            marked_for_del = list(set(marked_for_del))  # Remove any duplicates
+            marked_for_del = sorted(marked_for_del, reverse=True)  # Delete from the largest index down
+            for del_indx in marked_for_del:
+                del rbhc_dfs[del_indx]
+            # If all RBHCs have been disqualified, no reason to do the final test
+            if not rbhc_dfs:
+                continue
+
+            # Check for overlap between similarity scores within the clique and between clique seqs and non-clique seqs
+            for clique in rbhc_dfs:
+                clique_ids = set(list(clique.seq1.values) + list(clique.seq2.values))
+                clique_ids = list(clique_ids)
+                clique_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique_ids)) &
+                                                (self.sim_scores.seq2.isin(clique_ids))]
+                total_scores = self.sim_scores.drop(clique_scores.index.values)
+
+                # if all sim scores in a group are identical, we can't get a KDE. Fix by perturbing the scores a little.
+                clique_scores = self.perturb(clique_scores)
+                total_scores = self.perturb(total_scores)
+
+                total_kde = scipy.stats.gaussian_kde(total_scores.score, bw_method='silverman')
+                clique_kde = scipy.stats.gaussian_kde(clique_scores.score, bw_method='silverman')
+                clique_resample = clique_kde.resample(10000)
+                clique95 = [np.percentile(clique_resample, 2.5), np.percentile(clique_resample, 97.5)]
+                integrated = total_kde.integrate_box_1d(clique95[0], clique95[1])
+                if integrated < 0.05:
+                    seqs_to_remove += clique_ids
+                    clique = Cluster(clique_ids, sim_scores=clique_scores, taxa_separator=self.taxa_separator,
+                                     parent=self, clique=True)
+                    clique.set_name()
+                    results.append(clique)
+
+        # After all that, no significant cliques to spin off as independent clusters
+        if not seqs_to_remove:
+            results.append(self)
+            return [self]
+
+        remaining_seqs = self.seq_ids
+        for seq in set(seqs_to_remove):
+            del remaining_seqs[remaining_seqs.index(seq)]
+
+        if remaining_seqs:
+            sim_scores = self.sim_scores[(self.sim_scores.seq1.isin(remaining_seqs)) &
+                                         (self.sim_scores.seq2.isin(remaining_seqs))]
+
+            remaining_cluster = Cluster(remaining_seqs, sim_scores=sim_scores, parent=self,
+                                        taxa_separator=self.taxa_separator)
+            remaining_cluster.set_name()
+            results.append(remaining_cluster)
+
+        return results
 
     """
     Much expanded scoring system that is currently broken
@@ -955,8 +1037,9 @@ class Orphans(object):
         self.printer = br.DynamicPrint(quiet=quiet)
         self.tmp_file = br.TempFile()
         self.all_sim_scores = pd.Series()  # This is used for a t-test later
+        parent = self.clusters[0] if self.clusters[0].parent is None else self.clusters[0].parent
         graph = self.sql_broker.query("SELECT (graph) FROM data_table "
-                                      "WHERE hash='{0}'".format(self.clusters[0].parent.seq_id_hash))
+                                      "WHERE hash='{0}'".format(parent.seq_id_hash))
         graph = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
         graph.columns = ["seq1", "seq2", "score"]
         self.all_sim_scores = self.all_sim_scores.append(graph.score)
@@ -1010,13 +1093,14 @@ class Orphans(object):
             lrg2sml_group_data = lrg2sml_group_data.loc[(lrg2sml_group_data['seq1'].isin(large_cluster.seq_ids)) | (lrg2sml_group_data['seq2'].isin(large_cluster.seq_ids))]
             self.tmp_file.write("\tlrg2sml_group_data:\n%s\n" % lrg2sml_group_data)
 
-            # Confirm that the orphans are sufficiently similar to large group to warrant consideration using t-test
+            # We will confirm that the orphans are sufficiently similar to large group to warrant consideration using t-test
             t_test = scipy.stats.ttest_ind(lrg2sml_group_data.score, self.all_sim_scores)
             self.tmp_file.write("\t%s\n\n" % str(t_test))
-            if t_test.pvalue >= 0.05:  # Therefore, when we fail to reject the null, we consider the group.
-                # Convert group_data to a numpy array so sm.stats can read it
-                data_dict[group_name] = (t_test.pvalue, np.array(lrg2sml_group_data.score))
+            # if t_test.pvalue >= 0.05:  # Therefore, when we fail to reject the null, we consider the group.
+            # Convert group_data to a numpy array so sm.stats can read it
+            data_dict[group_name] = (t_test.pvalue, np.array(lrg2sml_group_data.score))
 
+        """
         if len(data_dict) == 0:
             self.tmp_file.write("No Matches\n###########################\n\n")
             return False
@@ -1025,7 +1109,7 @@ class Orphans(object):
             group_name, group = list(data_dict.items())[0]
             self.tmp_file.write("%s\n###########################\n\n" % group_name)
             return group_name, group[0]
-
+        """
         # We only need to test the large cluster with the highest average similarity score, so find that cluster.
         averages = pd.Series()
         df = pd.DataFrame(columns=['observations', 'grouplabel'])
@@ -1035,6 +1119,12 @@ class Orphans(object):
             tmp_df['grouplabel'] = group_name
             df = df.append(tmp_df)
         max_ave = averages.argmax()
+
+        # Confirm that the largest cluster has sufficient support (t-test value)
+        if data_dict[max_ave][0] <= 0.05:
+            self.tmp_file.write("No Matches\n###########################\n\n")
+            return False
+
         # Run pairwise Tukey HSD and parse the results
         # The max_ave cluster must be significantly different from all other clusters
         result = sm.stats.multicomp.pairwise_tukeyhsd(df.observations, df.grouplabel)
@@ -1310,7 +1400,16 @@ if __name__ == '__main__':
     final_clusters += final_cliques
     logging.warning("\t%s cliques extracted" % len(final_cliques))
     '''
+    # Sort out reciprocal best hit cliques
+    logging.warning("\n** Processing best-hit-cliques among clustered paralogs **")
+    final_cliques = []
+    for clstr in final_clusters:
+        final_cliques += clstr.create_rbh_cliques()
 
+    final_clusters = final_cliques
+
+    # logging.warning("\t%s cliques extracted" % len(final_cliques))
+    # sys.exit()
     # #################### Format the clusters and output to file #################### #
     # Fold singletons and doublets back into groups. This can't be 'resumed', because it changes the clusters
     if not in_args.supress_singlet_folding:
@@ -1325,9 +1424,9 @@ if __name__ == '__main__':
     if group_0_cluster.collapsed_genes:
         logging.warning("\nPlacing collapsed paralogs into their respective clusters")
         for clust in final_clusters:
-            for gene_id, paralogs in group_0_cluster.collapsed_genes.items():
+            for gene_id, paralog_list in group_0_cluster.collapsed_genes.items():
                 if gene_id in clust.seq_ids:
-                    clust.seq_ids += paralogs
+                    clust.seq_ids += paralog_list
                     clust.taxa[gene_id.split(in_args.taxa_separator)[0]].append(gene_id)
             clust.score(force=True)
 
