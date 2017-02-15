@@ -743,7 +743,6 @@ def mcmcmc_mcl(args, params):
                 ofile.write("\n".join(results))
         else:
             results = sorted(results)
-            #print(results)
             best_score = None
             best_clusters = []  # Hopefully just find a single best cluster, but could be more
             for clusters in results:
@@ -765,11 +764,9 @@ def mcmcmc_mcl(args, params):
                     best_clusters = [cluster_ids]
                     best_score = score_sum
 
-            #best_clusters = sorted(best_clusters)[0]
             best_clusters = [cluster.replace(', ', '\t') for cluster in best_clusters[0]]
             with open(os.path.join(exter_tmp_dir, "best_group"), "w") as ofile:
                 ofile.write('\n'.join(best_clusters))
-    #print(round(inflation, 2), round(gq, 2), round(r_seed/10000000000), round(score, 2))
     return score
 
 

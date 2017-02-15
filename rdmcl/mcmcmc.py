@@ -35,7 +35,7 @@ class Variable:
 
     def draw_new_value(self):
         #  NOTE: Might need to tune _variance if the acceptance rate is to low or high.
-        draw_val = np.random.normal(self.current_value, self.variance)
+        draw_val = self.rand_gen.gauss(self.current_value, self.variance)
         safety_check = 100
         while draw_val < self.min or draw_val > self.max:
             if draw_val < self.min:
@@ -90,10 +90,8 @@ class _Chain:
         self.function = function
         self.params = params
         self.heat = 0.32
-        self.current_raw_score = 0.
-        self.proposed_raw_score = 0.
-        self.current_score = 0.
-        self.proposed_score = 0.
+        self.current_score = None
+        self.proposed_score = None
         self.score_history = []
         self.rand_gen = random.Random(r_seed)
         self.name = "".join([self.rand_gen.choice(string.ascii_letters + string.digits) for _ in range(20)])
@@ -131,46 +129,11 @@ class _Chain:
         self.raw_max = max(self.score_history)
         self.raw_min = min(self.score_history)
         trans_max = self.raw_max - self.raw_min
-
         self.gaussian_pdf = norm(trans_max, trans_max * self.heat)
-
-    """ I think this is deprecated by MCMCMC.run.step_parse()
-    def step(self):
-        func_args = []
-        for variable in self.variables:
-            variable.draw_new_value()
-            func_args.append(variable.draw_value)
-
-        func_args.append(self.rand_gen.randint(1, 999999999999999))  # Always add a new seed for the target function
-        self.proposed_raw_score = self.function(func_args) if not self.params else self.function(func_args, self.params)
-        if len(self.score_history) >= 1000:
-            self.score_history.pop(0)
-
-        self.score_history.append(self.proposed_raw_score)
-        self.raw_max = max(self.score_history)
-        self.raw_min = min(self.score_history)
-        self.set_gaussian()
-
-        self.proposed_score = self.proposed_raw_score - self.raw_min
-
-        if self.proposed_score >= self.current_score:
-            self.accept()
-
-        else:
-            rand_check_val = self.rand_gen.random()
-            accept_check = self.gaussian_pdf.pdf(self.proposed_score) / self.gaussian_pdf.pdf(self.current_score)
-
-            if accept_check > rand_check_val:
-                self.accept()
-
-        return
-    """
 
     def accept(self):
         for variable in self.variables:
             variable.accept_draw()
-
-        self.current_raw_score = self.proposed_raw_score
         self.current_score = self.proposed_score
         return
 
@@ -193,14 +156,13 @@ class _Chain:
         output = "Chain %s" % self.name
         for variable in self.variables:
             output += "\n\t%s:\t%s" % (variable.name, variable.current_value)
-        output += "\n\tScore:\t%s" % self.current_raw_score
+        output += "\n\tScore:\t%s" % self.current_score
         return output
 
 
 class MCMCMC:
     def __init__(self, variables, function, params=None, steps=10000, sample_rate=1, num_chains=3,
                  outfile='./mcmcmc_out.csv', burn_in=100, quiet=False, r_seed=None):
-
         self.global_variables = variables
         self.steps = steps
         self.sample_rate = sample_rate
@@ -248,24 +210,21 @@ class MCMCMC:
 
         def step_parse(_chain):
             with open(os.path.join(temp_dir.path, _chain.name), "r") as ifile:
-                _chain.proposed_raw_score = float(ifile.read())
+                _chain.proposed_score = float(ifile.read())
 
             if len(_chain.score_history) >= 1000:
                 _chain.score_history.pop(0)
 
-            _chain.score_history.append(_chain.proposed_raw_score)
+            _chain.score_history.append(_chain.proposed_score)
             _chain.raw_max = max(_chain.score_history)
             _chain.raw_min = min(_chain.score_history)
             _chain.set_gaussian()
 
-            _chain.proposed_score = _chain.proposed_raw_score - _chain.raw_min
-
-            if _chain.proposed_score >= _chain.current_score:
+            if _chain.current_score is None or _chain.proposed_score >= _chain.current_score:
                 _chain.accept()
 
             else:
                 rand_check_val = _chain.rand_gen.random()
-                #print(rand_check_val)
                 prop_gaus = _chain.gaussian_pdf.pdf(_chain.proposed_score)
                 cur_gaus = _chain.gaussian_pdf.pdf(_chain.current_score)
                 accept_check = prop_gaus / cur_gaus
@@ -277,7 +236,6 @@ class MCMCMC:
         temp_dir = TempDir()
         counter = 0
         while counter <= self.steps:
-            running_processes = 0
             child_list = OrderedDict()
             for chain in self.chains:  # Note that this will spin off as many new processes as there are chains
                 # Start new process
@@ -292,35 +250,32 @@ class MCMCMC:
                 p = Process(target=mc_step_run, args=(chain, [func_args, outfile]))
                 p.start()
                 child_list[chain.name] = p
-                running_processes += 1
 
             # wait for remaining processes to complete
-            finished_processes = []
             while len(child_list) > 0:
-                for i in child_list:
-                    if child_list[i].is_alive():
+                for _name, child in child_list.items():
+                    if child.is_alive():
                         continue
                     else:
-                        finished_processes.append(child_list[i])
-                        del child_list[i]
+                        del child_list[_name]
                         break
 
             for chain in self.chains:
                 step_parse(chain)
-                if self.best["score"] is None or chain.current_raw_score > self.best["score"]:
-                    self.best["score"] = chain.current_raw_score
+                if self.best["score"] is None or chain.current_score > self.best["score"]:
+                    self.best["score"] = chain.current_score
                     self.best["variables"] = OrderedDict([(x.name, x.current_value) for x in chain.variables])
 
-                # Pseudo burn in, ToDo: replace this with real burn in
+                # Pseudo burn in, ToDo: replace this with real burn in?
                 if counter == self.burn_in:
                     chain.score_history = [chain.raw_max - np.std(chain.score_history), chain.raw_max]
 
             # Swap any hot chain into the cold chain position if the hot chain score is better than the cold chain score
             cold_chain_indx = None
             best_chain_index = None
-            best_score = max([chain.current_raw_score for chain in self.chains])
+            best_score = max([chain.current_score for chain in self.chains])
             for indx, chain in enumerate(self.chains):
-                if best_score == chain.current_raw_score:
+                if best_score == chain.current_score:
                     best_chain_index = indx
                 if chain.heat == self.cold_heat:
                     cold_chain_indx = indx
@@ -334,19 +289,20 @@ class MCMCMC:
             # Send output to file
             if counter % self.sample_rate == 0:
                 self.samples["vars"].append(self.chains[best_chain_index].variables)
-                self.samples["score"].append(self.chains[best_chain_index].current_raw_score)
+                self.samples["score"].append(self.chains[best_chain_index].current_score)
 
                 self.output += "%s\t" % counter
                 for var in self.chains[best_chain_index].variables:
                     self.output += "%s\t" % var.current_value
-                self.output += "%s\n" % self.chains[best_chain_index].current_raw_score
+                self.output += "%s\n" % self.chains[best_chain_index].current_score
                 self.write()
 
             printer_vars = ""
             for x in self.chains[best_chain_index].variables:
                 printer_vars += "%s: %6.3f\t" % (x.name, round(x.current_value, 3))
 
-            self.printer.write("%5.0f: %8.3f\t(%s)" % (counter, round(self.chains[best_chain_index].current_raw_score, 3), printer_vars.strip()))
+            self.printer.write("%5.0f: %8.3f\t(%s)" % (counter, round(self.chains[best_chain_index].current_score, 3),
+                                                       printer_vars.strip()))
             counter += 1
 
         self.printer.new_line()
