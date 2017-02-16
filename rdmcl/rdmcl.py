@@ -124,7 +124,7 @@ class Cluster(object):
         expected_num_edges = int(((len(seq_ids)**2) - len(seq_ids)) / 2)
         if len(sim_scores.index) != expected_num_edges:
             raise ValueError("The number of incoming sequence ids (%s) does not match the expected graph size of %s"
-                             " columns (observed %s columns)." % (len(seq_ids), expected_num_edges, len(sim_scores.index)))
+                             " rows (observed %s rows)." % (len(seq_ids), expected_num_edges, len(sim_scores.index)))
 
         self.sim_scores = sim_scores
         self.taxa_separator = taxa_separator
@@ -347,8 +347,8 @@ class Cluster(object):
 
     def create_rbh_cliques(self):
         results = []
-        # Anything less than 4 sequences cannot be subdivided into smaller cliques
-        if len(self) < 4:
+        # Anything less than 6 sequences cannot be subdivided into smaller cliques, because it would create orphans
+        if len(self) < 6:
             return [self]
 
         paralogs = OrderedDict()
@@ -357,14 +357,13 @@ class Cluster(object):
                 paralogs[taxa_id] = [self.recursive_best_hits(gene,
                                                               pd.DataFrame(columns=["seq1", "seq2", "score"]),
                                                               [gene]) for gene in group]
-
         # If there aren't any paralogs, we can't break up the group
         if not paralogs:
             return [self]
 
         # RBHCs with any overlap cannot be separated from the cluster
         seqs_to_remove = []
-        for taxa_id, rbhc_dfs in paralogs.items():  # ToDo: This needs to go further, and compare any cliques between taxa_id...
+        for taxa_id, rbhc_dfs in paralogs.items():
             marked_for_del = []
             for i, df_i in enumerate(rbhc_dfs):
                 genes_i = set(list(df_i.seq1.values) + list(df_i.seq2.values))
@@ -379,6 +378,7 @@ class Cluster(object):
             marked_for_del = sorted(marked_for_del, reverse=True)  # Delete from the largest index down
             for del_indx in marked_for_del:
                 del rbhc_dfs[del_indx]
+
             # If all RBHCs have been disqualified, no reason to do the final test
             if not rbhc_dfs:
                 continue
@@ -402,19 +402,42 @@ class Cluster(object):
                 integrated = total_kde.integrate_box_1d(clique95[0], clique95[1])
                 if integrated < 0.05:
                     seqs_to_remove += clique_ids
-                    clique = Cluster(clique_ids, sim_scores=clique_scores, taxa_separator=self.taxa_separator,
-                                     parent=self, clique=True)
-                    clique.set_name()
-                    results.append(clique)
+                    results.append([clique_ids, clique_scores])
 
         # After all that, no significant cliques to spin off as independent clusters
         if not seqs_to_remove:
-            results.append(self)
             return [self]
 
+        # Look for any overlap between the cliques identified for each taxon and merge them together
+        combined = []
+        while results:
+            clique_i = results[0]
+            drop_j_indx = []
+            for indx, clique_j in enumerate(results[1:]):
+                if list(set(clique_i[0]) & set(clique_j[0])):
+                    clique_i[0] = set(clique_i[0] + clique_j[0])
+                    clique_i[0] = sorted(list(clique_i[0]))
+                    clique_i[1] = self.sim_scores[(self.sim_scores.seq1.isin(clique_i[0])) &
+                                                  (self.sim_scores.seq2.isin(clique_i[0]))]
+                    drop_j_indx.append(indx + 1)
+            combined.append(clique_i)
+            for indx in sorted(drop_j_indx, reverse=True):
+                del results[indx]
+            del results[0]
         remaining_seqs = self.seq_ids
         for seq in set(seqs_to_remove):
             del remaining_seqs[remaining_seqs.index(seq)]
+
+        # Do not leave orphans by spinning off cliques
+        if len(remaining_seqs) in [1, 2]:
+            return [self]
+
+        for indx, result in enumerate(combined):
+            cluster_ids, cluster_sim_scores = result
+            cluster = Cluster(cluster_ids, sim_scores=cluster_sim_scores, taxa_separator=self.taxa_separator,
+                              parent=self, clique=True)
+            cluster.set_name()
+            results.append(cluster)
 
         if remaining_seqs:
             sim_scores = self.sim_scores[(self.sim_scores.seq1.isin(remaining_seqs)) &
@@ -424,7 +447,6 @@ class Cluster(object):
                                         taxa_separator=self.taxa_separator)
             remaining_cluster.set_name()
             results.append(remaining_cluster)
-
         return results
 
     """
@@ -1386,21 +1408,6 @@ if __name__ == '__main__':
     logging.warning("Total MCL runs: %s" % progress_dict["mcl_runs"])
     logging.warning("\t-- finished in %s --" % TIMER.split())
 
-    '''
-    # Sort out reciprocal best hit cliques
-    logging.warning("\n** Processing best-hit-cliques among clustered paralogs **")
-    final_cliques = []
-    for clstr in final_clusters:
-        if clstr.cliques and clstr.subgroup_counter == 0:
-            for next_clique in clstr.cliques:
-                next_clique.set_name()
-                final_cliques.append(next_clique)
-                for seq_id in next_clique.seq_ids:
-                    clstr.seq_ids.remove(seq_id)
-            clstr.cliques = None
-    final_clusters += final_cliques
-    logging.warning("\t%s cliques extracted" % len(final_cliques))
-    '''
     # Sort out reciprocal best hit cliques
     logging.warning("\n** Processing best-hit-cliques among clustered paralogs **")
     final_cliques = []
