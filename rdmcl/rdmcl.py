@@ -1079,14 +1079,16 @@ class Orphans(object):
                 cluster2database(Cluster(seq_ids, sim_scores, collapse=False), self.sql_broker, alb_obj)
 
             # Pull out the similarity scores between just the large and small cluster sequences
-            lrg2sml_group_data = sim_scores.loc[(sim_scores['seq1'].isin(small_cluster.seq_ids)) | (sim_scores['seq2'].isin(small_cluster.seq_ids))]
-            lrg2sml_group_data = lrg2sml_group_data.loc[(lrg2sml_group_data['seq1'].isin(large_cluster.seq_ids)) | (lrg2sml_group_data['seq2'].isin(large_cluster.seq_ids))]
+            lrg2sml_group_data = sim_scores.loc[(sim_scores['seq1'].isin(small_cluster.seq_ids))
+                                                | (sim_scores['seq2'].isin(small_cluster.seq_ids))]
+            lrg2sml_group_data = lrg2sml_group_data.loc[(lrg2sml_group_data['seq1'].isin(large_cluster.seq_ids))
+                                                        | (lrg2sml_group_data['seq2'].isin(large_cluster.seq_ids))]
             self.tmp_file.write("\tlrg2sml_group_data:\n%s\n" % lrg2sml_group_data)
 
-            # We will confirm that the orphans are sufficiently similar to large group to warrant consideration using t-test
+            # Confirm that the orphans are sufficiently similar to large group to warrant consideration using t-test
             t_test = scipy.stats.ttest_ind(lrg2sml_group_data.score, self.all_sim_scores)
             self.tmp_file.write("\t%s\n\n" % str(t_test))
-            # if t_test.pvalue >= 0.05:  # Therefore, when we fail to reject the null, we consider the group.
+
             # Convert group_data to a numpy array so sm.stats can read it
             data_dict[group_name] = (t_test.pvalue, np.array(lrg2sml_group_data.score))
 
@@ -1098,10 +1100,10 @@ class Orphans(object):
             tmp_df = pd.DataFrame(group[1], columns=['observations'])
             tmp_df['grouplabel'] = group_name
             df = df.append(tmp_df)
-        max_ave = averages.argmax()
+        max_ave_name = averages.argmax()
 
         # Confirm that the largest cluster has sufficient support (t-test value)
-        if data_dict[max_ave][0] <= 0.05:
+        if data_dict[max_ave_name][0] <= 0.05:  # Therefore, when we fail to reject the null, we consider the group.
             self.tmp_file.write("No Matches\n###########################\n\n")
             return False
 
@@ -1115,17 +1117,29 @@ class Orphans(object):
             line = re.sub(" +", "\t", line)
             self.tmp_file.write("%s\n" % line)
             line = line.split("\t")  # Each line --> ['group1', 'group2', 'meandiff', 'lower', 'upper', 'reject]
-            if max_ave in line and 'False' in line:
+            if max_ave_name in line and 'False' in line:
                 break  # Insufficient support to group the gene with max_ave group
-            elif max_ave in line:
+            elif max_ave_name in line:
                 test_group_pvalues.append(abs(float(line[2])))  # Take the abs because sign isn't meaningful
         else:
             # If the 'break' command is not encountered, the gene can be grouped with the max_ave cluster
             # Return the group name and average meandiff (allow calling code to actually do the grouping)
-            self.tmp_file.write("%s\n###########################\n\n" % max_ave)
-            return max_ave, data_dict[max_ave][0]
+            self.tmp_file.write("%s\n###########################\n\n" % max_ave_name)
+            mean_diff = abs(np.mean(data_dict[max_ave_name][1]) - np.mean(self.all_sim_scores))
+            return max_ave_name, mean_diff
         self.tmp_file.write("No Matches\n###########################\n\n")
         return False
+
+    def mc_check_orphans(self, params, args):
+        small_name, next_small_cluster = params
+        tmp_file = args[0]
+        foster_score = self._check_orphan(next_small_cluster)
+        if foster_score:
+            large_name, mean_diff = foster_score
+            with LOCK:
+                with open(tmp_file, "a") as ofile:
+                    ofile.write("%s\t%s\t%s\n" % (small_name, large_name, mean_diff))
+        return
 
     def place_orphans(self):
         if not self.small_clusters:
@@ -1135,15 +1149,22 @@ class Orphans(object):
         starting_orphans = sum([len(sm_clust.seq_ids) for group, sm_clust in self.small_clusters.items()])
         while True:
             remaining_orphans = sum([len(sm_clust.seq_ids) for group, sm_clust in self.small_clusters.items()])
-            indx = 1
-            for small_name, next_small_cluster in self.small_clusters.items():  # ToDo: Can this be multicored?
-                self.printer.write("%s of %s orphans remain. Checking %s/%s orphan groups" %
-                                   (remaining_orphans, starting_orphans, indx, len(self.small_clusters)))
-                indx += 1
-                foster_score = self._check_orphan(next_small_cluster)
-                if foster_score and foster_score[1] > best_cluster["meandiff"]:
-                    best_cluster = OrderedDict([("small_name", small_name), ("large_name", foster_score[0]),
-                                                ("meandiff", foster_score[1])])
+            self.printer.write("%s of %s orphans remain" % (remaining_orphans, starting_orphans))
+            tmp_file = br.TempFile()
+            small_clusters = list(self.small_clusters.items())
+            # Note that this will spin off other run_multicore_function calls if clusters are not in database...
+            br.run_multicore_function(small_clusters, self.mc_check_orphans, [tmp_file.path],
+                                      quiet=True, max_processes=CPUS)
+            lines = tmp_file.read()
+            if lines:
+                lines = lines.strip().split("\n")
+                lines = sorted(lines)
+                for line in lines:
+                    small_name, large_name, mean_diff = line.split("\t")
+                    mean_diff = float(mean_diff)
+                    if mean_diff > best_cluster["meandiff"]:
+                        best_cluster = OrderedDict([("small_name", small_name), ("large_name", large_name),
+                                                    ("meandiff", mean_diff)])
 
             if best_cluster["small_name"]:
                 small_name = best_cluster["small_name"]
