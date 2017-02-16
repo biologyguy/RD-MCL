@@ -129,7 +129,6 @@ class Cluster(object):
         self.sim_scores = sim_scores
         self.taxa_separator = taxa_separator
         self.parent = parent
-        self.base_cluster = self.get_base_cluster()
 
         self.subgroup_counter = 0
         # self.clique_counter = 0
@@ -294,35 +293,26 @@ class Cluster(object):
                 scores.set_value(indx, "score", self.rand_gen.gauss(score, (score * 0.0000001)))
         return scores
 
-    def get_base_cluster(self):
-        """
-        MAYBE NOT NEEDED. DELETE?
-        This traces back to group_0 (the initial base cluster), which is important for calculating cluster scores.
-        :return: The base cluster as a Cluster object
-        """
-        cluster = self
-        while True:
-            if not cluster.parent:
-                return cluster
-            cluster = cluster.parent
-
     def score(self, force=False):
         """
-        Very basic cluster scoring algorithm.
-        Single sequence -> score 0
         :return:
         """
         if self.cluster_score and not force:
             return self.cluster_score
 
-        # sequence_ids should never consist of a single taxa because reciprocal best hit paralogs have been removed
-        # Update: Apparently not true. New paralog best hit cliques can form after the group is broken up.
-        # if len(taxa) == 1:
-        #    raise ReferenceError("Only a single taxa found in sequence_ids...\n%s" % taxa)
-
         unique_taxa = 0
         replicate_taxa = 0
-        base_cluster = self.parent if self.parent else self
+        base_cluster = deepcopy(self.parent) if self.parent else self
+
+        # It's possible that a cluster can have sequences not present in the parent (i.e., following orphan placement);
+        # check for this, and add the sequences to base_cluster if necessary.
+        items_not_in_parent = set(self.seq_ids) - set(base_cluster.seq_ids)
+        for orphan in items_not_in_parent:
+            base_cluster.seq_ids.append(orphan)
+            orphan_taxa = orphan.split(self.taxa_separator)[0]
+            base_cluster.taxa.setdefault(orphan_taxa, [])
+            base_cluster.taxa[orphan_taxa].append(orphan)
+
         score = 1
         for taxon, genes in self.taxa.items():
             if len(genes) == 1:
@@ -1100,16 +1090,6 @@ class Orphans(object):
             # Convert group_data to a numpy array so sm.stats can read it
             data_dict[group_name] = (t_test.pvalue, np.array(lrg2sml_group_data.score))
 
-        """
-        if len(data_dict) == 0:
-            self.tmp_file.write("No Matches\n###########################\n\n")
-            return False
-
-        elif len(data_dict) == 1:
-            group_name, group = list(data_dict.items())[0]
-            self.tmp_file.write("%s\n###########################\n\n" % group_name)
-            return group_name, group[0]
-        """
         # We only need to test the large cluster with the highest average similarity score, so find that cluster.
         averages = pd.Series()
         df = pd.DataFrame(columns=['observations', 'grouplabel'])
@@ -1156,7 +1136,7 @@ class Orphans(object):
         while True:
             remaining_orphans = sum([len(sm_clust.seq_ids) for group, sm_clust in self.small_clusters.items()])
             indx = 1
-            for small_name, next_small_cluster in self.small_clusters.items():
+            for small_name, next_small_cluster in self.small_clusters.items():  # ToDo: Can this be multicored?
                 self.printer.write("%s of %s orphans remain. Checking %s/%s orphan groups" %
                                    (remaining_orphans, starting_orphans, indx, len(self.small_clusters)))
                 indx += 1
