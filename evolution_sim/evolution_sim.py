@@ -19,16 +19,17 @@ import numpy as np
 
 def broker_func(queue):
     sqlite_file = "{0}/{0}.sqlite".format(output_dir)
-    if os.path.exists(sqlite_file):
-        os.remove(sqlite_file)
     connection = sqlite3.connect(sqlite_file)
     cursor = connection.cursor()
-    cursor.execute("CREATE TABLE data_table (runid INTEGER PRIMARY KEY)")
-    cols = [("group", "INTEGER"), ("taxa", "INTEGER"), ("model", "TEXT"), ("branch", "REAL"), ("stdev", "TEXT"),
-            ("alpha", "REAL"), ("catnum", "INTEGER"), ("drop", "REAL"), ("dropnum", "INTEGER"), ("dup", "REAL"),
-            ("dupnum", "INTEGER"), ("tree", "TEXT"), ("groups_file", "TEXT"), ("alignment", "TEXT")]
-    for pair in cols:
-        cursor.execute("ALTER TABLE data_table ADD COLUMN '{0}' {1}".format(pair[0], pair[1]))
+    try:
+        cols = [("num_groups", "INTEGER"), ("num_taxa", "INTEGER"), ("model", "TEXT"), ("branch", "REAL"), ("stdev", "TEXT"),
+                ("alpha", "REAL"), ("catnum", "INTEGER"), ("drop_chance", "REAL"), ("dropnum", "INTEGER"), ("dup", "REAL"),
+                ("dupnum", "INTEGER"), ("tree", "TEXT"), ("groups_file", "TEXT"), ("alignment", "TEXT")]
+
+        cursor.execute("CREATE TABLE data_table (%s)" % ", ".join(["%s %s" % (a, b) for a, b in cols]))
+    except sqlite3.OperationalError as err:
+        if "table data_table already exists" not in str(err):
+            raise err
 
     while True:
         if not queue.empty():
@@ -62,9 +63,9 @@ def fetch(command):
 
 
 def generate(args):
-    groups, taxa, model_type, branch_length, branch_stdev, alpha, categories, drop_chance, num_drops,\
-        duplication_chance, num_duplications, run_id = args
-    generator = TreeGenerator(taxa, groups, branch_length=branch_length, branch_stdev=branch_stdev,
+    num_groups, num_taxa, model_type, branch_length, branch_stdev, alpha, categories, drop_chance, num_drops,\
+        duplication_chance, num_duplications = args
+    generator = TreeGenerator(num_taxa, num_groups, branch_length=branch_length, branch_stdev=branch_stdev,
                               drop_chance=drop_chance, num_drops=num_drops, duplication_chance=duplication_chance,
                               num_duplications=num_duplications)
 
@@ -87,20 +88,18 @@ def generate(args):
     with open(alignment_file.path, 'r') as aln_data:
         alignment = aln_data.read()
 
-    fields = [("group", groups), ("taxa", taxa), ("model", model_type), ("branch", branch_length),
-              ("stdev", branch_stdev), ("alpha", alpha), ("catnum", categories), ("drop", drop_chance),
-              ("dropnum", num_drops), ("dup", duplication_chance), ("dupnum", num_duplications),
-              ("tree", tree_string), ("groups_file", groups_string), ("alignment", alignment)]
+    fields = ["num_groups", "num_taxa", "model", "branch", "stdev", "alpha", "catnum", "drop_chance", "dropnum", "dup", "dupnum",
+              "tree", "groups_file", "alignment"]
 
-    push("INSERT INTO data_table (runid) VALUES ({})".format(run_id))
-    for field in fields:
-        command = "UPDATE data_table SET '{0}'=('{1}') WHERE runid=({2})".format(field[0], field[1], run_id)
-        push(command)
+    values = [num_groups, num_taxa, "'%s'" % model_type, branch_length, "'%s'" % branch_stdev, alpha, categories, drop_chance, num_drops,
+              duplication_chance, num_duplications, "'%s'" % tree_string, "'%s'" % groups_string, "'%s'" % alignment]
+    values = [str(value) for value in values]
 
+    push("INSERT INTO data_table (%s) VALUES (%s)" % (",".join(fields), ", ".join(values)))
     return
 
 
-def rd_mcl():
+def rd_mcl():  # This is broken, because num_runs...
     print()
     printer = DynamicPrint()
     for run in range(num_runs):
@@ -142,7 +141,7 @@ if __name__ == '__main__':
                                                  '\n./evolution_sim.py seed_file output_dir -nt <#> -ng <#> ...')
     parser.add_argument('seed_file', metavar='seqfile', type=str, help="The seed sequence file (most formats are fine)")
     parser.add_argument('output_dir', metavar='name', type=str, help="A name for your run")
-    
+
     parser.add_argument('-nt', '--num_taxa', nargs='+', type=int, required=True,
                         help='The number of taxa to be generated. Specify number or range')
     parser.add_argument('-ng', '--num_groups', nargs='+', type=int, required=True,
@@ -161,7 +160,7 @@ if __name__ == '__main__':
     parser.add_argument('-ndp', '--num_duplications', nargs='+', type=int, default=[0],
                         help='The number of times to try adding a species from the tree')
     parser.add_argument('-mdl', '--models', nargs='+', default=['WAG'], choices=['WAG', 'JTT', 'LG'],
-                        help='The number of times to try adding a species from the tree')
+                        help='What evolutionary model do you want to apply?')
     parser.add_argument('-alp', '--alpha', nargs='+', type=float, default=[2],
                         help='The shape parameter of the gamma distribution')
     parser.add_argument('-cat', '--categories', nargs='+', type=int, default=[3],
@@ -219,7 +218,6 @@ if __name__ == '__main__':
 
     # ugly-ass loop
     arguments = []
-    runid = 0
     for grp in group_range:
         for tax in taxa_range:
             for mdl in models:
@@ -231,10 +229,8 @@ if __name__ == '__main__':
                                     for ndr in num_drops_range:
                                         for dup in duplication_chances:
                                             for ndp in num_duplications_range:
-                                                arguments.append((grp, tax, mdl, br, stdv, alp, cat, drp, ndr, dup, ndp,
-                                                                  runid))
-                                                runid += 1
-    num_runs = runid
+                                                arguments.append((grp, tax, mdl, br, stdv, alp, 
+                                                                  cat, drp, ndr, dup, ndp))
 
     broker_queue = SimpleQueue()
     broker = Process(target=broker_func, args=[broker_queue])
@@ -250,8 +246,9 @@ if __name__ == '__main__':
     os.remove("site_rates_info.txt")
     os.remove("site_rates.txt")
 
-    if call_rdmcl:
-        rd_mcl()
+    # Broken
+    #if call_rdmcl:
+    #    rd_mcl()
 
     while not broker_queue.empty():
         pass
