@@ -384,7 +384,7 @@ class Cluster(object):
         if not paralogs:
             return [self]
 
-        # RBHCs with any overlap cannot be separated from the cluster
+        # RBHCs with any overlap within a taxon cannot be separated from the cluster
         seqs_to_remove = []
         for taxa_id, rbhc_dfs in paralogs.items():
             marked_for_del = []
@@ -410,9 +410,14 @@ class Cluster(object):
             for clique in rbhc_dfs:
                 clique_ids = set(list(clique.seq1.values) + list(clique.seq2.values))
                 clique_ids = list(clique_ids)
-                clique_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique_ids)) &
-                                                (self.sim_scores.seq2.isin(clique_ids))]
-                total_scores = self.sim_scores.drop(clique_scores.index.values)
+                clique_scores = self.pull_scores_subgraph(clique_ids)
+                total_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique_ids)) |
+                                               (self.sim_scores.seq2.isin(clique_ids))]
+
+                total_scores = total_scores[((total_scores.seq1.isin(clique_ids))
+                                             & (total_scores.seq2.isin(clique_ids) == False)) |
+                                            ((total_scores.seq2.isin(clique_ids))
+                                             & (total_scores.seq1.isin(clique_ids) == False))]
 
                 # if all sim scores in a group are identical, we can't get a KDE. Fix by perturbing the scores a little.
                 clique_scores = self.perturb(clique_scores)
@@ -420,8 +425,8 @@ class Cluster(object):
 
                 total_kde = scipy.stats.gaussian_kde(total_scores.score, bw_method='silverman')
                 clique_kde = scipy.stats.gaussian_kde(clique_scores.score, bw_method='silverman')
-                clique_resample = clique_kde.resample(10000)
-                clique95 = [np.percentile(a=clique_resample, q=2.5), np.percentile(clique_resample, 97.5)]
+                clique_resample = clique_kde.resample(10000)  # Note that this is a random sampling not controlled by r_seed!
+                clique95 = [np.percentile(clique_resample, 2.5), np.percentile(clique_resample, 97.5)]
                 integrated = total_kde.integrate_box_1d(clique95[0], clique95[1])
                 if integrated < 0.05:
                     seqs_to_remove += clique_ids
