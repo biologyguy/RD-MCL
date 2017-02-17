@@ -22,7 +22,7 @@ def broker_func(queue):
     connection = sqlite3.connect(sqlite_file)
     cursor = connection.cursor()
     try:
-        cols = [("num_groups", "INTEGER"), ("num_taxa", "INTEGER"), ("model", "TEXT"), ("branch", "REAL"), ("stdev", "TEXT"),
+        cols = [("num_paralogs", "INTEGER"), ("num_taxa", "INTEGER"), ("model", "TEXT"), ("branch", "REAL"), ("stdev", "TEXT"),
                 ("alpha", "REAL"), ("catnum", "INTEGER"), ("drop_chance", "REAL"), ("dropnum", "INTEGER"), ("dup", "REAL"),
                 ("dupnum", "INTEGER"), ("tree", "TEXT"), ("groups_file", "TEXT"), ("alignment", "TEXT")]
 
@@ -63,9 +63,9 @@ def fetch(command):
 
 
 def generate(args):
-    num_groups, num_taxa, model_type, branch_length, branch_stdev, alpha, categories, drop_chance, num_drops,\
+    num_paralogs, num_taxa, model_type, branch_length, branch_stdev, alpha, categories, drop_chance, num_drops,\
         duplication_chance, num_duplications = args
-    generator = TreeGenerator(num_taxa, num_groups, branch_length=branch_length, branch_stdev=branch_stdev,
+    generator = TreeGenerator(num_paralogs, num_taxa, branch_length=branch_length, branch_stdev=branch_stdev,
                               drop_chance=drop_chance, num_drops=num_drops, duplication_chance=duplication_chance,
                               num_duplications=num_duplications)
 
@@ -88,10 +88,10 @@ def generate(args):
     with open(alignment_file.path, 'r') as aln_data:
         alignment = aln_data.read()
 
-    fields = ["num_groups", "num_taxa", "model", "branch", "stdev", "alpha", "catnum", "drop_chance", "dropnum", "dup", "dupnum",
+    fields = ["num_paralogs", "num_taxa", "model", "branch", "stdev", "alpha", "catnum", "drop_chance", "dropnum", "dup", "dupnum",
               "tree", "groups_file", "alignment"]
 
-    values = [num_groups, num_taxa, "'%s'" % model_type, branch_length, "'%s'" % branch_stdev, alpha, categories, drop_chance, num_drops,
+    values = [num_paralogs, num_taxa, "'%s'" % model_type, branch_length, "'%s'" % branch_stdev, alpha, categories, drop_chance, num_drops,
               duplication_chance, num_duplications, "'%s'" % tree_string, "'%s'" % groups_string, "'%s'" % alignment]
     values = [str(value) for value in values]
 
@@ -144,7 +144,7 @@ if __name__ == '__main__':
 
     parser.add_argument('-nt', '--num_taxa', nargs='+', type=int, required=True,
                         help='The number of taxa to be generated. Specify number or range')
-    parser.add_argument('-ng', '--num_groups', nargs='+', type=int, required=True,
+    parser.add_argument('-np', '--num_paralogs', nargs='+', type=int, required=True,
                         help='The number of orthogroups to be generated. Specify number or range')
 
     parser.add_argument('-bl', '--branch_length', nargs="+", type=float, default=[1],
@@ -181,7 +181,7 @@ if __name__ == '__main__':
     taxa_range = sorted(in_args.num_taxa)
     taxa_range = taxa_range if len(taxa_range) == 1 else list(range(taxa_range[0], taxa_range[1] + 1))
 
-    group_range = sorted(in_args.num_groups)
+    group_range = sorted(in_args.num_paralogs)
     group_range = group_range if len(group_range) == 1 else list(range(group_range[0], group_range[1] + 1))
 
     branch_lengths = make_range_from_inargs(in_args.branch_length)

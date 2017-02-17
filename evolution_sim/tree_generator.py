@@ -41,9 +41,9 @@ def generate_perfect_tree(num_taxa, groups):  # Generates a perfect bipartition 
 
 
 class TreeGenerator:
-    def __init__(self, num_genes, num_taxa, seed=12345, branch_length=1.0, branch_stdev=None, drop_chance=0.0,
+    def __init__(self, num_paralogs, num_taxa, seed=None, branch_length=1.0, branch_stdev=None, drop_chance=0.0,
                  num_drops=0, duplication_chance=0.0, num_duplications=0):
-        self.num_genes = num_genes
+        self.num_genes = num_paralogs
         self.num_taxa = num_taxa
         self.branch_length = branch_length
 
@@ -62,7 +62,7 @@ class TreeGenerator:
             self._generate_taxa_name()
         labels = ["%s-GENE_NAME" % self.taxa[x] for x in range(num_taxa)]  # Generates a list of taxa
 
-        self.gene_tree = Tree.randomized(num_genes, branch_length=branch_length, branch_stdev=branch_stdev)
+        self.gene_tree = Tree.randomized(num_paralogs, branch_length=branch_length, branch_stdev=branch_stdev)
         self.species_tree = Tree.randomized(labels, branch_length=branch_length, branch_stdev=branch_stdev)
         self.root = self.gene_tree.clade
 
@@ -102,11 +102,11 @@ class TreeGenerator:
                 self._recursive_rename(child, gene)
 
     def _copy_species_tree(self, gene):  # Returns a copy of the species tree with a unique gene name
-        tree = copy.deepcopy(self.species_tree.clade)
-        self._recursive_rename(tree, gene)
+        sub_tree = copy.deepcopy(self.species_tree.clade)
+        self._recursive_rename(sub_tree, gene)
 
         for x in range(self.num_duplications):
-            leaves = tree.get_terminals()
+            leaves = sub_tree.get_terminals()
             duplicate = self.rand_gen.random()
             if duplicate <= self.duplication_chance:
                 duplicate = self.rand_gen.choice(leaves)
@@ -114,18 +114,18 @@ class TreeGenerator:
                 duplicate.name = ""
 
         for x in range(self.num_drops):
-            leaves = tree.get_terminals()
+            leaves = sub_tree.get_terminals()
             drop = self.rand_gen.random()
             if drop <= self.drop_chance:
-                drop = self.rand_gen.choice(leaves)
-                tree.collapse_all(drop)
+                dropped_gene = self.rand_gen.choice(leaves)
+                sub_tree.collapse(dropped_gene)
 
-        leaf_names = tree.get_terminals()
+        leaf_names = sub_tree.get_terminals()
         for x in range(len(leaf_names)):
             leaf_names[x] = leaf_names[x].name
         self._groups.append(leaf_names)
 
-        return tree
+        return sub_tree
 
     def _recursive_build(self, node):  # Recursively replaces the terminal nodes of the gene tree with species trees
         for indx, child in enumerate(node):
