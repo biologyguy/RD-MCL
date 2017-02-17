@@ -38,6 +38,7 @@ from random import gauss, Random, randint
 from math import ceil, log2
 from collections import OrderedDict
 from copy import deepcopy
+from hashlib import md5
 
 # 3rd party
 import pandas as pd
@@ -293,6 +294,17 @@ class Cluster(object):
                 scores.set_value(indx, "score", self.rand_gen.gauss(score, (score * 0.0000001)))
         return scores
 
+    def get_base_cluster(self):
+        """
+        Iteratively step backwards through parents until the origin is found
+        :return:
+        """
+        cluster = self
+        while True:
+            if not cluster.parent:
+                return cluster
+            cluster = cluster.parent
+
     def score(self, force=False):
         """
         :return:
@@ -345,6 +357,11 @@ class Cluster(object):
         self.cluster_score = score
         return self.cluster_score
 
+    def pull_scores_subgraph(self, seq_ids):
+        assert not set(seq_ids) - set(self.seq_ids)  # Confirm that all requested seq_ids are present
+        subgraph = self.sim_scores[(self.sim_scores.seq1.isin(seq_ids)) & (self.sim_scores.seq2.isin(seq_ids))]
+        return subgraph
+
     def create_rbh_cliques(self):
         results = []
         # Anything less than 6 sequences cannot be subdivided into smaller cliques, because it would create orphans
@@ -354,9 +371,15 @@ class Cluster(object):
         paralogs = OrderedDict()
         for taxa_id, group in self.taxa.items():
             if len(group) > 1:
-                paralogs[taxa_id] = [self.recursive_best_hits(gene,
-                                                              pd.DataFrame(columns=["seq1", "seq2", "score"]),
-                                                              [gene]) for gene in group]
+                for gene in group:
+                    rbhc = self.recursive_best_hits(gene, pd.DataFrame(columns=["seq1", "seq2", "score"]), [gene])
+                    # If any clique encompasses the entire cluster, we're done
+                    if len(set(list(rbhc.seq1.values) + list(rbhc.seq2.values))) == len(self):
+                        return [self]
+
+                    paralogs.setdefault(taxa_id, [])
+                    paralogs[taxa_id].append(rbhc)
+
         # If there aren't any paralogs, we can't break up the group
         if not paralogs:
             return [self]
@@ -398,13 +421,13 @@ class Cluster(object):
                 total_kde = scipy.stats.gaussian_kde(total_scores.score, bw_method='silverman')
                 clique_kde = scipy.stats.gaussian_kde(clique_scores.score, bw_method='silverman')
                 clique_resample = clique_kde.resample(10000)
-                clique95 = [np.percentile(clique_resample, 2.5), np.percentile(clique_resample, 97.5)]
+                clique95 = [np.percentile(a=clique_resample, q=2.5), np.percentile(clique_resample, 97.5)]
                 integrated = total_kde.integrate_box_1d(clique95[0], clique95[1])
                 if integrated < 0.05:
                     seqs_to_remove += clique_ids
                     results.append([clique_ids, clique_scores])
 
-        # After all that, no significant cliques to spin off as independent clusters
+        # After all that, no significant cliques to spin off as independent clusters...
         if not seqs_to_remove:
             return [self]
 
@@ -417,8 +440,7 @@ class Cluster(object):
                 if list(set(clique_i[0]) & set(clique_j[0])):
                     clique_i[0] = set(clique_i[0] + clique_j[0])
                     clique_i[0] = sorted(list(clique_i[0]))
-                    clique_i[1] = self.sim_scores[(self.sim_scores.seq1.isin(clique_i[0])) &
-                                                  (self.sim_scores.seq2.isin(clique_i[0]))]
+                    clique_i[1] = self.pull_scores_subgraph(clique_i[0])
                     drop_j_indx.append(indx + 1)
             combined.append(clique_i)
             for indx in sorted(drop_j_indx, reverse=True):
@@ -440,121 +462,13 @@ class Cluster(object):
             results.append(cluster)
 
         if remaining_seqs:
-            sim_scores = self.sim_scores[(self.sim_scores.seq1.isin(remaining_seqs)) &
-                                         (self.sim_scores.seq2.isin(remaining_seqs))]
+            sim_scores = self.pull_scores_subgraph(remaining_seqs)
 
             remaining_cluster = Cluster(remaining_seqs, sim_scores=sim_scores, parent=self,
                                         taxa_separator=self.taxa_separator)
             remaining_cluster.set_name()
             results.append(remaining_cluster)
         return results
-
-    """
-    Much expanded scoring system that is currently broken
-    def score_bak(self):
-        # if self.cluster_score and not force:
-        #    return self.cluster_score
-        # Confirm that a score for this cluster has not been calculated before
-        prev_scores = scored_clusters()
-        seq_ids = helpers.md5_hash("".join(sorted(self.seq_ids)))
-        # if seq_ids in prev_scores and not force:
-        #    self.cluster_score = float(query(seq_ids, 'cluster_score'))
-        #    return self.cluster_score
-
-        # Don't ignore the possibility of cliques, which will alter the score.
-        # Note that cliques are assumed to be the smallest unit, so not containing any sub-cliques. Valid?
-        if not self.cliques:
-            best_hits = pd.DataFrame(columns=["seq1", "seq2", "score"])
-            # pull out all genes with replicate taxa and get best hits
-            for taxa, genes in self.taxa.items():
-                if len(genes) > 1:
-                    for gene in genes:
-                        best_hits = self.recursive_best_hits(gene, best_hits, [gene])
-
-            cliques = []
-            for edge in best_hits.itertuples():
-                match_indicies = []
-                for indx, clique in enumerate(cliques):
-                    if edge.seq1 in clique and indx not in match_indicies:
-                        match_indicies.append(indx)
-                    if edge.seq2 in clique and indx not in match_indicies:
-                        match_indicies.append(indx)
-                    if len(match_indicies) == 2:
-                        break
-
-                if not match_indicies:
-                    cliques.append([edge.seq1, edge.seq2])
-                elif len(match_indicies) == 1:
-                    new_clique = set(cliques[match_indicies[0]] + [edge.seq1, edge.seq2])
-                    cliques[match_indicies[0]] = list(new_clique)
-                else:
-                    match_indicies.sort()
-                    new_clique = set(cliques[match_indicies[0]] + cliques[match_indicies[1]])
-                    cliques[match_indicies[0]] = list(new_clique)
-                    del cliques[match_indicies[1]]
-
-            # Strip out any 'cliques' that contain less than 3 genes
-            cliques = [clique for clique in cliques if len(clique) >= 3]
-
-            # Get the similarity scores for within cliques and between cliques-remaining sequences, then generate
-            # kernel-density functions for both. The overlap between the two functions is used to determine
-            # whether they should be separated
-            for clique in cliques:
-                clique_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique)) &
-                                                (self.sim_scores.seq2.isin(clique))]
-                total_scores = self.sim_scores.drop(clique_scores.index.values)
-
-                # if a clique is found that pulls in every single gene, skip
-                if not len(total_scores):
-                    continue
-
-                # if all sim scores in a group are identical, we can't get a KDE. Fix by perturbing the scores a little.
-                clique_scores = self.perturb(clique_scores)
-                total_scores = self.perturb(total_scores)
-
-                total_kde = scipy.stats.gaussian_kde(total_scores.score, bw_method='silverman')
-                clique_kde = scipy.stats.gaussian_kde(clique_scores.score, bw_method='silverman')
-                clique_resample = clique_kde.resample(10000)
-                clique95 = [np.percentile(clique_resample, 2.5), np.percentile(clique_resample, 97.5)]
-                integrated = total_kde.integrate_box_1d(clique95[0], clique95[1])
-                if integrated < 0.05:
-                    clique = Cluster(clique, sim_scores=clique_scores, taxa_separator=self.taxa_separator,
-                                     parent=self, clique=True)
-                    self.cliques.append(clique)
-
-        if self.cliques:
-            clique_list = [i for j in self.cliques for i in j.seq_ids]
-            decliqued_cluster = []
-            for gene in self.seq_ids:
-                if gene not in clique_list:
-                    decliqued_cluster.append(gene)
-            decliqued_cluster = decliqued_cluster
-        else:
-            decliqued_cluster = self.seq_ids
-
-        self.cluster_score = self.score(decliqued_cluster)
-        for clique in self.cliques:
-            clique_ids = helpers.md5_hash("".join(sorted(clique.seq_ids)))
-            sb_copy = Sb.make_copy(seqbuddy)
-            sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in clique.seq_ids]))
-            alb_obj = generate_msa(sb_copy)
-
-            # if clique_ids in prev_scores:
-            #    self.cluster_score += float(query(clique_ids, 'cluster_score'))
-            # else:
-
-            clique_score = self.score(clique.seq_ids)
-            self.cluster_score += clique_score
-            with LOCK:
-                push(clique_ids, 'cluster_score', str(clique_score))
-                sim_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique.seq_ids)) &
-                                             (self.sim_scores.seq2.isin(clique.seq_ids))]
-                push(clique_ids, 'graph', sim_scores.to_csv(index=False))
-        with LOCK:
-            push(seq_ids, 'cluster_score', str(self.cluster_score))
-            push(seq_ids, 'graph', self.sim_scores.to_csv(index=False))
-        return self.cluster_score
-    """
 
     """The following are possible score modifier schemes to account for group size
     def gpt(self, score, taxa):  # groups per taxa
@@ -1064,16 +978,19 @@ class Orphans(object):
                 self.small_clusters[cluster.name()] = cluster
 
         if not self.small_clusters:
-            logging.warning("No orphaned sequences present")
+            # logging.warning("No orphaned sequences present")
+            pass
         elif not self.large_clusters:
-            logging.warning("All clusters have only 1 or 2 sequences present, suggesting there are issues with your data")
-            logging.info(" Are there a large number of paralogs and only a small number of taxa present?")
+            # logging.warning("All clusters have only 1 or 2 sequences present, suggesting there are issues with your data")
+            # logging.info(" Are there a large number of paralogs and only a small number of taxa present?")
+            pass
         elif len(self.large_clusters) == 1:
-            logging.warning("Only one orthogroup with >2 sequences present, suggesting there are issues with your data")
-            logging.info(" Are there a large number of taxa and only a small number of orthologs present?")
+            # logging.warning("Only one orthogroup with >2 sequences present, suggesting there are issues with your data")
+            # logging.info(" Are there a large number of taxa and only a small number of orthologs present?")
+            pass
         else:
             self.num_orphans = sum([len(cluster) for group_name, cluster in self.small_clusters.items()])
-            logging.warning("%s orphaned sequences present" % self.num_orphans)
+            # logging.warning("%s orphaned sequences present" % self.num_orphans)
         return
 
     def _check_orphan(self, small_cluster):
@@ -1192,11 +1109,14 @@ class Orphans(object):
                 small_name = best_cluster["small_name"]
                 large_name = best_cluster["large_name"]
                 self.large_clusters[large_name].seq_ids += self.small_clusters[small_name].seq_ids
+                base_cluster = self.large_clusters[large_name].get_base_cluster()
+                subgraph = base_cluster.pull_scores_subgraph(self.large_clusters[large_name].seq_ids)
+                self.large_clusters[large_name].sim_scores = subgraph
 
                 for taxon, seq_ids in self.small_clusters[small_name].taxa.items():
                     self.large_clusters[large_name].taxa.setdefault(taxon, [])
                     self.large_clusters[large_name].taxa[taxon] += seq_ids
-                logging.info("\t%s added to %s" % (" and ".join(self.small_clusters[small_name].seq_ids), large_name))
+                # logging.info("\t%s added to %s" % (" and ".join(self.small_clusters[small_name].seq_ids), large_name))
                 fostered_orphans += len(self.small_clusters[small_name].seq_ids)
                 del self.small_clusters[small_name]
                 best_cluster = OrderedDict([("small_name", None), ("large_name", None), ("meandiff", 0)])
@@ -1206,6 +1126,7 @@ class Orphans(object):
         self.clusters = [cluster for group, cluster in self.small_clusters.items()] + \
                         [cluster for group, cluster in self.large_clusters.items()]
 
+        """
         if not fostered_orphans:
             logging.warning("No orphaned sequences were placed in orthogroups.")
         elif fostered_orphans == 1:
@@ -1214,6 +1135,7 @@ class Orphans(object):
             logging.warning("%s orphaned sequences have found new homes in orthogroups!" % fostered_orphans)
             logging.warning("\tNote that all of the saved alignment, mcmcmc, and sim_score\n"
                             "\tfiles will only include the original sequences.")
+        """
         return
 
 # NOTE: There used to be a support function. Check the workscripts GitHub history
@@ -1408,26 +1330,25 @@ if __name__ == '__main__':
     logging.warning("Total MCL runs: %s" % progress_dict["mcl_runs"])
     logging.warning("\t-- finished in %s --" % TIMER.split())
 
-    # Sort out reciprocal best hit cliques
-    logging.warning("\n** Processing best-hit-cliques among clustered paralogs **")
-    final_cliques = []
-    for clstr in final_clusters:
-        final_cliques += clstr.create_rbh_cliques()
+    logging.warning("\n** Iterative placement of orphans and paralog RBHC removal **")
+    check_md5 = None
+    while check_md5 != md5(str(sorted([clust.seq_ids for clust in final_clusters])).encode("utf-8")).hexdigest():
+        check_md5 = md5(str(sorted([clust.seq_ids for clust in final_clusters])).encode("utf-8")).hexdigest()
 
-    final_clusters = final_cliques
+        # Sort out reciprocal best hit cliques
+        final_cliques = []
+        for clstr in final_clusters:
+            final_cliques += clstr.create_rbh_cliques()
 
-    # logging.warning("\t%s cliques extracted" % len(final_cliques))
-    # sys.exit()
-    # #################### Format the clusters and output to file #################### #
-    # Fold singletons and doublets back into groups. This can't be 'resumed', because it changes the clusters
-    if not in_args.supress_singlet_folding:
-        logging.warning("\n** Folding orphan sequences into clusters **")
-        orphans = Orphans(seqbuddy=sequences, clusters=final_clusters,
-                          sql_broker=broker, psi_pred_ss2_dfs=psi_pred_files)
-        orphans.place_orphans()
-        orphans.tmp_file.save("temp.log")
-        final_clusters = orphans.clusters
-        logging.warning("\t-- finished in %s --" % TIMER.split())
+        final_clusters = final_cliques
+
+        # Fold singletons and doublets back into groups.
+        if not in_args.supress_singlet_folding:
+            orphans = Orphans(seqbuddy=sequences, clusters=final_clusters,
+                              sql_broker=broker, psi_pred_ss2_dfs=psi_pred_files)
+            orphans.place_orphans()
+            final_clusters = orphans.clusters
+    logging.warning("\t-- finished in %s --" % TIMER.split())
 
     if group_0_cluster.collapsed_genes:
         logging.warning("\nPlacing collapsed paralogs into their respective clusters")
