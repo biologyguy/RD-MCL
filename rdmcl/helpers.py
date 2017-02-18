@@ -201,6 +201,7 @@ class MarkovClustering(object):
 
     def mcl_step(self):
         # Expand
+        # ToDo: There is an issue here, with simulated data and the next command dies quietly
         self.trans_matrix = self.trans_matrix.dot(self.trans_matrix)
         # Inflate
         self.trans_matrix = self.trans_matrix ** self.inflation

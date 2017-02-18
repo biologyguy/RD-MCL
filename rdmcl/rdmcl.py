@@ -1155,14 +1155,17 @@ if __name__ == '__main__':
     parser.add_argument("sequences", help="Location of sequence file", action="store")
     parser.add_argument("outdir", action="store", default=os.path.join(os.getcwd(), "rd-mcd"),
                         help="Where should results be written?")
+    parser.add_argument("-sql", "--sqlite_db", action="store", help="Specify a SQLite database location.")
     parser.add_argument("-mcs", "--mcmcmc_steps", default=1000, type=int,
                         help="Specify how deeply to sample MCL parameters")
-    parser.add_argument("-sr", "--supress_recursion", action="store_true",
+    parser.add_argument("-sr", "--suppress_recursion", action="store_true",
                         help="Stop after a single round of MCL. For testing.")
-    parser.add_argument("-scc", "--supress_clique_check", action="store_true",
+    parser.add_argument("-scc", "--suppress_clique_check", action="store_true",
                         help="Do not check for or break up cliques. For testing.")
-    parser.add_argument("-ssf", "--supress_singlet_folding", action="store_true",
+    parser.add_argument("-ssf", "--suppress_singlet_folding", action="store_true",
                         help="Do not check for or merge singlets. For testing.")
+    parser.add_argument("-sit", "--suppress_iteration", action="store_true",
+                        help="Only check for cliques and orphans once")
     parser.add_argument("-nt", "--no_msa_trim", action="store_true",
                         help="Don't apply the gappyout algorithm to MSAs before scoring")
     parser.add_argument("-op", "--open_penalty", help="Penalty for opening a gap in pairwise alignment scoring",
@@ -1203,7 +1206,9 @@ if __name__ == '__main__':
 
     logging.warning("\nLaunching SQLite Daemon")
 
-    broker = helpers.SQLiteBroker(db_file=os.path.join(in_args.outdir, "sqlite_db.sqlite"))
+    sqlite_path = os.path.join(in_args.outdir, "sqlite_db.sqlite") if not in_args.sqlite_db \
+        else os.path.abspath(in_args.sqlite_db)
+    broker = helpers.SQLiteBroker(db_file=sqlite_path)
     broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
                                        "graph TEXT", "cluster_score TEXT"])
     broker.start_broker()
@@ -1234,8 +1239,8 @@ if __name__ == '__main__':
     # Move log file into output directory
     logger_obj.move_log(os.path.join(in_args.outdir, "rdmcl.log"))
 
-    # clique_check = True if not in_args.supress_clique_check else False
-    # recursion_check = True if not in_args.supress_recursion else False
+    # clique_check = True if not in_args.suppress_clique_check else False
+    # recursion_check = True if not in_args.suppress_recursion else False
 
     # PSIPRED
     logging.warning("\n** PSI-Pred **")
@@ -1341,18 +1346,21 @@ if __name__ == '__main__':
         check_md5 = md5(str(sorted([clust.seq_ids for clust in final_clusters])).encode("utf-8")).hexdigest()
 
         # Sort out reciprocal best hit cliques
-        final_cliques = []
-        for clstr in final_clusters:
-            final_cliques += clstr.create_rbh_cliques()
-
-        final_clusters = final_cliques
+        if not in_args.suppress_clique_check:
+            final_cliques = []
+            for clstr in final_clusters:
+                final_cliques += clstr.create_rbh_cliques()
+            final_clusters = final_cliques
 
         # Fold singletons and doublets back into groups.
-        if not in_args.supress_singlet_folding:
+        if not in_args.suppress_singlet_folding:
             orphans = Orphans(seqbuddy=sequences, clusters=final_clusters,
                               sql_broker=broker, psi_pred_ss2_dfs=psi_pred_files)
             orphans.place_orphans()
             final_clusters = orphans.clusters
+
+        if in_args.suppress_iteration:
+            break
     logging.warning("\t-- finished in %s --" % TIMER.split())
 
     if group_0_cluster.collapsed_genes:
