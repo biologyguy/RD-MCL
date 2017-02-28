@@ -1156,6 +1156,8 @@ if __name__ == '__main__':
     parser.add_argument("outdir", action="store", default=os.path.join(os.getcwd(), "rd-mcd"),
                         help="Where should results be written?")
     parser.add_argument("-sql", "--sqlite_db", action="store", help="Specify a SQLite database location.")
+    parser.add_argument("-psi", "--psi_pred_dir", action="store",
+                        help="If PSI-Pred files are pre-calculated, tell us where.")
     parser.add_argument("-mcs", "--mcmcmc_steps", default=1000, type=int,
                         help="Specify how deeply to sample MCL parameters")
     parser.add_argument("-sr", "--suppress_recursion", action="store_true",
@@ -1246,8 +1248,14 @@ if __name__ == '__main__':
     logging.warning("\n** PSI-Pred **")
     records_missing_ss_files = []
     records_with_ss_files = []
+    if in_args.psi_pred_dir and not os.path.isdir(in_args.psi_pred_dir):
+        logging.warning("PSI-Pred directory indicated below does not exits:\n%s \tUsing default location instead."
+                        % in_args.psi_pred_dir)
+        in_args.psi_pred_dir = False
+
     for record in sequences.records:
-        if os.path.isfile(os.path.join(in_args.outdir, "psi_pred", "%s.ss2" % record.id)):
+        if (in_args.psi_pred_dir and os.path.isfile(os.path.join(in_args.psi_pred_dir, "%s.ss2" % record.id))) \
+                or os.path.isfile(os.path.join(in_args.outdir, "psi_pred", "%s.ss2" % record.id)):
             records_with_ss_files.append(record.id)
         else:
             records_missing_ss_files.append(record)
@@ -1260,9 +1268,16 @@ if __name__ == '__main__':
         logging.info("\t-- finished in %s --" % TIMER.split())
         logging.info("\tfiles saved to {0}{1}psi_pred{1}".format(in_args.outdir, os.sep))
     else:
-        logging.warning("RESUME: All PSI-Pred .ss2 files found in {0}{1}psi_pred{1}".format(in_args.outdir, os.sep))
-    psi_pred_files = [(record.id, read_ss2_file(os.path.join(in_args.outdir, "psi_pred", "%s.ss2" % record.id)))
-                      for record in sequences.records]
+        logging.warning("RESUME: All PSI-Pred .ss2 files found")
+
+    psi_pred_files = []
+    for record in sequences.records:
+        default_path = os.path.join(in_args.outdir, "psi_pred", "%s.ss2" % record.id)
+        if os.path.isfile(default_path):
+            psi_pred_files.append((record.id, read_ss2_file(default_path)))
+        else:
+            psi_pred_files.append((record.id, read_ss2_file(os.path.join(in_args.psi_pred_dir, "%s.ss2" % record.id))))
+
     psi_pred_files = OrderedDict(psi_pred_files)
 
     # Initial alignment
