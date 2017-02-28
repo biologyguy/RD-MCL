@@ -593,7 +593,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                 ofile.write('\t'.join(master_cluster.seq_ids))
         if end_message:
             with open(os.path.join(temp_dir.path, "end_message.log"), "w") as ofile:
-                ofile.write(end_message)
+                ofile.write(end_message + "\n")
 
         if not os.path.isdir(os.path.join(outdir, "mcmcmc", master_cluster.name())):
             temp_dir.save(os.path.join(outdir, "mcmcmc", master_cluster.name()))
@@ -635,20 +635,31 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         return cluster_list
 
     # Set a 'worst score' that is reasonable for the data set
-    worst_score = 10000000  # arbitrarily large number to start
+    worst_score = None
     for chain in mcmcmc_factory.chains:
-        worst_score = chain.raw_min if chain.raw_min < worst_score else worst_score
+        worst_score = chain.raw_min if worst_score is None or chain.raw_min < worst_score else worst_score
 
     mcmcmc_factory.reset_params(["%s" % temp_dir.path, worst_score, seqbuddy, master_cluster,
                                  taxa_separator, sql_broker, psi_pred_ss2_dfs, progress])
     mcmcmc_factory.run()
     mcmcmc_output = pd.read_csv(os.path.join(temp_dir.path, "mcmcmc_out.csv"), "\t", index_col=False)
-    best_score = max(mcmcmc_output["result"])
-    if best_score <= master_cluster.score():
-        save_cluster("New best score of %s is less than master cluster at %s" % (best_score, master_cluster.score()))
+    best_score = mcmcmc_output.loc[mcmcmc_output["result"] == mcmcmc_output["result"].max()]
+    if best_score["result"].iloc[0] <= master_cluster.score():
+        save_cluster("New best score of %s is less than master cluster at %s"
+                     % (best_score["result"].iloc[0], master_cluster.score()))
         return cluster_list
 
-    mcl_clusters = parse_mcl_clusters(os.path.join(temp_dir.path, "best_group"))
+    mcl_obj = helpers.MarkovClustering(master_cluster.sim_scores, inflation=best_score["I"].iloc[0],
+                                       edge_sim_threshold=best_score["gq"].iloc[0])
+    mcl_obj.run()
+    progress.update('mcl_runs', 1)
+    mcl_clusters = mcl_obj.clusters
+
+    # Write out the actual best clusters
+    best_clusters = ['\t'.join(cluster) for cluster in mcl_clusters]
+    with open(os.path.join(temp_dir.path, "best_group"), "w") as ofile:
+        ofile.write('\n'.join(best_clusters))
+
     recursion_clusters = []
     for sub_cluster in mcl_clusters:
         cluster_ids_hash = helpers.md5_hash(", ".join(sorted(sub_cluster)))
@@ -757,14 +768,14 @@ def mcmcmc_mcl(args, params):
             results = ifile.readlines()
             results = [result.strip() for result in results]
             results.append(",".join([cluster.seq_id_hash for cluster in clusters]))
-
-        if len(results) != MCMCMC_CHAINS:
-            with open(os.path.join(exter_tmp_dir, "max.txt"), "w") as ofile:
-                ofile.write("\n".join(results))
-        else:
             results = sorted(results)
+
+        with open(os.path.join(exter_tmp_dir, "max.txt"), "w") as ofile:
+            ofile.write("\n".join(results))
+
+        if len(results) == MCMCMC_CHAINS:
             best_score = None
-            best_clusters = []  # Hopefully just find a single best cluster, but could be more
+            best_clusters = []  # Hopefully just find a single best set of cluster, but could be more
             for clusters in results:
                 score_sum = 0
                 cluster_ids = []
