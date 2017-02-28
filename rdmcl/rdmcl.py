@@ -586,8 +586,15 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     :param r_seed: Set the random generator seed value
     :return: list of sequence_ids objects
     """
-    def save_cluster():
+    def save_cluster(end_message=None):
         cluster_list.append(master_cluster)
+        if not os.path.isfile(os.path.join(temp_dir.path, "best_group")):
+            with open(os.path.join(temp_dir.path, "best_group"), "w") as ofile:
+                ofile.write('\t'.join(master_cluster.seq_ids))
+        if end_message:
+            with open(os.path.join(temp_dir.path, "end_message.log"), "w") as ofile:
+                ofile.write(end_message)
+
         if not os.path.isdir(os.path.join(outdir, "mcmcmc", master_cluster.name())):
             temp_dir.save(os.path.join(outdir, "mcmcmc", master_cluster.name()))
         alignment = generate_msa(seqbuddy, sql_broker)
@@ -609,7 +616,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
             keep_going = True
             break
     if not keep_going:
-        save_cluster()
+        save_cluster("No paralogs")
         return cluster_list
     inflation_var = mcmcmc.Variable("I", 1.1, 20, r_seed=rand_gen.randint(1, 999999999999999))
     gq_var = mcmcmc.Variable("gq", min(master_cluster.sim_scores.score), max(master_cluster.sim_scores.score),
@@ -624,7 +631,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                                        quiet=quiet, r_seed=rand_gen.randint(1, 999999999999999))
 
     except RuntimeError:  # Happens when mcmcmc fails to find different initial chain parameters
-        save_cluster()
+        save_cluster("MCMCMC failed to find parameters")
         return cluster_list
 
     # Set a 'worst score' that is reasonable for the data set
@@ -638,7 +645,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     mcmcmc_output = pd.read_csv(os.path.join(temp_dir.path, "mcmcmc_out.csv"), "\t", index_col=False)
     best_score = max(mcmcmc_output["result"])
     if best_score <= master_cluster.score():
-        save_cluster()
+        save_cluster("New best score of %s is less than master cluster at %s" % (best_score, master_cluster.score()))
         return cluster_list
 
     mcl_clusters = parse_mcl_clusters(os.path.join(temp_dir.path, "best_group"))
@@ -684,7 +691,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                                          taxa_separator=taxa_separator, r_seed=rand_gen.randint(1, 999999999999999),
                                          psi_pred_ss2_dfs=psi_pred_ss2_dfs)
 
-    save_cluster()
+    save_cluster("Sub clusters returned")
     return cluster_list
 
 
