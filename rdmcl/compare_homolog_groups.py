@@ -121,9 +121,15 @@ def write_difference(subject, query):
 
         for seq_id in cluster:
             if max_match_indx is None or seq_id not in subject[max_match_indx]:
-                final_clusters[query_indx].append("\033[91m%s\033[39m" % seq_id)
+                if re.search("Mle", seq_id):
+                    final_clusters[query_indx].append("\033[91m\033[4m%s\033[24m\033[39m" % seq_id)
+                else:
+                    final_clusters[query_indx].append("\033[91m%s\033[39m" % seq_id)
             else:
-                final_clusters[query_indx].append("\033[92m%s\033[39m" % seq_id)
+                if re.search("Mle", seq_id):
+                    final_clusters[query_indx].append("\033[92m\033[4m%s\033[24m\033[39m" % seq_id)
+                else:
+                    final_clusters[query_indx].append("\033[92m%s\033[39m" % seq_id)
         if max_match_indx is not None:
             subject[max_match_indx] = []
 
@@ -152,9 +158,9 @@ if __name__ == '__main__':
 
     ofile = None if not in_args.output_file else os.path.abspath(in_args.output_file)
 
-    #groups1 = Clusters(in_args.subject, in_args.group_split, in_args.taxa_split)
-    #groups2 = Clusters(in_args.query, in_args.group_split, in_args.taxa_split)
+    # groups1 = Clusters(in_args.subject, in_args.group_split, in_args.taxa_split)
+    # groups2 = Clusters(in_args.query, in_args.group_split, in_args.taxa_split)
 
-    #print("Score: %s\n%s" % (groups1.compare(groups2, ofile), timer.total_elapsed()))
+    # print("Score: %s\n%s" % (groups1.compare(groups2, ofile), timer.total_elapsed()))
 
     write_difference(in_args.subject, in_args.query)
