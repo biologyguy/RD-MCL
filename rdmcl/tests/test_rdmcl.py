@@ -10,6 +10,8 @@ import pandas as pd
 from collections import OrderedDict
 from buddysuite import buddy_resources as br
 from copy import copy
+import shutil
+
 
 # #########  Mock classes and functions  ########## #
 class MockLogging(object):
@@ -34,10 +36,10 @@ def test_cluster_instantiate_group_0(hf):
     assert cluster.cluster_score is None
     assert cluster.collapsed_genes == OrderedDict([('Cfu-PanxαA', ['Cfu-PanxαF']),
                                                    ('Hvu-PanxβM', ['Hvu-PanxβI', 'Hvu-PanxβG', 'Hvu-PanxβH',
-                                                                  'Hvu-PanxβD', 'Hvu-PanxβK', 'Hvu-PanxβE',
-                                                                  'Hvu-PanxβF', 'Hvu-PanxβA', 'Hvu-PanxβC',
-                                                                  'Hvu-PanxβB', 'Hvu-PanxβJ', 'Hvu-PanxβL',
-                                                                  'Hvu-PanxβO']), ('Lcr-PanxαA', ['Lcr-PanxαL']),
+                                                                   'Hvu-PanxβD', 'Hvu-PanxβK', 'Hvu-PanxβE',
+                                                                   'Hvu-PanxβF', 'Hvu-PanxβA', 'Hvu-PanxβC',
+                                                                   'Hvu-PanxβB', 'Hvu-PanxβJ', 'Hvu-PanxβL',
+                                                                   'Hvu-PanxβO']), ('Lcr-PanxαA', ['Lcr-PanxαL']),
                                                    ('Mle-Panxα10A', ['Mle-Panxα9'])])
     assert cluster._name == "group_0"
     assert cluster.seq_ids == ['BOL-PanxαA', 'BOL-PanxαB', 'BOL-PanxαC', 'BOL-PanxαD', 'BOL-PanxαE', 'BOL-PanxαF',
@@ -171,21 +173,21 @@ def test_cluster_get_base_cluster(hf):
                  'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
     child = rdmcl.Cluster(child_ids, hf.get_sim_scores(child_ids), parent=parent)
     # First time calling Cluster.score() calculates the score
-    # assert child.score() == 18282.891448122067  # ToDo: decide on final scoring system, or remove
+    assert child.score() == 61.88340444450972
 
     # The second call just retrieves the attribute from the cluster saved during first call
-    # assert child.score() == 18282.891448122067   # ToDo: decide on final scoring system, or remove
+    assert child.score() == 61.88340444450972
 
     # With paralogs
     child_ids = ['BOL-PanxαA', 'BOL-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Edu-PanxαA', 'Hca-PanxαB',
                  'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
     child = rdmcl.Cluster(child_ids, hf.get_sim_scores(child_ids), parent=parent)
-    # assert child.score() == 4106.238039160724  # ToDo: decide on final scoring system, or remove
+    assert child.score() == 44.05560826220814
 
     # Single sequence
     child_ids = ['BOL-PanxαA']
     child = rdmcl.Cluster(child_ids, hf.get_sim_scores(child_ids), parent=parent)
-    # assert child.score() == 0  # ToDo: decide on final scoring system, or remove
+    assert child.score() == -6.000949946302431
 
 
 def test_cluster_len(hf):
@@ -381,7 +383,7 @@ Mle-Panxα2,Mle-Panxα12,0.4789936469710511
 Mle-Panxα1,Mle-Panxα3,0.3706607994410156"""
 
 
-def test_compare_pairwise_alignment(hf):
+def test_compare_pairwise_alignment():
     seqbuddy = rdmcl.Sb.SeqBuddy(">seq1\nMPQMSASWI\n>Seq2\nMPPQISASI")
     alignbuddy = rdmcl.Alb.generate_msa(seqbuddy, "mafft", params="--globalpair --op 0 --thread -2", quiet=True)
     assert str(alignbuddy) == """\
@@ -403,7 +405,7 @@ def test_create_all_by_all_scores(hf):
     psi_pred_files = OrderedDict(psi_pred_files)
 
     sim_scores = rdmcl.create_all_by_all_scores(alignbuddy, psi_pred_files)
-    assert len(sim_scores.index) == 66  # This is for 12 starting sequences
+    assert len(sim_scores.index) == 66  # This is for 12 starting sequences --> (a * (a - 1)) / 2
     compare = sim_scores.loc[:][(sim_scores['seq1'] == "Mle-Panxα2") & (sim_scores['seq2'] == "Mle-Panxα12")]
     assert compare.iloc[0]['score'] == 0.54706454433078899
 
@@ -427,74 +429,79 @@ def test_write_mcl_clusters(hf):
 
 
 # #########  Orphan placement  ########## #
-def test_place_orphans(hf, capsys):
-    # This is in progress...
-    return
-    parent = rdmcl.Cluster(*hf.base_cluster_args())
-    seq_ids = []
+def test_instantiate_orphan(hf):
+    # Get starting graph from pre-computed database
+    broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
+    broker.start_broker()
+    graph = hf.get_db_graph("a5fc878dcea0482b4d22c9f166ab7eb5", broker)
+
+    parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
+
+    psi_pred_ss2_dfs = OrderedDict()
+    for rec in parent_sb.records:
+        psi_pred_ss2_dfs[rec.id] = rdmcl.read_ss2_file("%spsi_pred%s%s.ss2" % (hf.resource_path, os.sep, rec.id))
+
+    parent_ids = [rec.id for rec in parent_sb.records]
+    parent_cluster = rdmcl.Cluster(parent_ids, graph, collapse=False)
 
     cluster1 = ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE', 'Bfr-PanxαA']
-    seq_ids += cluster1
-    cluster1 = rdmcl.Cluster(cluster1, hf.get_sim_scores(cluster1), parent=parent)
+    cluster1 = rdmcl.Cluster(cluster1, hf.get_db_graph("14f1cd0e985ed87b4e31bc07453481d2", broker),
+                             parent=parent_cluster)
     cluster1.set_name()
 
     cluster2 = ['Lla-PanxαA', 'Mle-Panxα11', 'Oma-PanxαD', 'Pba-PanxαB', 'Tin-PanxαF']
-    seq_ids += cluster2
-    cluster2 = rdmcl.Cluster(cluster2, hf.get_sim_scores(cluster2), parent=parent)
+    cluster2 = rdmcl.Cluster(cluster2, hf.get_db_graph("441c3610506fda8a6820da5f67fdc470", broker),
+                             parent=parent_cluster)
     cluster2.set_name()
 
     cluster3 = ['Vpa-PanxαD']  # This should be placed in cluster 2
-    seq_ids += cluster3
-    cluster3 = rdmcl.Cluster(cluster3, hf.get_sim_scores(cluster3), parent=parent)
+    cluster3 = rdmcl.Cluster(cluster3, hf.get_db_graph("ded0bc087974589c24945bb36197d36f", broker),
+                             parent=parent_cluster)
     cluster3.set_name()
 
     cluster4 = ['Hca-PanxαA', 'Lcr-PanxαG']  # This should be placed in cluster 1
-    seq_ids += cluster4
-    cluster4 = rdmcl.Cluster(cluster4, hf.get_sim_scores(cluster4), parent=parent)
+    cluster4 = rdmcl.Cluster(cluster4, hf.get_db_graph("035b3933770942c7e32e27c06e619825", broker),
+                             parent=parent_cluster)
     cluster4.set_name()
 
     cluster5 = ['Hvu-PanxβA']  # This should not be placed in a cluster
-    seq_ids += cluster5
-    cluster5 = rdmcl.Cluster(cluster5, hf.get_sim_scores(cluster5), parent=parent)
+    cluster5 = rdmcl.Cluster(cluster5, hf.get_db_graph("c62b6378d326c2479296c98f0f620d0f", broker),
+                             parent=parent_cluster)
     cluster5.set_name()
-
     clusters = [cluster1, cluster2, cluster3, cluster4, cluster5]
-    scores = hf.get_sim_scores(seq_ids)
 
-    seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
-    rdmcl.Sb.pull_recs(seqbuddy, "|".join(seq_ids))
+    broker.close()
+
+    # Have Orphans create the subgraph from scratch
     tmpdir = br.TempDir()
     broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
     broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
                                        "graph TEXT", "cluster_score TEXT"])
     broker.start_broker()
+    orphans = rdmcl.Orphans(parent_sb, clusters, broker, psi_pred_ss2_dfs)
 
-    psi_pred_files = [(seq_id, rdmcl.read_ss2_file("%spsi_pred%s%s.ss2" % (hf.resource_path, hf.sep, seq_id)))
-                      for seq_id in seq_ids]
-    psi_pred_files = OrderedDict(psi_pred_files)
-
-    orphans = rdmcl.Orphans(seqbuddy, clusters, broker, psi_pred_files)
-    orphans.place_orphans()
-    print(orphans.large_clusters['group_0_0'].seq_ids)
-    print(orphans.large_clusters['group_0_1'].seq_ids)
-    print(orphans.small_clusters['group_0_4'].seq_ids)
+    assert orphans.seqbuddy == parent_sb
+    assert orphans.clusters == clusters
+    assert orphans.sql_broker == broker
+    assert orphans.psi_pred_ss2_dfs == psi_pred_ss2_dfs
+    assert orphans.num_orphans == 0
+    small_clusters = [clust.seq_ids for clust_name, clust in orphans.small_clusters.items()]
+    assert small_clusters == [cluster3.seq_ids, cluster4.seq_ids, cluster5.seq_ids]
+    large_clusters = [clust.seq_ids for clust_name, clust in orphans.large_clusters.items()]
+    assert large_clusters == [cluster1.seq_ids, cluster2.seq_ids]
+    assert len([seq_id for sub_clust in small_clusters + large_clusters for seq_id in sub_clust]) == 14
+    assert type(orphans.tmp_file) == rdmcl.br.TempFile
+    assert orphans.all_sim_scores.iloc[0] == 0.49392861069282662
+    assert orphans.all_sim_scores.iloc[-1] == 0.32526462376850779
+    assert len(orphans.all_sim_scores) == 300  # This is for 25 sequences --> (a * (a - 1)) / 2
     broker.close()
-    assert False
-    fostered = rdmcl.place_orphans(clusters, scores)
-    for clust in fostered:
-        print(clust.seq_ids)
 
-    assert fostered[0].seq_ids == ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE',
-                                   'Bfr-PanxαA', 'Hca-PanxαA', 'Lcr-PanxαG']
-    assert fostered[1].seq_ids == ['Lla-PanxαA', 'Mle-Panxα11', 'Oma-PanxαD', 'Pba-PanxαB', 'Tin-PanxαF', 'Vpa-PanxαD']
-    assert fostered[2].seq_ids == ["Hvu-PanxβA"]
-    out, err = capsys.readouterr()
-    assert err == """\
-WARNING:root:4 orphaned sequences present
-WARNING:root:3 orphaned sequences were placed in orthogroups.
-"""
-    assert False
-
-
-def test_orphans_class(hf, capsys):
-    parent = rdmcl.Cluster(*hf.base_cluster_args())
+    # Run a second time, reading the graph from the open database this time (happens automatically)
+    broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
+    broker.start_broker()
+    seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
+    orphans = rdmcl.Orphans(seqbuddy, clusters, broker, psi_pred_ss2_dfs)
+    assert orphans.all_sim_scores.iloc[0] == 0.49392861069282662
+    assert orphans.all_sim_scores.iloc[-1] == 0.32526462376850779
+    assert len(orphans.all_sim_scores) == 300
+    broker.close()
