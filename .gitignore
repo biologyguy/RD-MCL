@@ -33,3 +33,6 @@ workshop/*
 *article.bbl
 *article.blg
 *article.idx
+
+# Experiment directory contains too much data
+experiments/*
