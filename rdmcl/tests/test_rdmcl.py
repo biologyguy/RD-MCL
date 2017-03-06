@@ -433,7 +433,7 @@ def test_instantiate_orphan(hf):
     # Get starting graph from pre-computed database
     broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
     broker.start_broker()
-    graph = hf.get_db_graph("a5fc878dcea0482b4d22c9f166ab7eb5", broker)
+    graph = hf.get_db_graph("6935966a6b9967c3006785488d968230", broker)
 
     parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
 
@@ -491,9 +491,10 @@ def test_instantiate_orphan(hf):
     assert large_clusters == [cluster1.seq_ids, cluster2.seq_ids]
     assert len([seq_id for sub_clust in small_clusters + large_clusters for seq_id in sub_clust]) == 14
     assert type(orphans.tmp_file) == rdmcl.br.TempFile
-    assert orphans.all_sim_scores.iloc[0] == 0.49392861069282662
-    assert orphans.all_sim_scores.iloc[-1] == 0.32526462376850779
-    assert len(orphans.all_sim_scores) == 300  # This is for 25 sequences --> (a * (a - 1)) / 2
+    all_sim_scores_str = str(orphans.all_sim_scores)
+    assert orphans.all_sim_scores.iloc[0] == 0.30137309739554002
+    assert orphans.all_sim_scores.iloc[-1] == 0.91143399113741963
+    assert len(orphans.all_sim_scores) == 91  # This is for 14 sequences --> (a * (a - 1)) / 2
     broker.close()
 
     # Run a second time, reading the graph from the open database this time (happens automatically)
@@ -501,7 +502,6 @@ def test_instantiate_orphan(hf):
     broker.start_broker()
     seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
     orphans = rdmcl.Orphans(seqbuddy, clusters, broker, psi_pred_ss2_dfs)
-    assert orphans.all_sim_scores.iloc[0] == 0.49392861069282662
-    assert orphans.all_sim_scores.iloc[-1] == 0.32526462376850779
-    assert len(orphans.all_sim_scores) == 300
+    assert all_sim_scores_str == str(orphans.all_sim_scores)
+    assert len(orphans.all_sim_scores) == 91
     broker.close()
