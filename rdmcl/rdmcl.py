@@ -994,20 +994,14 @@ class Orphans(object):
         self.printer = br.DynamicPrint(quiet=quiet)
         self.tmp_file = br.TempFile()
         parent = self.clusters[0] if self.clusters[0].parent is None else self.clusters[0].parent
-        graph = self.sql_broker.query("SELECT (graph) FROM data_table "
-                                      "WHERE hash='{0}'".format(parent.seq_id_hash))
 
-        if graph and graph[0][0]:
-            graph = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
-            graph.columns = ["seq1", "seq2", "score"]
-
-        else:
-            sb_copy = Sb.make_copy(seqbuddy)
-            sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in parent.seq_ids]))
-            alb_obj = generate_msa(sb_copy, sql_broker)
-            graph = create_all_by_all_scores(alb_obj, psi_pred_ss2_dfs, quiet=True)
-
-        self.all_sim_scores = graph.score  # This is used for a t-test later
+        # Create a null model from all within cluster scores from the large clusters; used for t-tests later
+        self.all_sim_scores = pd.Series()
+        for clust_name, clust in self.large_clusters.items():
+            self.all_sim_scores = self.all_sim_scores.append(clust.sim_scores.score, ignore_index=True)
+        pd.options.display.max_rows = None
+        self.tmp_file.write(str(self.all_sim_scores))
+        pd.options.display.max_rows = 120
 
     def _separate_large_small(self):
         for cluster in self.clusters:
@@ -1047,13 +1041,13 @@ class Orphans(object):
                                                         | (lrg2sml_group_data['seq2'].isin(large_cluster.seq_ids))]
             self.tmp_file.write("\tlrg2sml_group_data:\n%s\n" % lrg2sml_group_data)
 
-            # Confirm that the orphans are sufficiently similar to large group to warrant consideration using t-test
-            t_test = scipy.stats.ttest_ind(lrg2sml_group_data.score, large_cluster.sim_scores.score)
-            self.tmp_file.write("\t%s\n\n" % str(t_test))
-
-            # Convert group_data to a numpy array so sm.stats can read it
-            data_dict[group_name] = (t_test.pvalue, np.array(lrg2sml_group_data.score))
-
+            # Confirm that the orphans are sufficiently similar to large group to warrant consideration by ensuring
+            # that at least one similarity score is greater than the lowest score with all large groups.
+            # Also, convert group_data to a numpy array so sm.stats can read it
+            if lrg2sml_group_data.score.max() >= self.all_sim_scores.min():
+                data_dict[group_name] = (True, np.array(lrg2sml_group_data.score))
+            else:
+                data_dict[group_name] = (False, np.array(lrg2sml_group_data.score))
         # We only need to test the large cluster with the highest average similarity score, so find that cluster.
         averages = pd.Series()
         df = pd.DataFrame(columns=['observations', 'grouplabel'])
@@ -1064,8 +1058,8 @@ class Orphans(object):
             df = df.append(tmp_df)
         max_ave_name = averages.argmax()
 
-        # Confirm that the largest cluster has sufficient support (t-test value)
-        if data_dict[max_ave_name][0] <= 0.05:  # Therefore, when we fail to reject the null, we consider the group.
+        # Confirm that the largest cluster has sufficient support
+        if not data_dict[max_ave_name][0]:
             self.tmp_file.write("No Matches: Failed T-test (%s)\n###########################\n\n" %
                                 data_dict[max_ave_name][0])
             return False
@@ -1115,9 +1109,11 @@ class Orphans(object):
             self.printer.write("%s of %s orphans remain" % (remaining_orphans, starting_orphans))
             tmp_file = br.TempFile()
             small_clusters = list(self.small_clusters.items())
-            # Note that this will spin off other run_multicore_function calls if clusters are not in database...
+            # This will spin off other run_multicore_function calls if clusters are not in database...
             br.run_multicore_function(small_clusters, self.mc_check_orphans, [tmp_file.path],
                                       quiet=True, max_processes=CPUS)
+            #for clust in small_clusters:
+            #    self.mc_check_orphans(clust, [tmp_file.path])
             lines = tmp_file.read()
             if lines:
                 lines = lines.strip().split("\n")
@@ -1392,6 +1388,7 @@ if __name__ == '__main__':
 
         if in_args.suppress_iteration:
             break
+    orphans.tmp_file.save("temp.log")
     logging.warning("\t-- finished in %s --" % TIMER.split())
 
     if group_0_cluster.collapsed_genes:
