@@ -4,6 +4,7 @@
 import pytest
 import os
 import buddysuite.SeqBuddy
+from .. import helpers
 from hashlib import md5
 
 
@@ -32,6 +33,28 @@ def test_helper_get_data(hf):
     with pytest.raises(AttributeError) as err:
         hf.get_data("foo")
     assert "Unknown data type: foo" in str(err)
+
+
+def test_helper_get_db_graph(hf):
+    broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
+    broker.start_broker()
+    assert str(hf.get_db_graph("441c3610506fda8a6820da5f67fdc470", broker)) == """\
+          seq1         seq2     score
+0  Mle-Panxα11   Oma-PanxαD  0.960566
+1   Lla-PanxαA   Oma-PanxαD  0.910349
+2  Mle-Panxα11   Tin-PanxαF  0.955142
+3   Lla-PanxαA   Pba-PanxαB  0.903717
+4   Lla-PanxαA  Mle-Panxα11  0.915782
+5   Pba-PanxαB   Tin-PanxαF  0.905465
+6   Lla-PanxαA   Tin-PanxαF  0.916587
+7  Mle-Panxα11   Pba-PanxαB  0.906330
+8   Oma-PanxαD   Pba-PanxαB  0.902914
+9   Oma-PanxαD   Tin-PanxαF  0.947058"""
+
+    assert str(hf.get_db_graph("Foo", broker)) == """\
+Empty DataFrame
+Columns: [seq1, seq2, score]
+Index: []"""
 
 
 def test_helper_get_sim_scores(hf):

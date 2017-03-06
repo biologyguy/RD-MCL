@@ -5,6 +5,7 @@ import pandas as pd
 from hashlib import md5
 from copy import deepcopy
 from buddysuite import SeqBuddy as Sb
+from io import StringIO
 
 SEP = os.sep
 
@@ -66,6 +67,16 @@ class HelperMethods(object):
             return deepcopy(self._cteno_sim_scores)
         else:
             raise AttributeError("Unknown data type: %s" % data)
+
+    @staticmethod
+    def get_db_graph(id_hash, broker):
+        graph = broker.query("SELECT (graph) FROM data_table WHERE hash='%s'" % id_hash)
+        if graph and graph[0][0]:
+            graph = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
+            graph.columns = ["seq1", "seq2", "score"]
+        else:
+            graph = pd.DataFrame(columns=["seq1", "seq2", "score"])
+        return graph
 
     def get_sim_scores(self, id_subset):
         df = self._cteno_sim_scores.loc[self._cteno_sim_scores['seq1'].isin(id_subset)]
