@@ -589,11 +589,11 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     def save_cluster(end_message=None):
         cluster_list.append(master_cluster)
         if not os.path.isfile(os.path.join(temp_dir.path, "best_group")):
-            with open(os.path.join(temp_dir.path, "best_group"), "w") as ofile:
-                ofile.write('\t'.join(master_cluster.seq_ids))
+            with open(os.path.join(temp_dir.path, "best_group"), "w") as _ofile:
+                _ofile.write('\t'.join(master_cluster.seq_ids))
         if end_message:
-            with open(os.path.join(temp_dir.path, "end_message.log"), "w") as ofile:
-                ofile.write(end_message + "\n")
+            with open(os.path.join(temp_dir.path, "end_message.log"), "w") as _ofile:
+                _ofile.write(end_message + "\n")
 
         if not os.path.isdir(os.path.join(outdir, "mcmcmc", master_cluster.name())):
             temp_dir.save(os.path.join(outdir, "mcmcmc", master_cluster.name()))
@@ -975,6 +975,14 @@ def compare_pairwise_alignment(alb_obj, gap_open, gap_extend):
 
 class Orphans(object):
     def __init__(self, seqbuddy, clusters, sql_broker, psi_pred_ss2_dfs, quiet=False):
+        """
+        Organizes all of the orphan prediction/folding logic into a class
+        :param seqbuddy: This should include all of the sequences in the entire population being tests
+        :param clusters: List of all cluster objects the sequences have currently been grouped into
+        :param sql_broker: Open SQLiteBroker object
+        :param psi_pred_ss2_dfs: OrderedDict of all PSI Pred graphs (seq_id: df)
+        :param quiet: Suppress any terminal output
+        """
         self.seqbuddy = seqbuddy
         self.clusters = clusters
         self.sql_broker = sql_broker
@@ -985,13 +993,21 @@ class Orphans(object):
         self._separate_large_small()
         self.printer = br.DynamicPrint(quiet=quiet)
         self.tmp_file = br.TempFile()
-        self.all_sim_scores = pd.Series()  # This is used for a t-test later
         parent = self.clusters[0] if self.clusters[0].parent is None else self.clusters[0].parent
         graph = self.sql_broker.query("SELECT (graph) FROM data_table "
                                       "WHERE hash='{0}'".format(parent.seq_id_hash))
-        graph = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
-        graph.columns = ["seq1", "seq2", "score"]
-        self.all_sim_scores = self.all_sim_scores.append(graph.score)
+
+        if graph and graph[0][0]:
+            graph = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
+            graph.columns = ["seq1", "seq2", "score"]
+
+        else:
+            sb_copy = Sb.make_copy(seqbuddy)
+            sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in parent.seq_ids]))
+            alb_obj = generate_msa(sb_copy, sql_broker)
+            graph = create_all_by_all_scores(alb_obj, psi_pred_ss2_dfs, quiet=True)
+
+        self.all_sim_scores = graph.score  # This is used for a t-test later
 
     def _separate_large_small(self):
         for cluster in self.clusters:
@@ -999,22 +1015,6 @@ class Orphans(object):
                 self.large_clusters[cluster.name()] = cluster
             else:
                 self.small_clusters[cluster.name()] = cluster
-
-        if not self.small_clusters:
-            # logging.warning("No orphaned sequences present")
-            pass
-        elif not self.large_clusters:
-            # logging.warning("All clusters have only 1 or 2 sequences present, suggesting there are issues with your data")
-            # logging.info(" Are there a large number of paralogs and only a small number of taxa present?")
-            pass
-        elif len(self.large_clusters) == 1:
-            # logging.warning("Only one orthogroup with >2 sequences present, suggesting there are issues with your data")
-            # logging.info(" Are there a large number of taxa and only a small number of orthologs present?")
-            pass
-        else:
-            self.num_orphans = sum([len(cluster) for group_name, cluster in self.small_clusters.items()])
-            # logging.warning("%s orphaned sequences present" % self.num_orphans)
-        return
 
     def _check_orphan(self, small_cluster):
         # First prepare the data for each large cluster so they can be compared
@@ -1160,9 +1160,6 @@ class Orphans(object):
                             "\tfiles will only include the original sequences.")
         """
         return
-
-# NOTE: There used to be a support function. Check the workscripts GitHub history
-
 
 if __name__ == '__main__':
 
