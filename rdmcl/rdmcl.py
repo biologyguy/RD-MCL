@@ -1020,9 +1020,9 @@ class Orphans(object):
         # First prepare the data for each large cluster so they can be compared
         self.tmp_file.write("%s\n" % small_cluster.seq_ids)
         data_dict = OrderedDict()
-        self.tmp_file.write("\tTotal large cluster scores\n%s\n" % self.all_sim_scores)
         for group_name, large_cluster in self.large_clusters.items():
             self.tmp_file.write("\t%s\n" % large_cluster.seq_ids)
+            self.tmp_file.write("\tamong_lrg:\n%s\n" % large_cluster.sim_scores)
             # Read or create an alignment containing the sequences in the small and large clusters being checked
             seq_ids = sorted(large_cluster.seq_ids + small_cluster.seq_ids)
             seqbuddy = Sb.make_copy(self.seqbuddy)
@@ -1048,7 +1048,7 @@ class Orphans(object):
             self.tmp_file.write("\tlrg2sml_group_data:\n%s\n" % lrg2sml_group_data)
 
             # Confirm that the orphans are sufficiently similar to large group to warrant consideration using t-test
-            t_test = scipy.stats.ttest_ind(lrg2sml_group_data.score, self.all_sim_scores)
+            t_test = scipy.stats.ttest_ind(lrg2sml_group_data.score, large_cluster.sim_scores.score)
             self.tmp_file.write("\t%s\n\n" % str(t_test))
 
             # Convert group_data to a numpy array so sm.stats can read it
@@ -1066,7 +1066,8 @@ class Orphans(object):
 
         # Confirm that the largest cluster has sufficient support (t-test value)
         if data_dict[max_ave_name][0] <= 0.05:  # Therefore, when we fail to reject the null, we consider the group.
-            self.tmp_file.write("No Matches\n###########################\n\n")
+            self.tmp_file.write("No Matches: Failed T-test (%s)\n###########################\n\n" %
+                                data_dict[max_ave_name][0])
             return False
 
         # Run pairwise Tukey HSD and parse the results
@@ -1089,7 +1090,7 @@ class Orphans(object):
             self.tmp_file.write("%s\n###########################\n\n" % max_ave_name)
             mean_diff = abs(np.mean(data_dict[max_ave_name][1]) - np.mean(self.all_sim_scores))
             return max_ave_name, mean_diff
-        self.tmp_file.write("No Matches\n###########################\n\n")
+        self.tmp_file.write("No Matches: Didn't find break\n###########################\n\n")
         return False
 
     def mc_check_orphans(self, params, args):
