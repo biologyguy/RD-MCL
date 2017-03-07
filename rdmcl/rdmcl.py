@@ -993,15 +993,11 @@ class Orphans(object):
         self._separate_large_small()
         self.printer = br.DynamicPrint(quiet=quiet)
         self.tmp_file = br.TempFile()
-        parent = self.clusters[0] if self.clusters[0].parent is None else self.clusters[0].parent
 
-        # Create a null model from all within cluster scores from the large clusters; used for t-tests later
+        # Create a null model from all within cluster scores from the large clusters; used for placement tests later
         self.all_sim_scores = pd.Series()
         for clust_name, clust in self.large_clusters.items():
             self.all_sim_scores = self.all_sim_scores.append(clust.sim_scores.score, ignore_index=True)
-        pd.options.display.max_rows = None
-        self.tmp_file.write(str(self.all_sim_scores))
-        pd.options.display.max_rows = 120
 
     def _separate_large_small(self):
         for cluster in self.clusters:
@@ -1012,11 +1008,14 @@ class Orphans(object):
 
     def _check_orphan(self, small_cluster):
         # First prepare the data for each large cluster so they can be compared
-        self.tmp_file.write("%s\n" % small_cluster.seq_ids)
+        log_output = "%s\n" % small_cluster.seq_ids
+        log_output += "Min sim score needed: %s\n" % self.all_sim_scores.min()
         data_dict = OrderedDict()
         for group_name, large_cluster in self.large_clusters.items():
-            self.tmp_file.write("\t%s\n" % large_cluster.seq_ids)
-            self.tmp_file.write("\tamong_lrg:\n%s\n" % large_cluster.sim_scores)
+            log_output += "\t%s\n" % group_name
+            log_output += "\t%s\n" % large_cluster.seq_ids
+            log_output += "\tAmong large:\t%s - %s\n" % (round(large_cluster.sim_scores.score.min(), 4),
+                                                         round(large_cluster.sim_scores.score.max(), 4))
             # Read or create an alignment containing the sequences in the small and large clusters being checked
             seq_ids = sorted(large_cluster.seq_ids + small_cluster.seq_ids)
             seqbuddy = Sb.make_copy(self.seqbuddy)
@@ -1039,7 +1038,8 @@ class Orphans(object):
                                                 | (sim_scores['seq2'].isin(small_cluster.seq_ids))]
             lrg2sml_group_data = lrg2sml_group_data.loc[(lrg2sml_group_data['seq1'].isin(large_cluster.seq_ids))
                                                         | (lrg2sml_group_data['seq2'].isin(large_cluster.seq_ids))]
-            self.tmp_file.write("\tlrg2sml_group_data:\n%s\n" % lrg2sml_group_data)
+            log_output += "\tLarge 2 small:\t%s - %s\n\n" % (round(lrg2sml_group_data.score.min(), 4),
+                                                             round(lrg2sml_group_data.score.max(), 4))
 
             # Confirm that the orphans are sufficiently similar to large group to warrant consideration by ensuring
             # that at least one similarity score is greater than the lowest score with all large groups.
@@ -1060,31 +1060,37 @@ class Orphans(object):
 
         # Confirm that the largest cluster has sufficient support
         if not data_dict[max_ave_name][0]:
-            self.tmp_file.write("No Matches: Failed T-test (%s)\n###########################\n\n" %
-                                data_dict[max_ave_name][0])
+            log_output += "No Matches: Best cluster (%s) insufficient support\n###########################\n\n"\
+                          % max_ave_name
+            with LOCK:
+                self.tmp_file.write(log_output)
             return False
 
         # Run pairwise Tukey HSD and parse the results
         # The max_ave cluster must be significantly different from all other clusters
         result = sm.stats.multicomp.pairwise_tukeyhsd(df.observations, df.grouplabel)
 
-        test_group_pvalues = []  # To keep track of which groups have the highest support downstream
+        success = True
         for line in str(result).split("\n")[4:-1]:
             line = re.sub("^ *", "", line.strip())
             line = re.sub(" +", "\t", line)
-            self.tmp_file.write("%s\n" % line)
             line = line.split("\t")  # Each line --> ['group1', 'group2', 'meandiff', 'lower', 'upper', 'reject]
-            if max_ave_name in line and 'False' in line:
-                break  # Insufficient support to group the gene with max_ave group
-            elif max_ave_name in line:
-                test_group_pvalues.append(abs(float(line[2])))  # Take the abs because sign isn't meaningful
-        else:
-            # If the 'break' command is not encountered, the gene can be grouped with the max_ave cluster
+            if max_ave_name in line:
+                log_output += "%s\n" % "\t".join(line)
+                if 'False' in line:
+                    success = False  # Insufficient support to group the gene with max_ave group
+        if success:
+            # The gene can be grouped with the max_ave cluster
             # Return the group name and average meandiff (allow calling code to actually do the grouping)
-            self.tmp_file.write("%s\n###########################\n\n" % max_ave_name)
+            log_output += "\n%s added to %s\n###########################\n\n" % (small_cluster.seq_ids, max_ave_name)
             mean_diff = abs(np.mean(data_dict[max_ave_name][1]) - np.mean(self.all_sim_scores))
+            with LOCK:
+                self.tmp_file.write(log_output)
             return max_ave_name, mean_diff
-        self.tmp_file.write("No Matches: Didn't find break\n###########################\n\n")
+
+        log_output += "Best group (%s) fails Tukey HSD\n###########################\n\n" % max_ave_name
+        with LOCK:
+            self.tmp_file.write(log_output)
         return False
 
     def mc_check_orphans(self, params, args):
@@ -1098,7 +1104,7 @@ class Orphans(object):
                     ofile.write("%s\t%s\t%s\n" % (small_name, large_name, mean_diff))
         return
 
-    def place_orphans(self):
+    def place_orphans(self, multi_core=True):
         if not self.small_clusters:
             return
         best_cluster = OrderedDict([("small_name", None), ("large_name", None), ("meandiff", 0)])
@@ -1109,11 +1115,14 @@ class Orphans(object):
             self.printer.write("%s of %s orphans remain" % (remaining_orphans, starting_orphans))
             tmp_file = br.TempFile()
             small_clusters = list(self.small_clusters.items())
-            # This will spin off other run_multicore_function calls if clusters are not in database...
-            br.run_multicore_function(small_clusters, self.mc_check_orphans, [tmp_file.path],
-                                      quiet=True, max_processes=CPUS)
-            #for clust in small_clusters:
-            #    self.mc_check_orphans(clust, [tmp_file.path])
+            if multi_core:
+                # This will spin off other run_multicore_function calls if clusters are not in database...
+                br.run_multicore_function(small_clusters, self.mc_check_orphans, [tmp_file.path],
+                                          quiet=True, max_processes=CPUS)
+            else:
+                for clust in small_clusters:
+                    self.mc_check_orphans(clust, [tmp_file.path])
+
             lines = tmp_file.read()
             if lines:
                 lines = lines.strip().split("\n")
@@ -1136,26 +1145,16 @@ class Orphans(object):
                 for taxon, seq_ids in self.small_clusters[small_name].taxa.items():
                     self.large_clusters[large_name].taxa.setdefault(taxon, [])
                     self.large_clusters[large_name].taxa[taxon] += seq_ids
-                # logging.info("\t%s added to %s" % (" and ".join(self.small_clusters[small_name].seq_ids), large_name))
                 fostered_orphans += len(self.small_clusters[small_name].seq_ids)
                 del self.small_clusters[small_name]
                 best_cluster = OrderedDict([("small_name", None), ("large_name", None), ("meandiff", 0)])
             else:
                 break
+
         self.printer.clear()
         self.clusters = [cluster for group, cluster in self.small_clusters.items()] + \
                         [cluster for group, cluster in self.large_clusters.items()]
 
-        """
-        if not fostered_orphans:
-            logging.warning("No orphaned sequences were placed in orthogroups.")
-        elif fostered_orphans == 1:
-            logging.warning("1 orphaned sequence was placed in an orthogroups.")
-        else:
-            logging.warning("%s orphaned sequences have found new homes in orthogroups!" % fostered_orphans)
-            logging.warning("\tNote that all of the saved alignment, mcmcmc, and sim_score\n"
-                            "\tfiles will only include the original sequences.")
-        """
         return
 
 if __name__ == '__main__':
@@ -1250,11 +1249,10 @@ if __name__ == '__main__':
             if "group" in _dir:
                 shutil.rmtree(os.path.join(root, _dir))
 
-    # Move log file into output directory
+    # Prepare log files into output directory
     logger_obj.move_log(os.path.join(in_args.outdir, "rdmcl.log"))
-
-    # clique_check = True if not in_args.suppress_clique_check else False
-    # recursion_check = True if not in_args.suppress_recursion else False
+    if os.path.isfile(os.path.join(in_args.outdir, "orphans.log")):
+        os.remove(os.path.join(in_args.outdir, "orphans.log"))
 
     # PSIPRED
     logging.warning("\n** PSI-Pred **")
@@ -1367,7 +1365,10 @@ if __name__ == '__main__':
     logging.warning("Total MCL runs: %s" % progress_dict["mcl_runs"])
     logging.warning("\t-- finished in %s --" % TIMER.split())
 
-    logging.warning("\n** Iterative placement of orphans and paralog RBHC removal **")
+    if not in_args.suppress_clique_check or not in_args.suppress_singlet_folding:
+        logging.warning("\n** Iterative placement of orphans and paralog RBHC removal **")
+    else:
+        logging.warning("\n** Skipping placement of orphans and paralog RBHC removal **")
     check_md5 = None
     while check_md5 != md5(str(sorted([clust.seq_ids for clust in final_clusters])).encode("utf-8")).hexdigest():
         check_md5 = md5(str(sorted([clust.seq_ids for clust in final_clusters])).encode("utf-8")).hexdigest()
@@ -1385,11 +1386,14 @@ if __name__ == '__main__':
                               sql_broker=broker, psi_pred_ss2_dfs=psi_pred_files)
             orphans.place_orphans()
             final_clusters = orphans.clusters
+            with open(os.path.join(in_args.outdir, "orphans.log"), "a") as orphan_log_file:
+                orphan_log_file.write(orphans.tmp_file.read())
 
         if in_args.suppress_iteration:
             break
-    orphans.tmp_file.save("temp.log")
-    logging.warning("\t-- finished in %s --" % TIMER.split())
+
+    if not in_args.suppress_clique_check or not in_args.suppress_singlet_folding:
+        logging.warning("\t-- finished in %s --" % TIMER.split())
 
     if group_0_cluster.collapsed_genes:
         logging.warning("\nPlacing collapsed paralogs into their respective clusters")
