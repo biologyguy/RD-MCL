@@ -995,9 +995,9 @@ class Orphans(object):
         self.tmp_file = br.TempFile()
 
         # Create a null model from all within cluster scores from the large clusters; used for placement tests later
-        self.all_sim_scores = pd.Series()
+        self.lrg_cluster_sim_scores = pd.Series()
         for clust_name, clust in self.large_clusters.items():
-            self.all_sim_scores = self.all_sim_scores.append(clust.sim_scores.score, ignore_index=True)
+            self.lrg_cluster_sim_scores = self.lrg_cluster_sim_scores.append(clust.sim_scores.score, ignore_index=True)
 
     def _separate_large_small(self):
         for cluster in self.clusters:
@@ -1009,7 +1009,7 @@ class Orphans(object):
     def _check_orphan(self, small_cluster):
         # First prepare the data for each large cluster so they can be compared
         log_output = "%s\n" % small_cluster.seq_ids
-        log_output += "Min sim score needed: %s\n" % self.all_sim_scores.min()
+        log_output += "Min sim score needed: %s\n" % self.lrg_cluster_sim_scores.min()
         data_dict = OrderedDict()
         for group_name, large_cluster in self.large_clusters.items():
             log_output += "\t%s\n" % group_name
@@ -1044,7 +1044,7 @@ class Orphans(object):
             # Confirm that the orphans are sufficiently similar to large group to warrant consideration by ensuring
             # that at least one similarity score is greater than the lowest score with all large groups.
             # Also, convert group_data to a numpy array so sm.stats can read it
-            if lrg2sml_group_data.score.max() >= self.all_sim_scores.min():
+            if lrg2sml_group_data.score.max() >= self.lrg_cluster_sim_scores.min():
                 data_dict[group_name] = (True, np.array(lrg2sml_group_data.score))
             else:
                 data_dict[group_name] = (False, np.array(lrg2sml_group_data.score))
@@ -1083,7 +1083,7 @@ class Orphans(object):
             # The gene can be grouped with the max_ave cluster
             # Return the group name and average meandiff (allow calling code to actually do the grouping)
             log_output += "\n%s added to %s\n###########################\n\n" % (small_cluster.seq_ids, max_ave_name)
-            mean_diff = abs(np.mean(data_dict[max_ave_name][1]) - np.mean(self.all_sim_scores))
+            mean_diff = abs(np.mean(data_dict[max_ave_name][1]) - np.mean(self.lrg_cluster_sim_scores))
             with LOCK:
                 self.tmp_file.write(log_output)
             return max_ave_name, mean_diff
@@ -1093,15 +1093,14 @@ class Orphans(object):
             self.tmp_file.write(log_output)
         return False
 
-    def mc_check_orphans(self, params, args):
-        small_name, next_small_cluster = params
+    def mc_check_orphans(self, small_cluster, args):
         tmp_file = args[0]
-        foster_score = self._check_orphan(next_small_cluster)
+        foster_score = self._check_orphan(small_cluster)
         if foster_score:
             large_name, mean_diff = foster_score
             with LOCK:
                 with open(tmp_file, "a") as ofile:
-                    ofile.write("%s\t%s\t%s\n" % (small_name, large_name, mean_diff))
+                    ofile.write("%s\t%s\t%s\n" % (small_cluster.name(), large_name, mean_diff))
         return
 
     def place_orphans(self, multi_core=True):
@@ -1110,11 +1109,13 @@ class Orphans(object):
         best_cluster = OrderedDict([("small_name", None), ("large_name", None), ("meandiff", 0)])
         fostered_orphans = 0
         starting_orphans = sum([len(sm_clust.seq_ids) for group, sm_clust in self.small_clusters.items()])
+
+        # Loop through repeatedly, adding a single small cluster at a time and updating the large clusters on each loop
         while True:
             remaining_orphans = sum([len(sm_clust.seq_ids) for group, sm_clust in self.small_clusters.items()])
             self.printer.write("%s of %s orphans remain" % (remaining_orphans, starting_orphans))
             tmp_file = br.TempFile()
-            small_clusters = list(self.small_clusters.items())
+            small_clusters = [clust for clust_name, clust in self.small_clusters.items()]
             if multi_core:
                 # This will spin off other run_multicore_function calls if clusters are not in database...
                 br.run_multicore_function(small_clusters, self.mc_check_orphans, [tmp_file.path],

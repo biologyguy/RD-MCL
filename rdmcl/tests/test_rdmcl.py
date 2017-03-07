@@ -491,10 +491,10 @@ def test_instantiate_orphan(hf):
     assert large_clusters == [cluster1.seq_ids, cluster2.seq_ids]
     assert len([seq_id for sub_clust in small_clusters + large_clusters for seq_id in sub_clust]) == 14
     assert type(orphans.tmp_file) == rdmcl.br.TempFile
-    all_sim_scores_str = str(orphans.all_sim_scores)
-    assert orphans.all_sim_scores.iloc[0] == 0.30137309739554002
-    assert orphans.all_sim_scores.iloc[-1] == 0.91143399113741963
-    assert len(orphans.all_sim_scores) == 91  # This is for 14 sequences --> (a * (a - 1)) / 2
+    all_sim_scores_str = str(orphans.lrg_cluster_sim_scores)
+    assert orphans.lrg_cluster_sim_scores.iloc[0] == 0.96194166128549941
+    assert orphans.lrg_cluster_sim_scores.iloc[-1] == 0.94705822908105275
+    assert len(orphans.lrg_cluster_sim_scores) == 20  # This is for the two large clusters --> Σ(a*(a-1))/2
     broker.close()
 
     # Run a second time, reading the graph from the open database this time (happens automatically)
@@ -502,6 +502,88 @@ def test_instantiate_orphan(hf):
     broker.start_broker()
     seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
     orphans = rdmcl.Orphans(seqbuddy, clusters, broker, psi_pred_ss2_dfs)
-    assert all_sim_scores_str == str(orphans.all_sim_scores)
-    assert len(orphans.all_sim_scores) == 91
+    assert all_sim_scores_str == str(orphans.lrg_cluster_sim_scores)
+    assert len(orphans.lrg_cluster_sim_scores) == 20
     broker.close()
+
+
+def test_place_orphans(hf, capsys):
+    broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
+    broker.start_broker()
+
+    graph = hf.get_db_graph("6935966a6b9967c3006785488d968230", broker)
+    parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
+
+    psi_pred_ss2_dfs = OrderedDict()
+    for rec in parent_sb.records:
+        psi_pred_ss2_dfs[rec.id] = rdmcl.read_ss2_file("%spsi_pred%s%s.ss2" % (hf.resource_path, os.sep, rec.id))
+
+    parent_ids = [rec.id for rec in parent_sb.records]
+    parent_cluster = rdmcl.Cluster(parent_ids, graph, collapse=False)
+
+    cluster1 = ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE', 'Bfr-PanxαA']
+    cluster1 = rdmcl.Cluster(cluster1, hf.get_db_graph("14f1cd0e985ed87b4e31bc07453481d2", broker),
+                             parent=parent_cluster)
+    cluster1.set_name()
+
+    cluster2 = ['Lla-PanxαA', 'Mle-Panxα11', 'Oma-PanxαD', 'Pba-PanxαB', 'Tin-PanxαF']
+    cluster2 = rdmcl.Cluster(cluster2, hf.get_db_graph("441c3610506fda8a6820da5f67fdc470", broker),
+                             parent=parent_cluster)
+    cluster2.set_name()
+
+    cluster3 = ['Vpa-PanxαD']  # This should be placed in cluster 2
+    cluster3 = rdmcl.Cluster(cluster3, hf.get_db_graph("ded0bc087974589c24945bb36197d36f", broker),
+                             parent=parent_cluster)
+    cluster3.set_name()
+
+    cluster4 = ['Hca-PanxαA', 'Lcr-PanxαG']  # This should be placed in cluster 1
+    cluster4 = rdmcl.Cluster(cluster4, hf.get_db_graph("035b3933770942c7e32e27c06e619825", broker),
+                             parent=parent_cluster)
+    cluster4.set_name()
+
+    cluster5 = ['Hvu-PanxβA']  # This should not be placed in a cluster
+    cluster5 = rdmcl.Cluster(cluster5, hf.get_db_graph("c62b6378d326c2479296c98f0f620d0f", broker),
+                             parent=parent_cluster)
+    cluster5.set_name()
+    clusters = [cluster1, cluster2, cluster3, cluster4, cluster5]
+
+    orphans = rdmcl.Orphans(parent_sb, clusters, broker, psi_pred_ss2_dfs)
+
+    # ##### mc_check_orphans() ##### #
+    tmp_file = br.TempFile()
+    orphans.mc_check_orphans(cluster3, [tmp_file.path])
+    orphans.mc_check_orphans(cluster4, [tmp_file.path])
+    orphans.mc_check_orphans(cluster5, [tmp_file.path])
+    assert tmp_file.read() == """\
+group_0_2\tgroup_0_1\t0.0335324691423
+group_0_3\tgroup_0_0\t0.0147698715824
+"""
+    assert hf.string2hash(orphans.tmp_file.read()) == "b7c305b13ec68919ca72599cd33f1b73", print(orphans.tmp_file.read())
+    orphans.tmp_file.clear()
+
+    # ##### _check_orphan() ##### #
+    assert orphans._check_orphan(cluster3) == ('group_0_1', 0.033532469142303234)  # Clsuter is placed
+    assert not orphans._check_orphan(cluster5)  # Insufficient support for largest cluster
+    assert hf.string2hash(orphans.tmp_file.read()) == "0820336645b9080ff1f80b1d8c6fee0c", print(orphans.tmp_file.read())
+    orphans.tmp_file.clear()
+
+    # ##### place_orphans() ##### #
+    orphans.place_orphans(multi_core=False)
+    assert orphans.clusters[0].seq_ids == ["Hvu-PanxβA"]
+    assert orphans.clusters[1].seq_ids == ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE',
+                                           'Bfr-PanxαA', 'Hca-PanxαA', 'Lcr-PanxαG']
+    assert orphans.clusters[2].seq_ids == ['Lla-PanxαA', 'Mle-Panxα11', 'Oma-PanxαD',
+                                           'Pba-PanxαB', 'Tin-PanxαF', 'Vpa-PanxαD']
+    assert hf.string2hash(orphans.tmp_file.read()) == "8c1f9952bd9f10e82688fdfde2c78b77", print(orphans.tmp_file.read())
+
+    # Multicore doesn't seem to work in py.test, but can at least call it like it does
+    orphans = rdmcl.Orphans(parent_sb, clusters, broker, psi_pred_ss2_dfs)
+    orphans.place_orphans(multi_core=True)
+    assert len(orphans.clusters) == 5
+
+    # If no small clusters, nothing much happens
+    orphans = rdmcl.Orphans(parent_sb, clusters[:2], broker, psi_pred_ss2_dfs)
+    assert not orphans.place_orphans(multi_core=False)
+    assert len(orphans.clusters) == 2
+
+    # ToDo: Test for failure or Tukey HSD test
