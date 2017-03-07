@@ -189,6 +189,27 @@ def test_cluster_get_base_cluster(hf):
     child = rdmcl.Cluster(child_ids, hf.get_sim_scores(child_ids), parent=parent)
     assert child.score() == -6.000949946302431
 
+    # Include an orphan sequence
+    child_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC']
+    sim_scores = hf.get_sim_scores(child_ids)
+    child = rdmcl.Cluster(child_ids, sim_scores, parent=parent)
+    assert child.score() == 0.5466386920733747
+    child.seq_ids.append("Foo-Bar3")
+    assert child.score(force=True) == 1.3326109193908637
+
+    # Edge case where child is full size of parent
+    child = rdmcl.Cluster(parent.seq_ids, parent.sim_scores, parent=parent)
+    assert child.score() == -208.64552691255088
+
+
+def test_cluster_pull_scores_subgraph(hf):
+    clust = rdmcl.Cluster(*hf.base_cluster_args())
+    assert str(clust.pull_scores_subgraph(['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC'])) == """\
+            seq1        seq2     score
+132   Hru-PanxαA  Lcr-PanxαH  0.966569
+165   Hru-PanxαA  Tin-PanxαC  0.958389
+6851  Lcr-PanxαH  Tin-PanxαC  0.974295"""
+
 
 def test_cluster_len(hf):
     seq_ids = ['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC', 'Oma-PanxαC', 'Dgl-PanxαE']

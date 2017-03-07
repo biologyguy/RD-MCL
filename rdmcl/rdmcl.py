@@ -89,19 +89,6 @@ for aa in ambiguous_X:
     BLOSUM62[pair] = ambiguous_X[aa]
 
 
-def push(hash_id, field, data):
-    """This is deprecated and needs to be removed"""
-    broker_queue.put(('push', hash_id, field, data))
-
-
-def scored_clusters():
-    """This is deprecated and needs to be removed"""
-    recvpipe, sendpipe = Pipe(False)
-    broker_queue.put(('scored', sendpipe))
-    response = json.loads(recvpipe.recv())
-    return response
-
-
 class Cluster(object):
     def __init__(self, seq_ids, sim_scores, taxa_separator="-", parent=None, clique=False, collapse=True, r_seed=None):
         """
@@ -350,7 +337,7 @@ class Cluster(object):
             half_par = (len(self.parent) / 2) if len(self) <= len(self.parent) else (len(self) / 2)
             if len(self) != half_par * 2:
                 score *= ((half_par - abs(len(self) - half_par)) / half_par)
-            else:  # To prevent exception with log2 below
+            else:  # To prevent exception with log2 below when parent and child are same length
                 score *= 1 / half_par
         score = log2(score)  # Convert fractions to negative scores
         score = score ** 2 if score > 0 else -1 * (score ** 2)  # Linearize the data
