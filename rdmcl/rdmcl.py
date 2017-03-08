@@ -418,7 +418,7 @@ class Cluster(object):
             for clique in rbhc_dfs:
                 clique_ids = set(list(clique.seq1.values) + list(clique.seq2.values))
                 clique_ids = list(clique_ids)
-                log_file.write("\t\t\t%s\n" % clique_ids)
+                log_file.write("\t\t\t%s\n" % sorted(clique_ids))
                 clique_scores = self.pull_scores_subgraph(clique_ids)
                 outer_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique_ids)) |
                                                (self.sim_scores.seq2.isin(clique_ids))]
