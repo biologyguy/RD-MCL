@@ -349,10 +349,18 @@ class Cluster(object):
         subgraph = self.sim_scores[(self.sim_scores.seq1.isin(seq_ids)) & (self.sim_scores.seq2.isin(seq_ids))]
         return subgraph
 
-    def create_rbh_cliques(self):
+    def create_rbh_cliques(self, log_file=None):
+        """
+        Check for reciprocal best hit cliques
+        :param log_file: Handle to a writable file
+        :return: list of Cluster objects or False
+        """
+        log_file = log_file if log_file else br.TempFile()
+        log_file.write("# ####### Testing %s ####### #\n%s\n" % (self.name(), self.seq_ids))
         results = []
         # Anything less than 6 sequences cannot be subdivided into smaller cliques, because it would create orphans
         if len(self) < 6:
+            log_file.write("\tTERMINATED: Group too small.\n\n")
             return [self]
 
         paralogs = OrderedDict()
@@ -360,8 +368,9 @@ class Cluster(object):
             if len(group) > 1:
                 for gene in group:
                     rbhc = self.recursive_best_hits(gene, pd.DataFrame(columns=["seq1", "seq2", "score"]), [gene])
-                    # If any clique encompasses the entire cluster, we're done
+                    # If ANY clique encompasses the entire cluster, we're done
                     if len(set(list(rbhc.seq1.values) + list(rbhc.seq2.values))) == len(self):
+                        log_file.write("\tTERMINATED: Entire cluster pulled into clique on %s." % taxa_id)
                         return [self]
 
                     paralogs.setdefault(taxa_id, [])
@@ -369,71 +378,100 @@ class Cluster(object):
 
         # If there aren't any paralogs, we can't break up the group
         if not paralogs:
+            log_file.write("\tTERMINATED: No paralogs present.\n\n")
             return [self]
 
         # RBHCs with any overlap within a taxon cannot be separated from the cluster
         seqs_to_remove = []
+        log_file.write("\tChecking taxa for overlapping cliques:\n")
         for taxa_id, rbhc_dfs in paralogs.items():
-            marked_for_del = []
+            log_file.write("\t\t# #### %s #### #\n" % taxa_id)
+            marked_for_del = OrderedDict()
             for i, df_i in enumerate(rbhc_dfs):
                 genes_i = set(list(df_i.seq1.values) + list(df_i.seq2.values))
-                if len(genes_i) < 3:  # Do not separate cliques of 2
-                    marked_for_del.append(i)  # Don't need to do this for df_j, because all sets checked already
+                # Do not separate cliques of 2. df_j sizes are covered in df_i loop.
+                if len(genes_i) < 3:
+                    marked_for_del[i] = "is too small"
                 for j, df_j in enumerate(rbhc_dfs[i+1:]):
                     genes_j = set(list(df_j.seq1.values) + list(df_j.seq2.values))
                     if list(genes_i & genes_j):
-                        marked_for_del += [i, i + j]
+                        if i not in marked_for_del:
+                            marked_for_del[i] = "overlaps with %s" % genes_j
+                        if i + j not in marked_for_del:
+                            marked_for_del[i + j] = "overlaps with %s" % genes_i
 
-            marked_for_del = list(set(marked_for_del))  # Remove any duplicates
-            marked_for_del = sorted(marked_for_del, reverse=True)  # Delete from the largest index down
-            for del_indx in marked_for_del:
-                del rbhc_dfs[del_indx]
+            if marked_for_del:
+                log_file.write("\t\tDisqualified cliques:\n")
+                marked_for_del = OrderedDict(sorted(marked_for_del.items(), key=lambda x: x[0], reverse=True))  # Delete from the largest index down
+                for del_indx, reason in marked_for_del.items():
+                    clique_ids = set(list(rbhc_dfs[del_indx].seq1.values) + list(rbhc_dfs[del_indx].seq2.values))
+                    log_file.write("\t\t\t%s %s\n" % (clique_ids, reason))
+                    del rbhc_dfs[del_indx]
 
             # If all RBHCs have been disqualified, no reason to do the final test
             if not rbhc_dfs:
+                log_file.write("\n\t\t!! ALL CLIQUES DISQUALIFIED !!\n\n")
                 continue
 
             # Check for overlap between similarity scores within the clique and between clique seqs and non-clique seqs
+            log_file.write("\t\tTest for KDE separation:\n")
             for clique in rbhc_dfs:
                 clique_ids = set(list(clique.seq1.values) + list(clique.seq2.values))
                 clique_ids = list(clique_ids)
+                log_file.write("\t\t\t%s\n" % clique_ids)
                 clique_scores = self.pull_scores_subgraph(clique_ids)
-                total_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique_ids)) |
+                outer_scores = self.sim_scores[(self.sim_scores.seq1.isin(clique_ids)) |
                                                (self.sim_scores.seq2.isin(clique_ids))]
 
-                total_scores = total_scores[((total_scores.seq1.isin(clique_ids))
-                                             & (total_scores.seq2.isin(clique_ids) == False)) |
-                                            ((total_scores.seq2.isin(clique_ids))
-                                             & (total_scores.seq1.isin(clique_ids) == False))]
+                outer_scores = outer_scores[((outer_scores.seq1.isin(clique_ids))
+                                             & (outer_scores.seq2.isin(clique_ids) == False)) |
+                                            ((outer_scores.seq2.isin(clique_ids))
+                                             & (outer_scores.seq1.isin(clique_ids) == False))]
 
                 # if all sim scores in a group are identical, we can't get a KDE. Fix by perturbing the scores a little.
                 clique_scores = self.perturb(clique_scores)
-                total_scores = self.perturb(total_scores)
+                outer_scores = self.perturb(outer_scores)
 
-                total_kde = scipy.stats.gaussian_kde(total_scores.score, bw_method='silverman')
+                total_kde = scipy.stats.gaussian_kde(outer_scores.score, bw_method='silverman')
+                log_file.write("\t\t\tOuter KDE: {'shape': %s, 'covariance': %s, 'inv_cov': %s, '_norm_factor': %s}\n" %
+                               (total_kde.dataset.shape, total_kde.covariance[0][0], total_kde.inv_cov[0][0], total_kde._norm_factor))
                 clique_kde = scipy.stats.gaussian_kde(clique_scores.score, bw_method='silverman')
+                log_file.write("\t\t\tClique KDE: {'shape': %s, 'covariance': %s, 'inv_cov': %s,  '_norm_factor': %s}\n" %
+                               (clique_kde.dataset.shape, clique_kde.covariance[0][0], clique_kde.inv_cov[0][0], clique_kde._norm_factor))
                 clique_resample = clique_kde.resample(10000)  # Note that this is a random sampling not controlled by r_seed!
                 clique95 = [np.percentile(clique_resample, 2.5), np.percentile(clique_resample, 97.5)]
+                log_file.write("\t\t\tclique95: %s\n" % clique95)
                 integrated = total_kde.integrate_box_1d(clique95[0], clique95[1])
+                log_file.write("\t\t\tintegrated: %s\n" % integrated)
                 if integrated < 0.05:
+                    log_file.write("\t\t\tPASS\n\n")
                     seqs_to_remove += clique_ids
                     results.append([clique_ids, clique_scores])
+                else:
+                    log_file.write("\t\t\tFAIL\n\n")
 
         # After all that, no significant cliques to spin off as independent clusters...
         if not seqs_to_remove:
+            log_file.write("\tTERMINATED: No significant cliques identified.\n\n")
             return [self]
 
         # Look for any overlap between the cliques identified for each taxon and merge them together
+        if len(results) > 1:
+            log_file.write("\t\tChecking if new cliques can combine\n")
         combined = []
         while results:
             clique_i = results[0]
             drop_j_indx = []
             for indx, clique_j in enumerate(results[1:]):
+                log_file.write("\t\t%s - %s  " % (clique_i[0], clique_j[0]))
                 if list(set(clique_i[0]) & set(clique_j[0])):
+                    log_file.write("YES\n")
                     clique_i[0] = set(clique_i[0] + clique_j[0])
                     clique_i[0] = sorted(list(clique_i[0]))
                     clique_i[1] = self.pull_scores_subgraph(clique_i[0])
                     drop_j_indx.append(indx + 1)
+                else:
+                    log_file.write("NO\n")
             combined.append(clique_i)
             for indx in sorted(drop_j_indx, reverse=True):
                 del results[indx]
@@ -444,6 +482,7 @@ class Cluster(object):
 
         # Do not leave orphans by spinning off cliques
         if len(remaining_seqs) in [1, 2]:
+            log_file.write("\tTERMINATED: Spinning off cliques would orphan %s.\n\n" % " and ".join(remaining_seqs))
             return [self]
 
         for indx, result in enumerate(combined):
@@ -460,9 +499,10 @@ class Cluster(object):
                                         taxa_separator=self.taxa_separator)
             remaining_cluster.set_name()
             results.append(remaining_cluster)
+        log_file.write("\tCliques identified and spun off:\n\t\t%s\n\n" % "\n\t\t".join([str(res.seq_ids) for res in results]))
         return results
 
-    """The following are possible score modifier schemes to account for group size
+    """The following are other possible score modifier schemes to account for group size
     def gpt(self, score, taxa):  # groups per taxa
         genes_per_taxa = self.size / len(taxa.value_counts())
         num_clusters_modifier = abs(genes_per_taxa - len(self.clusters))
@@ -1242,6 +1282,9 @@ if __name__ == '__main__':
     if os.path.isfile(os.path.join(in_args.outdir, "orphans.log")):
         os.remove(os.path.join(in_args.outdir, "orphans.log"))
 
+    if os.path.isfile(os.path.join(in_args.outdir, "cliques.log")):
+        os.remove(os.path.join(in_args.outdir, "cliques.log"))
+
     # PSIPRED
     logging.warning("\n** PSI-Pred **")
     records_missing_ss_files = []
@@ -1364,8 +1407,15 @@ if __name__ == '__main__':
         # Sort out reciprocal best hit cliques
         if not in_args.suppress_clique_check:
             final_cliques = []
-            for clstr in final_clusters:
-                final_cliques += clstr.create_rbh_cliques()
+            with open(os.path.join(in_args.outdir, "cliques.log"), "a") as clique_log_file:
+                clique_log_file.write("""\
+   #################################
+   #  Initiating Clique Detection  #
+   #################################
+
+""")
+                for clstr in sorted(final_clusters, key=lambda x: len(x.seq_ids), reverse=True):
+                    final_cliques += clstr.create_rbh_cliques(clique_log_file)
             final_clusters = final_cliques
 
         # Fold singletons and doublets back into groups.
@@ -1375,6 +1425,12 @@ if __name__ == '__main__':
             orphans.place_orphans()
             final_clusters = orphans.clusters
             with open(os.path.join(in_args.outdir, "orphans.log"), "a") as orphan_log_file:
+                orphan_log_file.write("""\
+   #################################
+   #  Initiating Orphan Placement  #
+   #################################
+
+""")
                 orphan_log_file.write(orphans.tmp_file.read())
 
         if in_args.suppress_iteration:
