@@ -396,16 +396,16 @@ class Cluster(object):
                     genes_j = set(list(df_j.seq1.values) + list(df_j.seq2.values))
                     if list(genes_i & genes_j):
                         if i not in marked_for_del:
-                            marked_for_del[i] = "overlaps with %s" % genes_j
+                            marked_for_del[i] = "overlaps with %s" % sorted(list(genes_j))
                         if i + j not in marked_for_del:
-                            marked_for_del[i + j] = "overlaps with %s" % genes_i
+                            marked_for_del[i + j] = "overlaps with %s" % sorted(list(genes_i))
 
             if marked_for_del:
                 log_file.write("\t\tDisqualified cliques:\n")
                 marked_for_del = OrderedDict(sorted(marked_for_del.items(), key=lambda x: x[0], reverse=True))  # Delete from the largest index down
                 for del_indx, reason in marked_for_del.items():
                     clique_ids = set(list(rbhc_dfs[del_indx].seq1.values) + list(rbhc_dfs[del_indx].seq2.values))
-                    log_file.write("\t\t\t%s %s\n" % (clique_ids, reason))
+                    log_file.write("\t\t\t%s %s\n" % (sorted(list(clique_ids)), reason))
                     del rbhc_dfs[del_indx]
 
             # If all RBHCs have been disqualified, no reason to do the final test
@@ -463,7 +463,7 @@ class Cluster(object):
             clique_i = results[0]
             drop_j_indx = []
             for indx, clique_j in enumerate(results[1:]):
-                log_file.write("\t\t%s - %s  " % (clique_i[0], clique_j[0]))
+                log_file.write("\t\t%s - %s  " % (sorted(clique_i[0]), sorted(clique_j[0])))
                 if list(set(clique_i[0]) & set(clique_j[0])):
                     log_file.write("YES\n")
                     clique_i[0] = set(clique_i[0] + clique_j[0])

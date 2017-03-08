@@ -211,6 +211,82 @@ def test_cluster_pull_scores_subgraph(hf):
 6851  Lcr-PanxαH  Tin-PanxαC  0.974295"""
 
 
+def test_cluster_create_rbh_cliques(hf):
+    parent = rdmcl.Cluster(*hf.base_cluster_args())
+    log_file = br.TempFile()
+
+    # Cluster of less than 6 seqs returns self
+    seq_ids = ['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC', 'Oma-PanxαC', 'Dgl-PanxαE']
+    cluster = rdmcl.Cluster(seq_ids, hf.get_sim_scores(seq_ids), parent=parent)
+    cluster.set_name()
+    assert cluster.create_rbh_cliques(log_file)[0] == cluster
+    assert log_file.read().strip() == """\
+# ####### Testing group_0_0 ####### #
+['Dgl-PanxαE', 'Hru-PanxαA', 'Lcr-PanxαH', 'Oma-PanxαC', 'Tin-PanxαC']
+\tTERMINATED: Group too small."""
+    log_file.clear()
+
+    # If clique brings in entire cluster, return self
+    seq_ids = ['Bab-PanxαC', 'Bfo-PanxαC', 'BOL-PanxαF', 'Vpa-PanxαD', 'BOL-PanxαE', 'Mle-Panxα11']
+    cluster = rdmcl.Cluster(seq_ids, hf.get_sim_scores(seq_ids), parent=parent)
+    cluster.set_name()
+    assert cluster.create_rbh_cliques(log_file)[0] == cluster
+    assert log_file.read().strip() == """\
+# ####### Testing group_0_1 ####### #
+['BOL-PanxαE', 'BOL-PanxαF', 'Bab-PanxαC', 'Bfo-PanxαC', 'Mle-Panxα11', 'Vpa-PanxαD']
+\tTERMINATED: Entire cluster pulled into clique on BOL."""
+    log_file.clear()
+
+    # If no paralogs in cluster, return self
+    seq_ids = ['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC', 'Oma-PanxαC', 'Dgl-PanxαE', 'Vpa-PanxαE']
+    cluster = rdmcl.Cluster(seq_ids, hf.get_sim_scores(seq_ids), parent=parent)
+    cluster.set_name()
+    assert cluster.create_rbh_cliques(log_file)[0] == cluster
+    assert log_file.read().strip() == """\
+# ####### Testing group_0_2 ####### #
+['Dgl-PanxαE', 'Hru-PanxαA', 'Lcr-PanxαH', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαE']
+\tTERMINATED: No paralogs present."""
+    log_file.clear()
+
+    # When all cliques are disqualified due to size and/or overlap
+    seq_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Edu-PanxαA', 'Hca-PanxαB',
+               'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Mle-Panxα9', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
+    cluster = rdmcl.Cluster(seq_ids, hf.get_sim_scores(seq_ids), parent=parent)
+    cluster.set_name()
+    assert cluster.create_rbh_cliques(log_file)[0] == cluster
+    assert log_file.read().strip() == """\
+# ####### Testing group_0_3 ####### #
+['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Edu-PanxαA', 'Hca-PanxαB', 'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Mle-Panxα9', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
+\tChecking taxa for overlapping cliques:
+\t\t# #### Mle #### #
+\t\tDisqualified cliques:
+\t\t\t['Mle-Panxα9', 'Vpa-PanxαB'] is too small
+\t\t\t['Mle-Panxα10A', 'Mle-Panxα9', 'Vpa-PanxαB'] overlaps with ['Mle-Panxα9', 'Vpa-PanxαB']
+
+\t\t!! ALL CLIQUES DISQUALIFIED !!
+
+\tTERMINATED: No significant cliques identified."""
+    log_file.clear()
+
+    # When spinning off an otherwise valid clique would orphan one or more sequences, return self
+    seq_ids = ['Vpa-PanxαA', 'Mle-Panxα4', 'BOL-PanxαF', 'Lcr-PanxαI', 'Bch-PanxαB',  'Lcr-PanxαL', 'Mle-Panxα5', 'Vpa-PanxαF']
+    cluster = rdmcl.Cluster(seq_ids, hf.get_sim_scores(seq_ids), parent=parent)
+    cluster.set_name()
+    assert cluster.create_rbh_cliques(log_file)[0] == cluster
+    assert "TERMINATED: Spinning off cliques would orphan Bch-PanxαB." in log_file.read()
+
+    # Check whether identified cliques can be combined
+    seq_ids = ['Vpa-PanxαA', 'Mle-Panxα4', 'BOL-PanxαF', 'Lcr-PanxαI', 'Lcr-PanxαL', 'Mle-Panxα5', 'Vpa-PanxαF']
+    cluster = rdmcl.Cluster(seq_ids, hf.get_sim_scores(seq_ids), parent=parent)
+    cluster.set_name()
+    cliques = cluster.create_rbh_cliques(log_file)
+    assert cliques[0].seq_ids == ['BOL-PanxαF', 'Lcr-PanxαI', 'Mle-Panxα4', 'Vpa-PanxαA']
+    assert cliques[1].seq_ids == ['Lcr-PanxαL', 'Mle-Panxα5', 'Vpa-PanxαF']
+    assert """Checking if new cliques can combine
+\t\t['BOL-PanxαF', 'Lcr-PanxαI', 'Mle-Panxα4'] - ['Lcr-PanxαL', 'Mle-Panxα5', 'Vpa-PanxαF']  NO
+\t\t['BOL-PanxαF', 'Lcr-PanxαI', 'Mle-Panxα4'] - ['BOL-PanxαF', 'Mle-Panxα4', 'Vpa-PanxαA']  YES""" in log_file.read()
+
+
 def test_cluster_len(hf):
     seq_ids = ['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC', 'Oma-PanxαC', 'Dgl-PanxαE']
     cluster = rdmcl.Cluster(seq_ids, hf.get_sim_scores(seq_ids))
