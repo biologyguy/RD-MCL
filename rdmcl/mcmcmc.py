@@ -161,6 +161,9 @@ class _Chain:
 
 
 class MCMCMC:
+    """
+    Sets up the infrastructure to run a Metropolis Hasting random walk
+    """
     def __init__(self, variables, function, params=None, steps=10000, sample_rate=1, num_chains=3,
                  outfile='./mcmcmc_out.csv', burn_in=100, quiet=False, r_seed=None):
         self.global_variables = variables

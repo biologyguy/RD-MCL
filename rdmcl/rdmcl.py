@@ -761,6 +761,12 @@ class Progress(object):
 
 
 def mcmcmc_mcl(args, params):
+    """
+    Function passed to mcmcmcm.MCMCMC that will execute MCL and return the final cluster scores
+    :param args: Sample values to run MCL with and a random seed [inflation, gq, r_seed]
+    :param params: List of parameters (see below for unpacking assignment)
+    :return:
+    """
     inflation, gq, r_seed = args
     exter_tmp_dir, min_score, seqbuddy, parent_cluster, taxa_separator, sql_broker, psi_pred_ss2_dfs, progress = params
     rand_gen = Random(r_seed)

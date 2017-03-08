@@ -187,7 +187,7 @@ def test_cluster_get_base_cluster(hf):
     # Single sequence
     child_ids = ['BOL-PanxαA']
     child = rdmcl.Cluster(child_ids, hf.get_sim_scores(child_ids), parent=parent)
-    assert child.score() == -6.000949946302431
+    assert round(child.score(), 12) == -6.000949946302
 
     # Include an orphan sequence
     child_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC']
@@ -582,6 +582,53 @@ def test_create_all_by_all_scores(hf):
 
 
 # #########  MCL stuff  ########## #
+def test_mcmcmc_mcl(hf):
+    ext_tmp_dir = br.TempDir()
+    ext_tmp_dir.subfile("max.txt")
+    min_score = False
+    cluster_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Hca-PanxαB',
+                   'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Tin-PanxαC',
+                   'Vpa-PanxαB', 'Oma-PanxαC', 'Edu-PanxαA', 'Bch-PanxαC']
+    seqbuddy = rdmcl.Sb.SeqBuddy(hf._cteno_panxs)
+    seqbuddy = rdmcl.Sb.pull_recs(seqbuddy, "^%s$" % "$|^".join(cluster_ids))
+    taxa_separator = "-"
+    sql_broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
+    sql_broker.start_broker()
+    cluster = rdmcl.Cluster(cluster_ids, hf.get_db_graph("3c15516819aa19b069b0e8858444f876", sql_broker))
+    psi_pred_ss2_dfs = OrderedDict()
+    for rec in seqbuddy.records:
+        psi_pred_ss2_dfs[rec.id] = rdmcl.read_ss2_file("%spsi_pred%s%s.ss2" % (hf.resource_path, os.sep, rec.id))
+    os.makedirs(os.path.join(ext_tmp_dir.path, "progress"))
+    progress = rdmcl.Progress(os.path.join(ext_tmp_dir.path, "progress"), cluster)
+
+    args = (6.372011782427792, 0.901221218627, 1)  # inflation, gq, r_seed
+    params = [ext_tmp_dir.path, min_score, seqbuddy, cluster, taxa_separator, sql_broker, psi_pred_ss2_dfs, progress]
+
+    assert rdmcl.mcmcmc_mcl(args, params) == 16.623569649255856
+    with open(os.path.join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
+        assert ifile.read() == "6b39ebc4f5fe7dfef786d8ee3e1594ed,cb23cf3b4d355140e525a1158af5102d,8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9,09cac4f034df8a2805171e1e61cc8666"
+
+    args = (3.1232, 0.73432, 1)  # inflation, gq, r_seed
+    assert rdmcl.mcmcmc_mcl(args, params) == 15.20963391409833
+    with open(os.path.join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
+        assert ifile.read() == """6b39ebc4f5fe7dfef786d8ee3e1594ed,cb23cf3b4d355140e525a1158af5102d,8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9,09cac4f034df8a2805171e1e61cc8666
+af97327b21920e6d2b2fb31e181ce7f4,a06adee8cc3631773890bb5842bf8df9"""
+
+    args = (10.1232, 0.43432, 1)  # inflation, gq, r_seed
+    assert rdmcl.mcmcmc_mcl(args, params) == 20.487957298141357
+    with open(os.path.join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
+        assert ifile.read() == """3c15516819aa19b069b0e8858444f876
+6b39ebc4f5fe7dfef786d8ee3e1594ed,cb23cf3b4d355140e525a1158af5102d,8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9,09cac4f034df8a2805171e1e61cc8666
+af97327b21920e6d2b2fb31e181ce7f4,a06adee8cc3631773890bb5842bf8df9"""
+
+    with open(os.path.join(ext_tmp_dir.path, "best_group"), "r") as ifile:
+        assert ifile.read() == """BOL-PanxαA	Bab-PanxαB	Bfo-PanxαB	Dgl-PanxαE	Hca-PanxαB	Hru-PanxαA	Lcr-PanxαH	Tin-PanxαC	Vpa-PanxαB
+Oma-PanxαC
+Mle-Panxα10A
+Edu-PanxαA
+Bch-PanxαC"""
+
+
 def test_parse_mcl_clusters(hf):
     clusters = rdmcl.parse_mcl_clusters("%sCteno_pannexins_mcl_clusters.clus" % hf.resource_path)
     assert clusters[6] == ["BOL-PanxαH", "Dgl-PanxαH", "Edu-PanxαC", "Hca-PanxαF", "Mle-Panxα8", "Pba-PanxαC"]
@@ -729,7 +776,10 @@ group_0_3\tgroup_0_0\t0.0147698715824
     orphans.tmp_file.clear()
 
     # ##### _check_orphan() ##### #
-    assert orphans._check_orphan(cluster3) == ('group_0_1', 0.033532469142303234)  # Clsuter is placed
+    # Cluster is placed
+    orphs = orphans._check_orphan(cluster3)
+    assert orphs[0] == 'group_0_1'
+    assert round(orphs[1], 12) == 0.033532469142
     assert not orphans._check_orphan(cluster5)  # Insufficient support for largest cluster
     assert hf.string2hash(orphans.tmp_file.read()) == "0820336645b9080ff1f80b1d8c6fee0c", print(orphans.tmp_file.read())
     orphans.tmp_file.clear()
@@ -753,4 +803,4 @@ group_0_3\tgroup_0_0\t0.0147698715824
     assert not orphans.place_orphans(multi_core=False)
     assert len(orphans.clusters) == 2
 
-    # ToDo: Test for failure or Tukey HSD test
+    # ToDo: Test for failure on Tukey HSD test
