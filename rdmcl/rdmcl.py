@@ -90,7 +90,7 @@ for aa in ambiguous_X:
 
 
 class Cluster(object):
-    def __init__(self, seq_ids, sim_scores, taxa_separator="-", parent=None, clique=False, collapse=True, r_seed=None):
+    def __init__(self, seq_ids, sim_scores, taxa_separator="-", parent=None, collapse=True, r_seed=None):
         """
         - Note that reciprocal best hits between paralogs are collapsed when instantiating group_0, so
           no problem strongly penalizing all paralogs in the scoring algorithm
@@ -101,7 +101,6 @@ class Cluster(object):
         :type sim_scores: pandas.DataFrame
         :param parent: Parental sequence_ids
         :type parent: Cluster
-        :param clique: Specify whether cluster is a clique or not
         :type clique: bool
         :param collapse: Specify whether reciprocal best hit paralogs should be combined
         :type collapse: bool
@@ -118,9 +117,6 @@ class Cluster(object):
         self.parent = parent
 
         self.subgroup_counter = 0
-        # self.clique_counter = 0
-        self.clique = clique
-        # self.cliques = []
         self.cluster_score = None
         self.collapsed_genes = OrderedDict()  # If paralogs are reciprocal best hits, collapse them
         self.rand_gen = Random(r_seed)
@@ -145,17 +141,16 @@ class Cluster(object):
             # Set the full cluster score first though, in case it's needed
             self.seq_ids = seq_ids
             if collapse:
-                seq_ids = self.collapse(seq_ids)
+                self.collapse()
 
-        self.seq_ids = seq_ids
         self.seq_ids_str = str(", ".join(seq_ids))
         self.seq_id_hash = helpers.md5_hash(self.seq_ids_str)
 
-    def collapse(self, seq_ids):
+    def collapse(self):
         breakout = False
         while not breakout:
             breakout = True
-            for seq1_id in seq_ids:
+            for seq1_id in self.seq_ids:
                 seq1_taxa = seq1_id.split(self.taxa_separator)[0]
                 paralog_best_hits = []
                 for hit in self.get_best_hits(seq1_id).itertuples():
@@ -174,12 +169,12 @@ class Cluster(object):
                 for paralog in paralog_best_hits:
                     self.sim_scores = self.sim_scores[(self.sim_scores.seq1 != paralog) &
                                                       (self.sim_scores.seq2 != paralog)]
-                    del seq_ids[seq_ids.index(paralog)]
+                    del self.seq_ids[self.seq_ids.index(paralog)]
                     del self.taxa[seq1_taxa][self.taxa[seq1_taxa].index(paralog)]
                     if paralog in self.collapsed_genes:
                         self.collapsed_genes[seq1_id] += self.collapsed_genes[paralog]
                         del self.collapsed_genes[paralog]
-        return seq_ids
+        return
 
     def name(self):
         """
@@ -199,9 +194,6 @@ class Cluster(object):
         """
         if self._name:
             pass
-        # elif self.clique:
-        #    self._name = "%s_c%s" % (self.parent.name(), self.parent.clique_counter)
-        #    self.parent.clique_counter += 1
         else:
             try:
                 self.parent.name()
@@ -209,8 +201,6 @@ class Cluster(object):
                 raise ValueError("Parent of current cluster has not been named.\n%s" % self)
             self._name = "%s_%s" % (self.parent.name(), self.parent.subgroup_counter)
             self.parent.subgroup_counter += 1
-            # for clique in self.cliques:
-            #    clique.set_name()
         return
 
     def compare(self, query):
@@ -491,7 +481,7 @@ class Cluster(object):
         for indx, result in enumerate(combined):
             cluster_ids, cluster_sim_scores = result
             cluster = Cluster(cluster_ids, sim_scores=cluster_sim_scores, taxa_separator=self.taxa_separator,
-                              parent=self, clique=True)
+                              parent=self)
             cluster.set_name()
             results.append(cluster)
 
@@ -713,19 +703,13 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         if len(sub_cluster) in [1, 2]:
             cluster_list.append(sub_cluster)
             continue
-        # if sub_cluster.cliques:
-        #    for clique in sub_cluster.cliques:
-        #        clique.clique = True
-        #        clique.set_name()
-        #        for _seq_id in clique.seq_ids:
-        #            sub_cluster.seq_ids.remove(_seq_id)
-        #    recursion_clusters += sub_cluster.cliques
-        #    sub_cluster.cliques = []
         recursion_clusters.append(sub_cluster)
 
     for sub_cluster in recursion_clusters:
         seqbuddy_copy = Sb.make_copy(seqbuddy)
         seqbuddy_copy = Sb.pull_recs(seqbuddy_copy, ["^%s$" % rec_id for rec_id in sub_cluster.seq_ids])
+
+        sub_cluster.collapse()
 
         # Recursion... Reassign cluster_list, as all clusters are returned at the end of a call to orthogroup_caller
         cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, sql_broker=sql_broker,
@@ -1295,6 +1279,13 @@ if __name__ == '__main__':
     if os.path.isfile(os.path.join(in_args.outdir, "cliques.log")):
         os.remove(os.path.join(in_args.outdir, "cliques.log"))
 
+    with open(os.path.join(in_args.outdir, "paralog_cliques"), "w") as outfile:
+        outfile.write("###########################################################\n"
+                      "# If a named cluster contains reciprocal best hit cliques #\n"
+                      "# among a group of paralogs, they are collapsed down to a #\n"
+                      "# single representative. The collapses are itemized here. #\n"
+                      "###########################################################\n\n")
+
     # PSIPRED
     logging.warning("\n** PSI-Pred **")
     records_missing_ss_files = []
@@ -1374,15 +1365,6 @@ if __name__ == '__main__':
     base_score = group_0_cluster.score()
     logging.warning("Base cluster score: %s" % round(base_score, 4))
 
-    # Reset the score of group_0 to account for possible collapse of paralogs
-    if group_0_cluster.collapsed_genes:
-        logging.warning("\nReciprocal best-hit cliques of paralogs have been identified in the input sequences.")
-        logging.info(" A representative sequence has been selected from each clique, and the remaining")
-        logging.info(" sequences will be placed in the final clusters at the end of the run.")
-        with open(os.path.join(in_args.outdir, "paralog_cliques.json"), "w") as outfile:
-            json.dump(group_0_cluster.collapsed_genes, outfile)
-            logging.warning(" Cliques written to: %s%sparalog_cliques.json" % (in_args.outdir, os.sep))
-
     # Ortholog caller
     logging.warning("\n** Recursive MCL **")
     final_clusters = []
@@ -1445,14 +1427,17 @@ if __name__ == '__main__':
     if not in_args.suppress_clique_check or not in_args.suppress_singlet_folding:
         logging.warning("\t-- finished in %s --" % TIMER.split())
 
-    if group_0_cluster.collapsed_genes:
-        logging.warning("\nPlacing collapsed paralogs into their respective clusters")
-        for clust in final_clusters:
-            for gene_id, paralog_list in group_0_cluster.collapsed_genes.items():
-                if gene_id in clust.seq_ids:
-                    clust.seq_ids += paralog_list
-                    clust.taxa[gene_id.split(in_args.taxa_separator)[0]].append(gene_id)
-            clust.score(force=True)
+    logging.warning("\nPlacing any collapsed paralogs into their respective clusters")
+    for clust in final_clusters:
+        if clust.collapsed_genes:
+            with open(os.path.join(in_args.outdir, "paralog_cliques"), "a") as outfile:
+                outfile.write("# %s\n" % clust.name())
+                json.dump(clust.collapsed_genes, outfile)
+                outfile.write("\n\n")
+            for gene_id, paralog_list in clust.collapsed_genes.items():
+                clust.seq_ids += paralog_list
+                clust.taxa[gene_id.split(in_args.taxa_separator)[0]].append(gene_id)
+        clust.score(force=True)
 
     logging.warning("Preparing final_clusters.txt")
     final_score = 0
