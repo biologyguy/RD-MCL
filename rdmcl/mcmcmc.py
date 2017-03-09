@@ -211,7 +211,7 @@ class MCMCMC:
                 ofile.write(str(score))
             return
 
-        def step_parse(_chain):
+        def step_parse(_chain):  # Implements Metropolis-Hastings
             with open(os.path.join(temp_dir.path, _chain.name), "r") as ifile:
                 _chain.proposed_score = float(ifile.read())
 
@@ -223,19 +223,23 @@ class MCMCMC:
             _chain.raw_min = min(_chain.score_history)
             _chain.set_gaussian()
 
+            # If the score hasn't been set or the new score is better, the step is accepted
             if _chain.current_score is None or _chain.proposed_score >= _chain.current_score:
                 _chain.accept()
 
+            # Even if the score is worse, there's a chance of accepting it relative to how much worse it is
             else:
                 rand_check_val = _chain.rand_gen.random()
+                # Calculate acceptance ratio as α=f(x')/f(xt), then compare to rand_check_val
                 prop_gaus = _chain.gaussian_pdf.pdf(_chain.proposed_score)
                 cur_gaus = _chain.gaussian_pdf.pdf(_chain.current_score)
+                cur_gaus = 2.2250738585072014e-308 if cur_gaus == 0 else cur_gaus  # Set '0' values to smallest float
                 accept_check = prop_gaus / cur_gaus
 
                 if accept_check > rand_check_val:
                     _chain.accept()
             return
-        # self.chains = sorted(self.chains, key=lambda l: l.name)  # Ensure that all chains are in the correct order
+
         temp_dir = TempDir()
         counter = 0
         while counter <= self.steps:
