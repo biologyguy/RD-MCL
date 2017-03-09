@@ -65,6 +65,13 @@ class HelperMethods(object):
             return deepcopy(self._cteno_ids)
         elif data == "cteno_sim_scores":
             return deepcopy(self._cteno_sim_scores)
+        elif data == "ss2_dfs":
+            psi_pred_ss2_dfs = Sb.OrderedDict()
+            for rec in cteno_panxs.records:
+                path = "%spsi_pred%s%s.ss2" % (self.resource_path, os.sep, rec.id)
+                psi_pred_ss2_dfs[rec.id] = pd.read_csv(path, comment="#", header=None, delim_whitespace=True)
+                psi_pred_ss2_dfs[rec.id].columns = ["indx", "aa", "ss", "coil_prob", "helix_prob", "sheet_prob"]
+            return psi_pred_ss2_dfs
         else:
             raise AttributeError("Unknown data type: %s" % data)
 

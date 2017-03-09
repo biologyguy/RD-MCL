@@ -445,7 +445,59 @@ def test_compare_psi_pred(hf):
     ss2_2 = rdmcl.read_ss2_file("%spsi_pred%sMle-Panxα8.ss2" % (hf.resource_path, hf.sep))
     assert rdmcl.compare_psi_pred(ss2_1, ss2_2) == 0.691672882672883
 
+
 # #########  Orthogroup caller  ########## #
+def test_orthogroup_caller(hf):
+    broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
+    broker.start_broker()
+    seq_ids = ['BOL-PanxαA', 'BOL-PanxαC', 'BOL-PanxαD', 'BOL-PanxαF', 'BOL-PanxαG', 'BOL-PanxαH', 'Lcr-PanxαA',
+               'Lcr-PanxαB', 'Lcr-PanxαD', 'Lcr-PanxαE', 'Lcr-PanxαF', 'Lcr-PanxαH', 'Lcr-PanxαI', 'Lcr-PanxαJ',
+               'Lcr-PanxαK', 'Lcr-PanxαL', 'Mle-Panxα1', 'Mle-Panxα2', 'Mle-Panxα4', 'Mle-Panxα5', 'Mle-Panxα6',
+               'Mle-Panxα7A', 'Mle-Panxα8', 'Mle-Panxα9', 'Mle-Panxα10A', 'Mle-Panxα12', 'Vpa-PanxαA', 'Vpa-PanxαB',
+               'Vpa-PanxαC', 'Vpa-PanxαF', 'Vpa-PanxαG']
+
+    seqbuddy = rdmcl.Sb.SeqBuddy(hf.resource_path + "Cteno_pannexins.fa")
+    rdmcl.Sb.pull_recs(seqbuddy, "^%s$" % "$|^".join(seq_ids))
+
+    cluster = rdmcl.Cluster([rec.id for rec in seqbuddy.records],
+                            hf.get_db_graph("ec5f4340bd57eb9db6819802598457c7", broker))
+
+    cluster_list = []
+    outdir = br.TempDir()
+    outdir.subdir("progress")
+    outdir.subdir("alignments")
+    outdir.subdir("mcmcmc")
+    outdir.subdir("psi_pred")
+    outdir.subdir("sim_scores")
+
+    progress = rdmcl.Progress(os.path.join(outdir.path, "progress"), cluster)
+    psi_pred_ss2_dfs = OrderedDict()
+    for rec in seqbuddy.records:
+        psi_pred_ss2_dfs[rec.id] = rdmcl.read_ss2_file("%spsi_pred%s%s.ss2" % (hf.resource_path, os.sep, rec.id))
+    steps = 10
+    r_seed = 1
+    orthogroups = rdmcl.orthogroup_caller(cluster, cluster_list, seqbuddy, broker, progress, outdir.path,
+                                          psi_pred_ss2_dfs, steps, r_seed=r_seed)
+
+    expected = [['BOL-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Vpa-PanxαB'],
+                ['BOL-PanxαF', 'Lcr-PanxαI', 'Mle-Panxα4', 'Vpa-PanxαA'],
+                ['BOL-PanxαC', 'Mle-Panxα12', 'Vpa-PanxαG'],
+                ['BOL-PanxαD', 'Lcr-PanxαD', 'Mle-Panxα2'],
+                ['Mle-Panxα5', 'Vpa-PanxαF'],
+                ['Lcr-PanxαK', 'Mle-Panxα7A'],
+                ['BOL-PanxαH', 'Mle-Panxα8'],
+                ['BOL-PanxαG', 'Lcr-PanxαF'],
+                ['Vpa-PanxαC'],
+                ['Mle-Panxα6'],
+                ['Mle-Panxα1'],
+                ['Lcr-PanxαE'],
+                ['Lcr-PanxαB'],
+                ['Lcr-PanxαA']]
+
+    orthogroup_seqs = [clust.seq_ids for clust in orthogroups]
+    assert cluster.seq_ids in orthogroup_seqs
+    for clust in expected:
+        assert clust in orthogroup_seqs
 
 
 # #########  Miscellaneous  ########## #
@@ -627,6 +679,7 @@ Oma-PanxαC
 Mle-Panxα10A
 Edu-PanxαA
 Bch-PanxαC"""
+    sql_broker.close()
 
 
 def test_parse_mcl_clusters(hf):
@@ -721,7 +774,7 @@ def test_instantiate_orphan(hf):
     broker.close()
 
 
-def test_place_orphans(hf, capsys):
+def test_place_orphans(hf):
     broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
     broker.start_broker()
 
@@ -804,3 +857,25 @@ group_0_3\tgroup_0_0\t0.0147698715824
     assert len(orphans.clusters) == 2
 
     # ToDo: Test for failure on Tukey HSD test
+
+"""
+alb_obj = rdmcl.generate_msa(seqbuddy, broker)
+graph = rdmcl.create_all_by_all_scores(alb_obj, hf.get_data("ss2_dfs"), quiet=True)
+cluster = rdmcl.Cluster([rec.id for rec in seqbuddy.records], graph, collapse=False)
+rdmcl.cluster2database(cluster, broker, alb_obj)
+print(cluster.seq_id_hash)
+1/0
+return
+
+### After polishing steps
+expected = [['BOL-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Mle-Panxα9', 'Vpa-PanxαB'],
+            ['BOL-PanxαC', 'Mle-Panxα12', 'Mle-Panxα6', 'Vpa-PanxαG'],
+            ['BOL-PanxαF', 'Lcr-PanxαI', 'Mle-Panxα4', 'Vpa-PanxαA'],
+            ['Lcr-PanxαA', 'Lcr-PanxαL', 'Mle-Panxα5', 'Vpa-PanxαF'],
+            ['BOL-PanxαD', 'Lcr-PanxαD', 'Mle-Panxα2'],
+            ['Lcr-PanxαK', 'Mle-Panxα7A'],
+            ['Lcr-PanxαB', 'Mle-Panxα1'],
+            ['BOL-PanxαH', 'Mle-Panxα8'],
+            ['BOL-PanxαG', 'Lcr-PanxαF'],
+            ['Lcr-PanxαE', 'Lcr-PanxαJ'],
+            ['Vpa-PanxαC']]"""
