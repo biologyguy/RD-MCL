@@ -108,7 +108,6 @@ class Cluster(object):
         :param r_seed: Set the random generator seed value
         """
         # Do an initial sanity check on the incoming graph and list of sequence ids
-
         expected_num_edges = int(((len(seq_ids)**2) - len(seq_ids)) / 2)
         if len(sim_scores.index) != expected_num_edges:
             raise ValueError("The number of incoming sequence ids (%s) does not match the expected graph size of %s"
@@ -133,9 +132,6 @@ class Cluster(object):
             taxa = next_seq_id.split(taxa_separator)[0]
             self.taxa.setdefault(taxa, [])
             self.taxa[taxa].append(next_seq_id)
-
-        # if clique and not parent:
-        #    raise AttributeError("A clique cannot be declared without including its parental sequence_ids.")
 
         if parent:
             for indx, genes in parent.collapsed_genes.items():
@@ -402,7 +398,9 @@ class Cluster(object):
 
             if marked_for_del:
                 log_file.write("\t\tDisqualified cliques:\n")
-                marked_for_del = OrderedDict(sorted(marked_for_del.items(), key=lambda x: x[0], reverse=True))  # Delete from the largest index down
+                # Re-order del indices to delete from the largest index down
+                marked_for_del = sorted(marked_for_del.items(), key=lambda x: x[0], reverse=True)
+                marked_for_del = OrderedDict(marked_for_del)
                 for del_indx, reason in marked_for_del.items():
                     clique_ids = set(list(rbhc_dfs[del_indx].seq1.values) + list(rbhc_dfs[del_indx].seq2.values))
                     log_file.write("\t\t\t%s %s\n" % (sorted(list(clique_ids)), reason))
@@ -433,14 +431,19 @@ class Cluster(object):
                 outer_scores = self.perturb(outer_scores)
 
                 total_kde = scipy.stats.gaussian_kde(outer_scores.score, bw_method='silverman')
-                log_file.write("\t\t\tOuter KDE: {'shape': %s, 'covariance': %s, 'inv_cov': %s, '_norm_factor': %s}\n" %
-                               (total_kde.dataset.shape, total_kde.covariance[0][0], total_kde.inv_cov[0][0], total_kde._norm_factor))
+                log_file.write("""\
+\t\t\tOuter KDE: {'shape': %s, 'covariance': %s, 'inv_cov': %s, '_norm_factor': %s}
+""" % (total_kde.dataset.shape, total_kde.covariance[0][0], total_kde.inv_cov[0][0], total_kde._norm_factor))
+
                 clique_kde = scipy.stats.gaussian_kde(clique_scores.score, bw_method='silverman')
-                log_file.write("\t\t\tClique KDE: {'shape': %s, 'covariance': %s, 'inv_cov': %s,  '_norm_factor': %s}\n" %
-                               (clique_kde.dataset.shape, clique_kde.covariance[0][0], clique_kde.inv_cov[0][0], clique_kde._norm_factor))
-                clique_resample = clique_kde.resample(10000)  # Note that this is a random sampling not controlled by r_seed!
+                log_file.write("""\
+\t\t\tClique KDE: {'shape': %s, 'covariance': %s, 'inv_cov': %s,  '_norm_factor': %s}
+""" % (clique_kde.dataset.shape, clique_kde.covariance[0][0], clique_kde.inv_cov[0][0], clique_kde._norm_factor))
+
+                clique_resample = clique_kde.resample(10000)  # ToDo: figure out how to control this with r_seed!
                 clique95 = [np.percentile(clique_resample, 2.5), np.percentile(clique_resample, 97.5)]
                 log_file.write("\t\t\tclique95: %s\n" % clique95)
+
                 integrated = total_kde.integrate_box_1d(clique95[0], clique95[1])
                 log_file.write("\t\t\tintegrated: %s\n" % integrated)
                 if integrated < 0.05:
@@ -499,7 +502,8 @@ class Cluster(object):
                                         taxa_separator=self.taxa_separator)
             remaining_cluster.set_name()
             results.append(remaining_cluster)
-        log_file.write("\tCliques identified and spun off:\n\t\t%s\n\n" % "\n\t\t".join([str(res.seq_ids) for res in results]))
+        log_file.write("\tCliques identified and spun off:\n\t\t%s\n\n" %
+                       "\n\t\t".join([str(res.seq_ids) for res in results]))
         return results
 
     """The following are other possible score modifier schemes to account for group size
@@ -700,7 +704,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
         sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster,
                               taxa_separator=taxa_separator, r_seed=rand_gen.randint(1, 999999999999999))
-        if sub_cluster.seq_id_hash == master_cluster.seq_id_hash:
+        if sub_cluster.seq_id_hash == master_cluster.seq_id_hash:  # This shouldn't ever happen
             raise ArithmeticError("The sub_cluster and master_cluster are the same, but are returning different "
                                   "scores\nsub-cluster score: %s, master score: %s\n%s"
                                   % (sub_cluster.score(), master_cluster.score(),
@@ -813,7 +817,7 @@ def mcmcmc_mcl(args, params):
                 score_sum = 0
                 cluster_ids = []
                 for cluster in clusters.split(","):
-                    sql_query = sql_broker.query("SELECT seq_ids, graph FROM data_table WHERE hash='{0}'".format(cluster))
+                    sql_query = sql_broker.query("SELECT seq_ids, graph FROM data_table WHERE hash='%s'" % cluster)
                     seq_ids = sql_query[0][0].split(", ")
                     cluster_ids.append(sql_query[0][0])
                     if len(seq_ids) > 1:  # Prevent crash if pulling a cluster with a single sequence
@@ -1364,12 +1368,12 @@ if __name__ == '__main__':
     # Then prepare the 'real' group_0 cluster
     group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data,
                               taxa_separator=in_args.taxa_separator, r_seed=in_args.r_seed)
-
     cluster2database(group_0_cluster, broker, alignbuddy)
 
     # Base cluster score
     base_score = group_0_cluster.score()
     logging.warning("Base cluster score: %s" % round(base_score, 4))
+
     # Reset the score of group_0 to account for possible collapse of paralogs
     if group_0_cluster.collapsed_genes:
         logging.warning("\nReciprocal best-hit cliques of paralogs have been identified in the input sequences.")
@@ -1378,10 +1382,6 @@ if __name__ == '__main__':
         with open(os.path.join(in_args.outdir, "paralog_cliques.json"), "w") as outfile:
             json.dump(group_0_cluster.collapsed_genes, outfile)
             logging.warning(" Cliques written to: %s%sparalog_cliques.json" % (in_args.outdir, os.sep))
-
-    # taxa_count = [x.split(in_args.taxa_separator)[0] for x in group_0_cluster.seq_ids]
-    # taxa_count = pd.Series(taxa_count)
-    # taxa_count = taxa_count.value_counts()
 
     # Ortholog caller
     logging.warning("\n** Recursive MCL **")
