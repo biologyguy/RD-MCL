@@ -9,8 +9,9 @@ import sqlite3
 import pandas as pd
 from collections import OrderedDict
 from buddysuite import buddy_resources as br
-from copy import copy
+from copy import copy, deepcopy
 import shutil
+import argparse
 
 
 # #########  Mock classes and functions  ########## #
@@ -858,24 +859,152 @@ group_0_3\tgroup_0_0\t0.0147698715824
 
     # ToDo: Test for failure on Tukey HSD test
 
-"""
-alb_obj = rdmcl.generate_msa(seqbuddy, broker)
-graph = rdmcl.create_all_by_all_scores(alb_obj, hf.get_data("ss2_dfs"), quiet=True)
-cluster = rdmcl.Cluster([rec.id for rec in seqbuddy.records], graph, collapse=False)
-rdmcl.cluster2database(cluster, broker, alb_obj)
-print(cluster.seq_id_hash)
-1/0
-return
 
-### After polishing steps
-expected = [['BOL-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Mle-Panxα9', 'Vpa-PanxαB'],
-            ['BOL-PanxαC', 'Mle-Panxα12', 'Mle-Panxα6', 'Vpa-PanxαG'],
-            ['BOL-PanxαF', 'Lcr-PanxαI', 'Mle-Panxα4', 'Vpa-PanxαA'],
-            ['Lcr-PanxαA', 'Lcr-PanxαL', 'Mle-Panxα5', 'Vpa-PanxαF'],
-            ['BOL-PanxαD', 'Lcr-PanxαD', 'Mle-Panxα2'],
-            ['Lcr-PanxαK', 'Mle-Panxα7A'],
-            ['Lcr-PanxαB', 'Mle-Panxα1'],
-            ['BOL-PanxαH', 'Mle-Panxα8'],
-            ['BOL-PanxαG', 'Lcr-PanxαF'],
-            ['Lcr-PanxαE', 'Lcr-PanxαJ'],
-            ['Vpa-PanxαC']]"""
+# #########  User Interface  ########## #
+parser = argparse.ArgumentParser(prog="orthogroup_caller", description="",
+                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+parser.add_argument("sequences", help="Location of sequence file", action="store", nargs="*")
+parser.add_argument("outdir", action="store", default=os.path.join(os.getcwd(), "rd-mcd"), nargs="*",
+                    help="Where should results be written?")
+parser.add_argument("-sql", "--sqlite_db", action="store", help="Specify a SQLite database location.")
+parser.add_argument("-psi", "--psi_pred_dir", action="store",
+                    help="If PSI-Pred files are pre-calculated, tell us where.")
+parser.add_argument("-mcs", "--mcmcmc_steps", default=1000, type=int,
+                    help="Specify how deeply to sample MCL parameters")
+parser.add_argument("-sr", "--suppress_recursion", action="store_true",
+                    help="Stop after a single round of MCL. For testing.")
+parser.add_argument("-scc", "--suppress_clique_check", action="store_true",
+                    help="Do not check for or break up cliques. For testing.")
+parser.add_argument("-ssf", "--suppress_singlet_folding", action="store_true",
+                    help="Do not check for or merge singlets. For testing.")
+parser.add_argument("-sit", "--suppress_iteration", action="store_true",
+                    help="Only check for cliques and orphans once")
+parser.add_argument("-nt", "--no_msa_trim", action="store_true",
+                    help="Don't apply the gappyout algorithm to MSAs before scoring")
+parser.add_argument("-op", "--open_penalty", help="Penalty for opening a gap in pairwise alignment scoring",
+                    type=float, default=rdmcl.GAP_OPEN)
+parser.add_argument("-ep", "--extend_penalty", help="Penalty for extending a gap in pairwise alignment scoring",
+                    type=float, default=rdmcl.GAP_EXTEND)
+parser.add_argument("-ts", "--taxa_separator", action="store", default="-",
+                    help="Specify a string that separates taxa ids from gene names")
+parser.add_argument("-rs", "--r_seed", help="Specify a random seed for repeating a specific run", type=int)
+parser.add_argument("-f", "--force", action="store_true",
+                    help="Overwrite previous run")
+parser.add_argument("-q", "--quiet", action="store_true",
+                    help="Suppress all output during run (only final output is returned)")
+
+# This is to allow py.test to work with its own flags
+in_args = parser.parse_args([])
+
+
+def test_argparse_init(monkeypatch, hf):
+    out_dir = br.TempDir()
+    argv = ['rdmcl.py', os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa"), out_dir.path]
+    monkeypatch.setattr(rdmcl.sys, "argv", argv)
+    temp_in_args = rdmcl.argparse_init()
+    assert temp_in_args.mcmcmc_steps == 1000
+    assert temp_in_args.open_penalty == -5
+    assert temp_in_args.extend_penalty == 0
+
+
+def test_full_run(hf, monkeypatch, capsys):
+    # I can't break these up into separate test functions because of collisions with logger
+    # First try a RESUME run
+    test_in_args = deepcopy(in_args)
+    out_dir = br.TempDir()
+    test_in_args.sequences = os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa")
+    test_in_args.outdir = out_dir.path
+    test_in_args.sqlite_db = os.path.join(hf.resource_path, "db.sqlite")
+    test_in_args.psi_pred_dir = os.path.join(hf.resource_path, "psi_pred")
+    test_in_args.mcmcmc_steps = 10
+    test_in_args.r_seed = 1
+    rdmcl.full_run(test_in_args)
+
+    for expected_dir in ["alignments", "mcmcmc", "psi_pred", "sim_scores"]:
+        assert os.path.isdir(os.path.join(out_dir.path, expected_dir))
+
+    for expected_file in ["cliques.log", "final_clusters.txt", "orphans.log", "paralog_cliques", "rdmcl.log"]:
+        assert os.path.isfile(os.path.join(out_dir.path, expected_file))
+
+    with open(os.path.join(out_dir.path, "final_clusters.txt"), "r") as ifile:
+        assert ifile.read() == """\
+group_0_0	10.4045	BOL-PanxαA	Lcr-PanxαH	Mle-Panxα10A	Mle-Panxα9	Vpa-PanxαB
+group_0_1	16.8327	BOL-PanxαF	Lcr-PanxαI	Mle-Panxα4	Vpa-PanxαA
+group_0_2	8.7558	BOL-PanxαC	Mle-Panxα12	Vpa-PanxαG
+group_0_3	9.933	BOL-PanxαD	Lcr-PanxαD	Mle-Panxα2
+group_0_4	2.6426	Mle-Panxα5	Vpa-PanxαF
+group_0_5	3.567	Lcr-PanxαK	Mle-Panxα7A
+group_0_6	2.954	BOL-PanxαH	Mle-Panxα8
+group_0_7	2.6426	BOL-PanxαG	Lcr-PanxαF
+group_0_11	-10.5742	Lcr-PanxαE	Lcr-PanxαJ
+group_0_13	-10.5742	Lcr-PanxαA	Lcr-PanxαL
+group_0_8	-0.9204	Vpa-PanxαC
+group_0_9	-0.0495	Mle-Panxα6
+group_0_10	-0.0495	Mle-Panxα1
+group_0_12	-0.1402	Lcr-PanxαB
+"""
+    out, err = capsys.readouterr()
+    assert "RESUME: All PSI-Pred .ss2 files found" in err
+    assert "RESUME: Initial multiple sequence alignment found" in err
+    assert "RESUME: Initial all-by-all similarity graph found" in err
+    assert "Iterative placement of orphans and paralog RBHC removal" in err
+
+    # Now a full run from scratch, with non-existant psi-pred dir (SLLLOOWWWWW)
+    open(os.path.join(out_dir.path, "rdmcl.log"), "w").close()
+    shutil.move(os.path.join(out_dir.path, "rdmcl.log"), "rdmcl.log")
+    test_in_args = deepcopy(in_args)
+    out_dir = br.TempDir()
+    # Make some files and a directory that will need to be removed
+    out_dir.subdir("mcmcmc")
+    out_dir.subdir(os.path.join("mcmcmc", "group_0"))
+    out_dir.subfile("group_0.txt")
+    out_dir.subfile("orphans.log")
+    out_dir.subfile("cliques.log")
+    test_in_args.sequences = os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa")
+    test_in_args.outdir = out_dir.path
+    test_in_args.psi_pred_dir = "foo-bared_psi_pred"
+    test_in_args.mcmcmc_steps = 10
+    test_in_args.r_seed = 1
+    rdmcl.full_run(test_in_args)
+
+    for expected_dir in ["alignments", "mcmcmc", "psi_pred", "sim_scores"]:
+        assert os.path.isdir(os.path.join(out_dir.path, expected_dir))
+
+    for expected_file in ["cliques.log", "final_clusters.txt", "orphans.log",
+                          "paralog_cliques", "rdmcl.log", "sqlite_db.sqlite"]:
+        assert os.path.isfile(os.path.join(out_dir.path, expected_file))
+
+    with open(os.path.join(out_dir.path, "final_clusters.txt"), "r") as ifile:
+        assert ifile.read() == """\
+group_0_0	10.4045	BOL-PanxαA	Lcr-PanxαH	Mle-Panxα10A	Mle-Panxα9	Vpa-PanxαB
+group_0_1	16.8327	BOL-PanxαF	Lcr-PanxαI	Mle-Panxα4	Vpa-PanxαA
+group_0_2	8.7558	BOL-PanxαC	Mle-Panxα12	Vpa-PanxαG
+group_0_3	9.933	BOL-PanxαD	Lcr-PanxαD	Mle-Panxα2
+group_0_4	2.6426	Mle-Panxα5	Vpa-PanxαF
+group_0_5	3.567	Lcr-PanxαK	Mle-Panxα7A
+group_0_6	2.954	BOL-PanxαH	Mle-Panxα8
+group_0_7	2.6426	BOL-PanxαG	Lcr-PanxαF
+group_0_11	-10.5742	Lcr-PanxαE	Lcr-PanxαJ
+group_0_13	-10.5742	Lcr-PanxαA	Lcr-PanxαL
+group_0_8	-0.9204	Vpa-PanxαC
+group_0_9	-0.0495	Mle-Panxα6
+group_0_10	-0.0495	Mle-Panxα1
+group_0_12	-0.1402	Lcr-PanxαB
+"""
+    out, err = capsys.readouterr()
+    assert "Generating initial multiple sequence alignment with MAFFT" in err
+    assert "Generating initial all-by-all similarity graph (465 comparisons)" in err
+
+
+    # No supplied seed, make outdir, and no mafft
+    open(os.path.join(out_dir.path, "rdmcl.log"), "w").close()
+    shutil.move(os.path.join(out_dir.path, "rdmcl.log"), "rdmcl.log")
+    test_in_args = deepcopy(in_args)
+    test_in_args.sequences = os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa")
+    test_in_args.outdir = os.path.join(out_dir.path, "inner_out_dir")
+    monkeypatch.setattr(shutil, "which", lambda *_: False)
+    with pytest.raises(SystemExit):
+        rdmcl.full_run(test_in_args)
+
+    out, err = capsys.readouterr()
+    assert "The 'MAFFT' program is not detected" in err

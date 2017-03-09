@@ -6,6 +6,7 @@ import os
 import buddysuite.SeqBuddy
 from .. import helpers
 from hashlib import md5
+import pandas as pd
 
 
 def test_helper_attributes(hf):
@@ -33,6 +34,7 @@ def test_helper_get_data(hf):
     with pytest.raises(AttributeError) as err:
         hf.get_data("foo")
     assert "Unknown data type: foo" in str(err)
+    assert type(hf.get_data("ss2_dfs")["Bab-PanxαA"]) == pd.DataFrame
 
 
 def test_helper_get_db_graph(hf):

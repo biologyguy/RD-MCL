@@ -1179,11 +1179,15 @@ class Orphans(object):
 
         return
 
-if __name__ == '__main__':
 
+def argparse_init():
     import argparse
+
+    def fmt(prog):
+        return br.CustomHelpFormatter(prog)
+
     parser = argparse.ArgumentParser(prog="orthogroup_caller", description="",
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+                                     formatter_class=fmt)
 
     parser.add_argument("sequences", help="Location of sequence file", action="store")
     parser.add_argument("outdir", action="store", default=os.path.join(os.getcwd(), "rd-mcd"),
@@ -1216,7 +1220,10 @@ if __name__ == '__main__':
                         help="Suppress all output during run (only final output is returned)")
 
     in_args = parser.parse_args()
+    return in_args
 
+
+def full_run(in_args):
     logger_obj = helpers.Logger("rdmcl.log")
     logging.info("*************************** Recursive Dynamic Markov Clustering ****************************")
     logging.warning("RD-MCL version %s\n\n%s" % (VERSION, NOTICE))
@@ -1469,3 +1476,13 @@ if __name__ == '__main__':
         logging.warning("Clusters written to: %s%sfinal_clusters.txt" % (in_args.outdir, os.sep))
 
     broker.close()
+
+
+def main():
+    in_args = argparse_init()
+    full_run(in_args)
+    return
+
+
+if __name__ == '__main__':
+    main()
