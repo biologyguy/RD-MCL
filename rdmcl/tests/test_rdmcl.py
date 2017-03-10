@@ -568,10 +568,10 @@ def test_generate_msa(hf):
     cursor.execute("SELECT * FROM data_table")
     response = cursor.fetchall()
     assert len(response) == 2
-    assert hf.string2hash(response[0][2]) == "22ba0f62bb616d1106f0a43ac73d343e"
+    assert hf.string2hash(response[0][2]) == "22ba0f62bb616d1106f0a43ac73d343e", print(response[0])
     assert hf.string2hash(str(all_mle_alignment)) == "22ba0f62bb616d1106f0a43ac73d343e"
 
-    assert hf.string2hash(response[1][2]) == '919d26d7db868d01fa285090eb98299e'
+    assert hf.string2hash(response[1][2]) == '919d26d7db868d01fa285090eb98299e', print(response[1])
     assert hf.string2hash(str(mle9_alignment)) == "919d26d7db868d01fa285090eb98299e"
 
     alignment = rdmcl.generate_msa(seqbuddy, broker)
@@ -949,7 +949,7 @@ group_0_12	-0.1402	Lcr-PanxαB
     assert "RESUME: Initial all-by-all similarity graph found" in err
     assert "Iterative placement of orphans and paralog RBHC removal" in err
 
-    # Now a full run from scratch, with non-existant psi-pred dir (SLLLOOWWWWW)
+    # Now a full run from scratch (on smaller set), with non-existant psi-pred dir
     open(os.path.join(out_dir.path, "rdmcl.log"), "w").close()
     shutil.move(os.path.join(out_dir.path, "rdmcl.log"), "rdmcl.log")
     test_in_args = deepcopy(in_args)
@@ -960,9 +960,15 @@ group_0_12	-0.1402	Lcr-PanxαB
     out_dir.subfile("group_0.txt")
     out_dir.subfile("orphans.log")
     out_dir.subfile("cliques.log")
-    test_in_args.sequences = os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa")
+    subset_ids = ["BOL-PanxαA", "Lcr-PanxαH", "Mle-Panxα10A", "Mle-Panxα9", "Vpa-PanxαB",
+                  "BOL-PanxαF", "Lcr-PanxαI", "Mle-Panxα4", "Vpa-PanxαA", "BOL-PanxαC",
+                  "Mle-Panxα12", "Vpa-PanxαG", "BOL-PanxαD", "Lcr-PanxαD", "Mle-Panxα2"]
+    seqbuddy = rdmcl.Sb.SeqBuddy(os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa"))
+    rdmcl.Sb.pull_recs(seqbuddy, "^%s$" % "$|^".join(subset_ids))
+    seqbuddy.write(os.path.join(out_dir.path, "seqbuddy"))
+    test_in_args.sequences = os.path.join(out_dir.path, "seqbuddy")
     test_in_args.outdir = out_dir.path
-    test_in_args.psi_pred_dir = "foo-bared_psi_pred"
+    test_in_args.psi_pred_dir = "foo-bared_psi_pred"  # This doesn't exist
     test_in_args.mcmcmc_steps = 10
     test_in_args.r_seed = 1
     rdmcl.full_run(test_in_args)
@@ -976,25 +982,14 @@ group_0_12	-0.1402	Lcr-PanxαB
 
     with open(os.path.join(out_dir.path, "final_clusters.txt"), "r") as ifile:
         assert ifile.read() == """\
-group_0_0	10.4045	BOL-PanxαA	Lcr-PanxαH	Mle-Panxα10A	Mle-Panxα9	Vpa-PanxαB
-group_0_1	16.8327	BOL-PanxαF	Lcr-PanxαI	Mle-Panxα4	Vpa-PanxαA
-group_0_2	8.7558	BOL-PanxαC	Mle-Panxα12	Vpa-PanxαG
+group_0_0	8.78	BOL-PanxαA	Lcr-PanxαH	Mle-Panxα10A	Mle-Panxα9	Vpa-PanxαB
+group_0_1	17.2364	BOL-PanxαF	Lcr-PanxαI	Mle-Panxα4	Vpa-PanxαA
+group_0_2	9.933	BOL-PanxαC	Mle-Panxα12	Vpa-PanxαG
 group_0_3	9.933	BOL-PanxαD	Lcr-PanxαD	Mle-Panxα2
-group_0_4	2.6426	Mle-Panxα5	Vpa-PanxαF
-group_0_5	3.567	Lcr-PanxαK	Mle-Panxα7A
-group_0_6	2.954	BOL-PanxαH	Mle-Panxα8
-group_0_7	2.6426	BOL-PanxαG	Lcr-PanxαF
-group_0_11	-10.5742	Lcr-PanxαE	Lcr-PanxαJ
-group_0_13	-10.5742	Lcr-PanxαA	Lcr-PanxαL
-group_0_8	-0.9204	Vpa-PanxαC
-group_0_9	-0.0495	Mle-Panxα6
-group_0_10	-0.0495	Mle-Panxα1
-group_0_12	-0.1402	Lcr-PanxαB
 """
     out, err = capsys.readouterr()
     assert "Generating initial multiple sequence alignment with MAFFT" in err
-    assert "Generating initial all-by-all similarity graph (465 comparisons)" in err
-
+    assert "Generating initial all-by-all similarity graph (105 comparisons)" in err
 
     # No supplied seed, make outdir, and no mafft
     open(os.path.join(out_dir.path, "rdmcl.log"), "w").close()
