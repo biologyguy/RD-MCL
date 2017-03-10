@@ -567,11 +567,14 @@ def test_generate_msa(hf):
     cursor = connect.cursor()
     cursor.execute("SELECT * FROM data_table")
     response = cursor.fetchall()
+    print("##########################")
+    print(response)
+    print("##########################")
     assert len(response) == 2
-    assert hf.string2hash(response[0][2]) == "22ba0f62bb616d1106f0a43ac73d343e", print(response[0])
+    assert hf.string2hash(response[0][2]) == "22ba0f62bb616d1106f0a43ac73d343e"
     assert hf.string2hash(str(all_mle_alignment)) == "22ba0f62bb616d1106f0a43ac73d343e"
 
-    assert hf.string2hash(response[1][2]) == '919d26d7db868d01fa285090eb98299e', print(response[1])
+    assert hf.string2hash(response[1][2]) == '919d26d7db868d01fa285090eb98299e'
     assert hf.string2hash(str(mle9_alignment)) == "919d26d7db868d01fa285090eb98299e"
 
     alignment = rdmcl.generate_msa(seqbuddy, broker)
@@ -957,12 +960,15 @@ group_0_12	-0.1402	Lcr-PanxαB
     # Make some files and a directory that will need to be removed
     out_dir.subdir("mcmcmc")
     out_dir.subdir(os.path.join("mcmcmc", "group_0"))
+    out_dir.subdir("psi_pred")
     out_dir.subfile("group_0.txt")
     out_dir.subfile("orphans.log")
     out_dir.subfile("cliques.log")
-    subset_ids = ["BOL-PanxαA", "Lcr-PanxαH", "Mle-Panxα10A", "Mle-Panxα9", "Vpa-PanxαB",
-                  "BOL-PanxαF", "Lcr-PanxαI", "Mle-Panxα4", "Vpa-PanxαA", "BOL-PanxαC",
-                  "Mle-Panxα12", "Vpa-PanxαG", "BOL-PanxαD", "Lcr-PanxαD", "Mle-Panxα2"]
+    subset_ids = ["BOL-PanxαA", "Lcr-PanxαH", "Mle-Panxα10A", "Mle-Panxα9", "Vpa-PanxαB", "BOL-PanxαF",
+                  "Lcr-PanxαI", "Mle-Panxα4", "Vpa-PanxαA", "BOL-PanxαC", "Mle-Panxα12", "Vpa-PanxαG"]
+    for seq in subset_ids[:-1]:
+        shutil.copyfile(os.path.join(hf.resource_path, "psi_pred", seq + ".ss2"),
+                        os.path.join(out_dir.path, "psi_pred", seq + ".ss2"))
     seqbuddy = rdmcl.Sb.SeqBuddy(os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa"))
     rdmcl.Sb.pull_recs(seqbuddy, "^%s$" % "$|^".join(subset_ids))
     seqbuddy.write(os.path.join(out_dir.path, "seqbuddy"))
@@ -981,15 +987,14 @@ group_0_12	-0.1402	Lcr-PanxαB
         assert os.path.isfile(os.path.join(out_dir.path, expected_file))
 
     with open(os.path.join(out_dir.path, "final_clusters.txt"), "r") as ifile:
-        assert ifile.read() == """\
-group_0_0	8.78	BOL-PanxαA	Lcr-PanxαH	Mle-Panxα10A	Mle-Panxα9	Vpa-PanxαB
-group_0_1	17.2364	BOL-PanxαF	Lcr-PanxαI	Mle-Panxα4	Vpa-PanxαA
-group_0_2	9.933	BOL-PanxαC	Mle-Panxα12	Vpa-PanxαG
-group_0_3	9.933	BOL-PanxαD	Lcr-PanxαD	Mle-Panxα2
-"""
+        assert ifile.read() == '''\
+group_0_0	7.961	BOL-PanxαA	Lcr-PanxαH	Mle-Panxα10A	Mle-Panxα9	Vpa-PanxαB
+group_0_1	17.4529	BOL-PanxαF	Lcr-PanxαI	Mle-Panxα4	Vpa-PanxαA
+group_0_2	10.4753	BOL-PanxαC	Mle-Panxα12	Vpa-PanxαG
+'''
     out, err = capsys.readouterr()
     assert "Generating initial multiple sequence alignment with MAFFT" in err
-    assert "Generating initial all-by-all similarity graph (105 comparisons)" in err
+    assert "Generating initial all-by-all similarity graph (66 comparisons)" in err
 
     # No supplied seed, make outdir, and no mafft
     open(os.path.join(out_dir.path, "rdmcl.log"), "w").close()
