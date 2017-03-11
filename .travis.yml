@@ -16,8 +16,6 @@ install:
   - /home/travis/miniconda/bin/pip install --upgrade
   - /home/travis/miniconda/bin/pip install py pytest pytest-xdist pytest-cov pytest-colordots biopython statsmodels
   - /home/travis/miniconda/bin/pip install python-coveralls buddysuite
-  - git clone -b develop https://github.com/biologyguy/BuddySuite.git /home/travis/BuddySuite
-  - mv /home/travis/BuddySuite/buddysuite/buddy_resources.py /home/travis/miniconda/lib/python3.6/site-packages/buddysuite/
   - wget -q http://bioinfadmin.cs.ucl.ac.uk/downloads/psipred/old_versions/psipred.4.0.tar.gz -O ~/psipred.tgz
   - tar -xzf ~/psipred.tgz --directory ~/
   - make -C ~/psipred/src
