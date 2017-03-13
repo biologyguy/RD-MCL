@@ -31,6 +31,8 @@ import shutil
 import json
 import logging
 import sqlite3
+import time
+import argparse
 from io import StringIO
 from subprocess import Popen, PIPE, check_output, CalledProcessError
 from multiprocessing import Lock, Pipe
@@ -55,16 +57,17 @@ from buddysuite import AlignBuddy as Alb
 from buddysuite import buddy_resources as br
 
 # Globals
+SCRIPT_PATH = os.path.abspath(os.path.dirname(__file__))
 try:
-    script_path = os.path.abspath(__file__).split(os.sep)
-    script_path = os.sep + os.path.join(*script_path[:-1])
-    git_commit = check_output(['git', '--git-dir={0}{1}..{1}.git'.format(script_path, os.sep), 'rev-parse',
+    git_commit = check_output(['git', '--git-dir={0}{1}..{1}.git'.format(SCRIPT_PATH, os.sep), 'rev-parse',
                                '--short', 'HEAD']).decode().strip()
     git_commit = " (git %s)" % git_commit if git_commit else ""
     VERSION = "1.alpha%s" % git_commit
 except CalledProcessError:
     VERSION = "1.alpha"
 
+MAFFT = shutil.which("mafft") if shutil.which("mafft") \
+        else os.path.join(SCRIPT_PATH, "mafft", "bin", "mafft")
 NOTICE = '''\
 Public Domain Notice
 --------------------
@@ -546,16 +549,24 @@ def mc_psi_pred(seq_obj, args):
 def run_psi_pred(seq_rec):
     temp_dir = br.TempDir()
     pwd = os.getcwd()
-    psipred_dir = os.path.abspath("%s%spsipred" % (os.path.dirname(__file__), os.sep))
+    psipred_dir = os.path.abspath("%s%spsipred" % (SCRIPT_PATH, os.sep))
     os.chdir(temp_dir.path)
     with open("sequence.fa", "w") as ofile:
         ofile.write(seq_rec.format("fasta"))
 
-    command = '''\
-{0}{3}bin{3}seq2mtx sequence.fa > {1}{3}{2}.mtx;
-{0}{3}bin{3}psipred {1}{3}{2}.mtx {0}{3}data{3}weights.dat {0}{3}data{3}weights.dat2 {0}{3}data{3}weights.dat3 > {1}{3}{2}.ss;
-{0}{3}bin{3}psipass2 {0}{3}data{3}weights_p2.dat 1 1.0 1.0 {1}{3}{2}.ss2 {1}{3}{2}.ss > {1}{3}{2}.horiz;
+    if shutil.which("psipred"):
+        command = '''\
+seq2mtx sequence.fa > {1}{3}{2}.mtx;
+psipred {1}{3}{2}.mtx {0}{3}data{3}weights.dat {0}{3}data{3}weights.dat2 {0}{3}data{3}weights.dat3 > {1}{3}{2}.ss;
+psipass2 {0}{3}data{3}weights_p2.dat 1 1.0 1.0 {1}{3}{2}.ss2 {1}{3}{2}.ss > {1}{3}{2}.horiz;
 '''.format(psipred_dir, temp_dir.path, seq_rec.id, os.sep)
+
+    else:
+        command = '''\
+    {0}{3}bin{3}seq2mtx sequence.fa > {1}{3}{2}.mtx;
+    {0}{3}bin{3}psipred {1}{3}{2}.mtx {0}{3}data{3}weights.dat {0}{3}data{3}weights.dat2 {0}{3}data{3}weights.dat3 > {1}{3}{2}.ss;
+    {0}{3}bin{3}psipass2 {0}{3}data{3}weights_p2.dat 1 1.0 1.0 {1}{3}{2}.ss2 {1}{3}{2}.ss > {1}{3}{2}.horiz;
+    '''.format(psipred_dir, temp_dir.path, seq_rec.id, os.sep)
 
     Popen(command, shell=True).wait()
     os.chdir(pwd)
@@ -863,7 +874,7 @@ def generate_msa(seqbuddy, sql_broker):
         if len(seqbuddy) == 1:
             alignment = Alb.AlignBuddy(str(seqbuddy))
         else:
-            alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft", params="--globalpair --thread -2", quiet=True)
+            alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), MAFFT, params="--globalpair --thread -2", quiet=True)
 
         sql_broker.query("""UPDATE data_table SET alignment='{0}'
                             WHERE hash='{1}'""".format(str(alignment), seq_id_hash))
@@ -1181,17 +1192,15 @@ class Orphans(object):
 
 
 def argparse_init():
-    import argparse
-
     def fmt(prog):
         return br.CustomHelpFormatter(prog)
 
-    parser = argparse.ArgumentParser(prog="orthogroup_caller", description="",
-                                     formatter_class=fmt)
+    parser = argparse.ArgumentParser(prog="rdmcl", description="", formatter_class=fmt)
+    parser.register('action', 'setup', _SetupAction)
 
     parser.add_argument("sequences", help="Location of sequence file", action="store")
-    parser.add_argument("outdir", action="store", default=os.path.join(os.getcwd(), "rd-mcd"),
-                        help="Where should results be written?")
+    parser.add_argument("outdir", action="store", help="Where should results be written?", nargs="?",
+                        default=os.path.join(os.getcwd(), "rdmcd-%s" % time.strftime("%d-%m-%Y")))
     parser.add_argument("-sql", "--sqlite_db", action="store", help="Specify a SQLite database location.")
     parser.add_argument("-psi", "--psi_pred_dir", action="store",
                         help="If PSI-Pred files are pre-calculated, tell us where.")
@@ -1218,9 +1227,28 @@ def argparse_init():
                         help="Overwrite previous run")
     parser.add_argument("-q", "--quiet", action="store_true",
                         help="Suppress all output during run (only final output is returned)")
-
+    parser.add_argument("-setup", action="setup", dest=argparse.SUPPRESS, default=argparse.SUPPRESS)
     in_args = parser.parse_args()
     return in_args
+
+
+# Create a new argparse action type to allow the setup option to override the positional arguments
+class _SetupAction(argparse.Action):
+    def __init__(self,
+                 option_strings,
+                 dest=argparse.SUPPRESS,
+                 default=argparse.SUPPRESS,
+                 _help="Complete the RDMCL installation"):
+        super(_SetupAction, self).__init__(
+            option_strings=option_strings,
+            dest=dest,
+            default=default,
+            nargs=0,
+            help=_help)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        setup()
+        parser.exit()
 
 
 def full_run(in_args):
@@ -1228,6 +1256,16 @@ def full_run(in_args):
     logging.info("*************************** Recursive Dynamic Markov Clustering ****************************")
     logging.warning("RD-MCL version %s\n\n%s" % (VERSION, NOTICE))
     logging.info("********************************************************************************************\n")
+
+    if not os.path.isfile(os.path.join(SCRIPT_PATH, "config.ini")):
+        print("""Error: You have not run the rdmcl setup script.
+Please do so now:
+
+    $: %s -setup
+
+""" % __file__)
+        return
+
     logging.info("Function call: %s" % " ".join(sys.argv))
     logging.warning("\n** Environment setup **")
     if not in_args.r_seed:
@@ -1239,11 +1277,12 @@ def full_run(in_args):
         logging.info("Output directory: %s" % in_args.outdir)
         os.makedirs(in_args.outdir)
 
-    if not shutil.which("mafft"):
+    if not os.path.isfile(MAFFT):
         logging.error("The 'MAFFT' program is not detected "
-                      "on your system (see http://mafft.cbrc.jp/alignment/software/).")
+                      "on your system. Please run \n\t$: %s -setup" % __file__)
         sys.exit()
-    mafft = Popen("mafft --version", stderr=PIPE, shell=True).communicate()[1].decode()
+
+    mafft = Popen("%s --version" % MAFFT, stderr=PIPE, shell=True).communicate()[1].decode()
     logging.info("\nMAFFT version: %s" % mafft.strip())
 
     logging.warning("\nLaunching SQLite Daemon")
@@ -1478,9 +1517,149 @@ def full_run(in_args):
     broker.close()
 
 
+def setup():
+    sys.stdout.write("\033[1mWelcome to RD-MCL!\033[m\nConfirming installation...\n\n")
+
+    sys.stdout.write("\033[1mChecking for MAFFT:\033[m ")
+    if os.path.isfile(MAFFT):
+        sys.stdout.write("\033[92mFound\033[39m\n")
+    else:
+        sys.stdout.write("\033[91mMissing\033[39m\n\n")
+        if br.ask("Would you like the setup script to try and install MAFFT? [y]/n:"):
+            if shutil.which("conda"):
+                sys.stdout.write("\033[1mCalling conda...\033[m\n")
+                Popen("conda install -y -c biocore mafft", shell=True).wait()
+            elif shutil.which("wget") and shutil.which("make"):
+                if os.path.isdir("%s%smafft" % (SCRIPT_PATH, os.sep)):
+                    shutil.rmtree("%s%smafft" % (SCRIPT_PATH, os.sep))
+                os.makedirs("{0}{1}mafft".format(SCRIPT_PATH, os.sep))
+
+                cwd = os.getcwd()
+                tmp_dir = br.TempDir()
+                os.chdir(tmp_dir.path)
+                url = "http://mafft.cbrc.jp/alignment/software/mafft-7.309-without-extensions-src.tgz"
+                sys.stdout.write("\n\033[1mDownloading source code from %s\033[m\n\n" % url)
+                Popen("wget %s" % url, shell=True).wait()
+
+                sys.stdout.write("\n\033[1mUnpacking...\033[m\n")
+                Popen("tar -xzf mafft-7.309-without-extensions-src.tgz", shell=True).wait()
+
+                sys.stdout.write("\n\033[1mBuilding...\033[m\n")
+                os.chdir("mafft-7.309-without-extensions" + os.sep + "core")
+                with open("Makefile", "r") as ifile:
+                    makefile = ifile.read()
+
+                makefile = re.sub("PREFIX = /usr/local", "PREFIX = {0}{1}mafft".format(SCRIPT_PATH, os.sep),
+                                  makefile)
+                with open("Makefile", "w") as ofile:
+                    ofile.write(makefile)
+                Popen("make clean; make; make install", shell=True).wait()
+                os.chdir(cwd)
+
+            else:
+                sys.stdout.write("\033[91mFailed to install MAFFT.\033[39m\nPlease install the software yourself from "
+                                 "http://mafft.cbrc.jp/alignment/software/\n\n")
+                return
+
+    sys.stdout.write("\033[1mChecking for PSIPRED:\033[m ")
+    path_install = []
+    local_install = []
+    programs = ["seq2mtx", "psipred", "psipass2"]
+    for prog in programs:
+        if shutil.which(prog):
+            path_install.append(prog)
+        elif os.path.isfile("{0}{1}psipred{1}bin{1}{2}".format(SCRIPT_PATH, os.sep, prog)):
+            local_install.append(prog)
+    if path_install == programs:
+        sys.stdout.write("\033[92mFound\033[39m\n")
+        path_install, local_install = True, False
+    elif local_install == programs:
+        sys.stdout.write("\033[92mFound\033[39m\n")
+        path_install, local_install = False, True
+    else:
+        sys.stdout.write("\033[91mMissing\033[39m\n\n")
+        if br.ask("Would you like the setup script to try and install PSIPRED? [y]/n:"):
+            if shutil.which("conda"):
+                sys.stdout.write("\033[1mCalling conda...\033[m\n")
+                path_install, local_install = True, False
+                Popen("conda install -y -c biocore psipred", shell=True).wait()
+            elif shutil.which("wget"):
+                path_install, local_install = False, True
+                cwd = os.getcwd()
+                tmp_dir = br.TempDir()
+                os.chdir(tmp_dir.path)
+                if sys.platform == "darwin":
+                    version = "osx-64"
+                else:
+                    version = "linux-64"
+                url = "https://anaconda.org/biocore/psipred/4.01/download/%s/psipred-4.01-1.tar.bz2" % version
+                sys.stdout.write("\n\033[1mDownloading %s binaries from %s\033[m\n\n" % (version, url))
+                Popen("wget %s" % url, shell=True).wait()
+
+                sys.stdout.write("\n\033[1mUnpacking...\033[m\n")
+                Popen("tar -xjf psipred-4.01-1.tar.bz2", shell=True).wait()
+
+                sys.stdout.write("\n\033[1mInstalling...\033[m\n")
+                if os.path.isdir("%s%spsipred" % (SCRIPT_PATH, os.sep)):
+                    shutil.rmtree("%s%spsipred" % (SCRIPT_PATH, os.sep))
+                os.makedirs("%s%spsipred" % (SCRIPT_PATH, os.sep))
+
+                shutil.move("bin", "{0}{1}psipred{1}".format(SCRIPT_PATH, os.sep))
+                shutil.move("share{0}psipred_4.01{0}data".format(os.sep),
+                            "{0}{1}psipred{1}".format(SCRIPT_PATH, os.sep))
+                os.chdir(cwd)
+            else:
+                sys.stdout.write("\033[91mFailed to install PSIPRED.\033[39m\nPlease install the software yourself from"
+                                 " http://bioinfadmin.cs.ucl.ac.uk/downloads/psipred/\n\n")
+                return
+    # Confirm all psipred weight files are in the rdmcl directory
+    weight_files = ["weights.dat", "weights.dat2", "weights.dat3", "weights_p2.dat",
+                    "weights_s.dat", "weights_s.dat2", "weights_s.dat3"]
+    error_msg = """\033[1mError:\033[m psi-pred data file '{0}' not found in {1}!
+    Please try reinstalling PSIPRED:
+
+       $: conda install -c biocore --no-deps --force psipred
+
+    or build from http://bioinfadmin.cs.ucl.ac.uk/downloads/psipred/
+
+    If the problem persists, please create an issue at https://github.com/biologyguy/RD-MCL/issues
+    """
+
+    data_dir = "{0}{1}psipred{1}data".format(SCRIPT_PATH, os.sep)
+
+    if path_install:
+        os.makedirs("%s%spsipred" % (SCRIPT_PATH, os.sep), exist_ok=True)
+        os.makedirs(data_dir, exist_ok=True)
+
+        psipred_bin_dir = shutil.which("psipred").split(os.sep)[:-2]
+        root, dirs, files = next(os.walk(os.sep + os.path.join(*psipred_bin_dir, "share")))
+        psipred_data_dir = re.search("'(psipred.*?)', ", str(dirs)).group(1)
+        psipred_data_dir = os.sep + os.path.join(*psipred_bin_dir, "share", psipred_data_dir, "data")
+        for next_file in weight_files:
+            if not os.path.isfile("{0}{1}{2}".format(data_dir, os.sep, next_file)) \
+                    and not os.path.isfile(os.path.join(psipred_data_dir, next_file)):
+                print(error_msg.format(next_file, psipred_data_dir))
+                return
+            elif not os.path.isfile("{0}{1}{2}".format(data_dir, os.sep, next_file)):
+                shutil.copyfile(os.path.join(psipred_data_dir, next_file),
+                                "{0}{1}{2}".format(data_dir, os.sep, next_file))
+    elif local_install:
+        for next_file in weight_files:
+            if not os.path.isfile("{0}{1}{2}".format(data_dir, os.sep, next_file)):
+                print(error_msg.format(next_file, data_dir))
+                return
+
+    open(os.path.join(SCRIPT_PATH, "config.ini"), "w").close()
+    sys.stdout.write("\n\033[1mSuccess! You're all set.\033[m\n")
+    return
+
+
 def main():
     in_args = argparse_init()
-    full_run(in_args)
+    if 'setup' in in_args:
+        setup()
+    else:
+        full_run(in_args)
     return
 
 

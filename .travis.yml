@@ -8,17 +8,15 @@ install:
   - wget -q https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh
   - bash ~/miniconda.sh -b -p /home/travis/miniconda
   - /home/travis/miniconda/bin/conda config --set always_yes yes --set changeps1 no
-  - /home/travis/miniconda/bin/conda config --add channels r
-  - /home/travis/miniconda/bin/conda config --add channels bioconda
   - /home/travis/miniconda/bin/conda update -q conda
   - /home/travis/miniconda/bin/conda info -a
   - /home/travis/miniconda/bin/conda install scipy numpy pandas mafft
+  - /home/travis/miniconda/bin/conda install -c biocore mafft psipred=4.01
   - /home/travis/miniconda/bin/pip install --upgrade
-  - /home/travis/miniconda/bin/pip install py pytest pytest-xdist pytest-cov pytest-colordots biopython statsmodels
-  - /home/travis/miniconda/bin/pip install python-coveralls buddysuite
-  - wget -q http://bioinfadmin.cs.ucl.ac.uk/downloads/psipred/old_versions/psipred.4.0.tar.gz -O ~/psipred.tgz
-  - tar -xzf ~/psipred.tgz --directory ~/
-  - make -C ~/psipred/src
-  - mv ~/psipred/src/chkparse ~/psipred/src/psipass2 ~/psipred/src/psipred ~/psipred/src/seq2mtx /home/travis/build/biologyguy/RD-MCL/rdmcl/psipred/bin/
+  - /home/travis/miniconda/bin/pip install py pytest pytest-xdist pytest-cov pytest-colordots
+  - /home/travis/miniconda/bin/pip install biopython statsmodels python-coveralls buddysuite
+  - touch /home/travis/build/biologyguy/RD-MCL/rdmcl/config.ini
+  - mkdir /home/travis/build/biologyguy/RD-MCL/rdmcl/psipred/
+  - cp -r /home/travis/miniconda/share/psipred_4.01/data /home/travis/build/biologyguy/RD-MCL/rdmcl/psipred/
 script:
   - source test.sh
