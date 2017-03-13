@@ -1,0 +1,6 @@
+include rdmcl/rdmcl.py
+include rdmcl/helpers.py
+include rdmcl/mcmcmc.py
+include rdmcl/__init__.py
+include README.md
+include LICENSE.txt
