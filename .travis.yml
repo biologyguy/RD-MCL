@@ -10,7 +10,7 @@ install:
   - /home/travis/miniconda/bin/conda config --set always_yes yes --set changeps1 no
   - /home/travis/miniconda/bin/conda update -q conda
   - /home/travis/miniconda/bin/conda info -a
-  - /home/travis/miniconda/bin/conda install scipy numpy pandas mafft
+  - /home/travis/miniconda/bin/conda install scipy numpy pandas
   - /home/travis/miniconda/bin/conda install -c biocore mafft psipred=4.01
   - /home/travis/miniconda/bin/pip install --upgrade
   - /home/travis/miniconda/bin/pip install py pytest pytest-xdist pytest-cov pytest-colordots
