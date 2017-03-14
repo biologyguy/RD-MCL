@@ -560,9 +560,10 @@ def test_generate_msa(hf):
     cursor = connect.cursor()
     cursor.execute("SELECT * FROM data_table")
     response = cursor.fetchall()
-    for _ in range(5): # There might be a race condition here
-        if not response[1][2]:
+    for indx in range(5):  # There's race condition here on the database
+        if len(response) != 2 or not (response[1][2]):
             helpers.sleep(0.5)
+            cursor.execute("SELECT * FROM data_table")
             response = cursor.fetchall()
         else:
             break

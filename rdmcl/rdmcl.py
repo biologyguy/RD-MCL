@@ -50,8 +50,13 @@ import scipy.stats
 from Bio.SubsMat import SeqMat, MatrixInfo
 
 # My packages
-import mcmcmc
-import helpers
+try:
+    import mcmcmc
+    import helpers
+except ImportError:
+    from . import mcmcmc
+    from . import helpers
+
 from buddysuite import SeqBuddy as Sb
 from buddysuite import AlignBuddy as Alb
 from buddysuite import buddy_resources as br
@@ -282,6 +287,10 @@ class Cluster(object):
             cluster = cluster.parent
 
     def score(self, force=False):
+        # TODO: Change the scoring system. Arrange all genes into a table with species as column headings, filling in rows
+        # as possible. The top row will therefore have the most sequences in it, with equal or fewer in each subsequent row.
+        # The first row gets a full score. The second gets 1/2 score, third 1/4, nth 1/2^(n-1). Remove extra modifiers for
+        # cluster size relative to total dataset size.
         """
         :return:
         """
