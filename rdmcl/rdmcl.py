@@ -1218,6 +1218,8 @@ class Orphans(object):
                 for taxon, seq_ids in self.small_clusters[small_name].taxa.items():
                     self.large_clusters[large_name].taxa.setdefault(taxon, [])
                     self.large_clusters[large_name].taxa[taxon] += seq_ids
+                    for seq_id, paralogs in self.small_clusters[small_name].collapsed_genes.items():
+                        self.large_clusters[large_name].collapsed_genes[seq_id] = paralogs
                 fostered_orphans += len(self.small_clusters[small_name].seq_ids)
                 del self.small_clusters[small_name]
                 best_cluster = OrderedDict([("small_name", None), ("large_name", None), ("meandiff", 0)])
