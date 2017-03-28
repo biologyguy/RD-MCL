@@ -699,7 +699,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         mcmcmc_params = ["%s" % temp_dir.path, False, seqbuddy, master_cluster,
                          taxa_separator, sql_broker, psi_pred_ss2_dfs, progress]
         mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1,
-                                       params=mcmcmc_params, outfile=os.path.join(temp_dir.path, "mcmcmc_out.csv"),
+                                       params=mcmcmc_params, outfiles=os.path.join(temp_dir.path, "mcmcmc_out"),
                                        quiet=quiet, r_seed=rand_gen.randint(1, 999999999999999))
 
     except RuntimeError:  # Happens when mcmcmc fails to find different initial chain parameters
@@ -709,13 +709,18 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     # Set a 'worst score' that is reasonable for the data set
     worst_score = None
     for chain in mcmcmc_factory.chains:
-        worst_score = chain.raw_min if worst_score is None or chain.raw_min < worst_score else worst_score
+        for walker in chain.walkers:
+            worst_score = walker.raw_min if worst_score is None or walker.raw_min < worst_score else worst_score
 
     mcmcmc_factory.reset_params(["%s" % temp_dir.path, worst_score, seqbuddy, master_cluster,
                                  taxa_separator, sql_broker, psi_pred_ss2_dfs, progress])
     mcmcmc_factory.run()
-    mcmcmc_output = pd.read_csv(os.path.join(temp_dir.path, "mcmcmc_out.csv"), "\t", index_col=False)
-    best_score = mcmcmc_output.loc[mcmcmc_output["result"] == mcmcmc_output["result"].max()]
+    best_score = pd.DataFrame()
+    for indx in range(len(mcmcmc_factory.chains)):
+        mcmcmc_output = pd.read_csv(os.path.join(temp_dir.path, "mcmcmc_out_%s.csv" % (indx+1)), "\t", index_col=False)
+        result = mcmcmc_output.loc[mcmcmc_output["result"] == mcmcmc_output["result"].max()]
+        best_score = result if best_score.empty or result["result"].iloc[0] > best_score["result"].iloc[0] else best_score
+
     if best_score["result"].iloc[0] <= master_cluster.score():
         save_cluster("New best score of %s is less than master cluster at %s"
                      % (best_score["result"].iloc[0], master_cluster.score()))

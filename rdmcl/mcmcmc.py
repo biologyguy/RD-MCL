@@ -84,7 +84,7 @@ History: {}
            self.current_value, self.draw_value, self.history)
 
 
-class _Chain:
+class _Walker:
     def __init__(self, variables, function, params=None, quiet=False, r_seed=None):
         self.variables = variables
         self.function = function
@@ -147,7 +147,6 @@ class _Chain:
         # Default is 0.32, try 0.1 for low heat
         if heat <= 0. or heat > 1.:
             raise ValueError("heat values must be positive, between 0.000001 and 1.0.")
-
         self.heat = heat
         self.set_gaussian()
         return
@@ -160,43 +159,77 @@ class _Chain:
         return output
 
 
+class _Chain(object):
+    def __init__(self, walkers, outfile):
+        self.walkers = walkers
+        self.outfile = outfile
+
+        with open(self.outfile, "w") as ofile:
+            heading = "Gen\t"
+            for var in walkers[0].variables:
+                heading += "%s\t" % var.name
+            heading += "result\n"
+            ofile.write(heading)
+
+        self.cold_heat = 0.1
+        self.hot_heat = 0.32  # Default given to each new _Walker on instantiation
+        # Set a cold walker
+        self.walkers[0].set_heat(self.cold_heat)  # Set a cold walker
+        self.step_counter = 0
+
+    def swap_hot_cold(self):
+        # Swap any hot chain into the cold chain position if the hot chain score is better than the cold chain score
+        cold_walker = self.get_cold_walker()
+        cold_walker.set_heat(self.hot_heat)
+        best_walker = self.get_best_walker()
+        best_walker.set_heat(self.cold_heat)
+        return
+
+    def get_best_walker(self):
+        best_walker = sorted(self.walkers, key=lambda walker: walker.current_score)[-1]
+        return best_walker
+
+    def get_cold_walker(self):
+        cold_walker = sorted(self.walkers, key=lambda walker: walker.heat)[0]
+        return cold_walker
+
+    def write_sample(self):
+        output = "%s\t" % self.step_counter
+        best_walker = self.get_best_walker()
+        for var in best_walker.variables:
+            output += "%s\t" % var.current_value
+        output += "%s\n" % best_walker.current_score
+        with open(self.outfile, "a") as ofile:
+            ofile.write(output)
+        return
+
+
 class MCMCMC:
     """
     Sets up the infrastructure to run a Metropolis Hasting random walk
     """
-    def __init__(self, variables, function, params=None, steps=10000, sample_rate=1, num_chains=3,
-                 outfile='./mcmcmc_out.csv', burn_in=100, quiet=False, r_seed=None):
+    def __init__(self, variables, function, params=None, steps=10000, sample_rate=1, num_walkers=3, num_chains=2,
+                 outfiles='./chain', burn_in=100, quiet=False, r_seed=None):
         self.global_variables = variables
         self.steps = steps
         self.sample_rate = sample_rate
-        self.output = ""
-        self.outfile = os.path.abspath(outfile)
-        with open(self.outfile, "w") as ofile:
-            heading = "Gen\t"
-            for var in self.global_variables:
-                heading += "%s\t" % var.name
-            heading += "result\n"
-            ofile.write(heading)
+        self.outfile = os.path.abspath(outfiles)
         self.rand_gen = random.Random(r_seed)
         self.chains = []
-        for _ in range(num_chains):  # The deepcopy below duplicates r_seed, so chains need to be updated with a new one
-            chain = _Chain(deepcopy(self.global_variables), function, params=params,
-                           quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999))
-            for variable in chain.variables:
-                variable.rand_gen.seed(self.rand_gen.randint(1, 999999999999999))
+        # The deepcopy below duplicates r_seed, so walkers need to be updated with a new one
+        for i in range(num_chains):
+            walkers = []
+            for j in range(num_walkers):
+                walker = _Walker(deepcopy(self.global_variables), function, params=params,
+                                 quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999))
+                for variable in walker.variables:
+                    variable.rand_gen.seed(self.rand_gen.randint(1, 999999999999999))
+                walkers.append(walker)
+            chain = _Chain(walkers, "%s_%s.csv" % (self.outfile, i + 1))
             self.chains.append(chain)
-
         self.best = OrderedDict([("score", None), ("variables", OrderedDict([(x.name, None) for x in variables]))])
-
-        # Set a cold chain. The cold chain should always be set at index 0, even if a chain swap occurs
-        self.cold_heat = 0.1
-        self.hot_heat = 0.32  # Default given to each new Chain on instantiation
-        self.chains[0].set_heat(self.cold_heat)  # Set a cold chain
         self.burn_in = burn_in
         self.quiet = quiet
-
-        self.samples = OrderedDict([("vars", []), ("score", [])])
-        self.printer = DynamicPrint("stderr", quiet=quiet)
 
     def run(self):
         """
@@ -242,21 +275,25 @@ class MCMCMC:
 
         temp_dir = TempDir()
         counter = 0
-        while counter <= self.steps:
+        from buddysuite import buddy_resources as br
+        valve = br.SafetyValve(1000)
+        while self._check_mixing() and counter <= self.steps:
+            valve.step()  # ToDo: This needs to be removed in place of a functional _check_mixing() method
             child_list = OrderedDict()
-            for chain in self.chains:  # Note that this will spin off as many new processes as there are chains
-                # Start new process
-                func_args = []
-                for variable in chain.variables:
-                    variable.draw_new_value()
-                    func_args.append(variable.draw_value)
+            for chain in self.chains:  # Note that this will spin off as many new processes as there are walkers
+                for walker in chain.walkers:
+                    # Start new process
+                    func_args = []
+                    for variable in walker.variables:
+                        variable.draw_new_value()
+                        func_args.append(variable.draw_value)
 
-                # Always add a new seed for the target function
-                func_args.append(self.rand_gen.randint(1, 999999999999999))
-                outfile = os.path.join(temp_dir.path, chain.name)
-                p = Process(target=mc_step_run, args=(chain, [func_args, outfile]))
-                p.start()
-                child_list[chain.name] = p
+                    # Always add a new seed for the target function
+                    func_args.append(self.rand_gen.randint(1, 999999999999999))
+                    outfile = os.path.join(temp_dir.path, walker.name)
+                    p = Process(target=mc_step_run, args=(walker, [func_args, outfile]))
+                    p.start()
+                    child_list[walker.name] = p
 
             # wait for remaining processes to complete
             while len(child_list) > 0:
@@ -268,76 +305,44 @@ class MCMCMC:
                         break
 
             for chain in self.chains:
-                step_parse(chain)
-                if self.best["score"] is None or chain.current_score > self.best["score"]:
-                    self.best["score"] = chain.current_score
-                    self.best["variables"] = OrderedDict([(x.name, x.current_value) for x in chain.variables])
+                for walker in chain.walkers:
+                    step_parse(walker)
+                    if self.best["score"] is None or walker.current_score > self.best["score"]:
+                        self.best["score"] = walker.current_score
+                        self.best["variables"] = OrderedDict([(x.name, x.current_value) for x in walker.variables])
 
-                # Pseudo burn in, ToDo: replace this with real burn in?
-                if counter == self.burn_in:
-                    chain.score_history = [chain.raw_max - np.std(chain.score_history), chain.raw_max]
+                    # Burn in: discard first 100
+                    if counter == self.burn_in:
+                        walker.score_history = [walker.raw_max - np.std(walker.score_history), walker.raw_max]
 
-            # Swap any hot chain into the cold chain position if the hot chain score is better than the cold chain score
-            cold_chain_indx = None
-            best_chain_index = None
-            best_score = max([chain.current_score for chain in self.chains])
-            for indx, chain in enumerate(self.chains):
-                if best_score == chain.current_score:
-                    best_chain_index = indx
-                if chain.heat == self.cold_heat:
-                    cold_chain_indx = indx
+            for chain in self.chains:
+                chain.swap_hot_cold()
 
-            assert cold_chain_indx is not None and best_chain_index is not None  # Just ensure that these have been set
-
-            if best_chain_index != cold_chain_indx:
-                self.chains[best_chain_index].set_heat(self.cold_heat)
-                self.chains[cold_chain_indx].set_heat(self.hot_heat)
-
-            # Send output to file
-            if counter % self.sample_rate == 0:
-                self.samples["vars"].append(self.chains[best_chain_index].variables)
-                self.samples["score"].append(self.chains[best_chain_index].current_score)
-
-                self.output += "%s\t" % counter
-                for var in self.chains[best_chain_index].variables:
-                    self.output += "%s\t" % var.current_value
-                self.output += "%s\n" % self.chains[best_chain_index].current_score
-                self.write()
-
-            printer_vars = ""
-            for x in self.chains[best_chain_index].variables:
-                printer_vars += "%s: %6.3f\t" % (x.name, round(x.current_value, 3))
-
-            self.printer.write("%5.0f: %8.3f\t(%s)" % (counter, round(self.chains[best_chain_index].current_score, 3),
-                                                       printer_vars.strip()))
+                # Send output to files
+                if counter % self.sample_rate == 0:
+                    chain.step_counter += 1
+                    chain.write_sample()
             counter += 1
-
-        self.printer.new_line()
         return
+
+    def _check_mixing(self):
+        for _ in self.chains:
+            pass
+        return True
 
     def reset_params(self, params):
         """
         :param params: list of new input parameters pushed to chains
         :return: None
         """
-        if len(params) != len(self.chains[0].params):
+        if len(params) != len(self.chains[0].walkers[0].params):
             raise AttributeError("Incorrect number of params supplied in reset_params().\n%s expected\n%s supplied\n%s"
                                  % (len(self.chains[0].params), len(params), str(params)))
-
         for _chain in self.chains:
-            _chain.params = params
+            for walker in _chain.walkers:
+                walker.params = params
         return
 
-    def write(self):
-        with open(self.outfile, "a") as ofile:
-            ofile.write(self.output)
-        self.output = ''
-        return
-
-    def stdout(self):
-        print(self.output)
-        self.output = ''
-        return
 
 if __name__ == '__main__':
     # A couple of examples
@@ -355,6 +360,6 @@ if __name__ == '__main__':
     parabola_variables = [Variable("x", -4, 4)]
     paraboloid_variables = [Variable("x", -100, 100, 0.01), Variable("y", -100, 100, 0.01)]
 
-    mcmcmc = MCMCMC(parabola_variables, parabola, steps=3000, sample_rate=1)
+    mcmcmc = MCMCMC(parabola_variables, parabola, steps=300, sample_rate=1)
     mcmcmc.run()
     print(mcmcmc.best)
