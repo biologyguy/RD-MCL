@@ -174,33 +174,33 @@ def test_cluster_get_base_cluster(hf):
                  'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
     child = rdmcl.Cluster(child_ids, hf.get_sim_scores(child_ids), parent=parent)
     # First time calling Cluster.score() calculates the score
-    assert child.score() == 61.88340444450972
+    assert child.score() == 3.057710379183684
 
     # The second call just retrieves the attribute from the cluster saved during first call
-    assert child.score() == 61.88340444450972
+    assert child.score() == 3.057710379183684
 
     # With paralogs
     child_ids = ['BOL-PanxαA', 'BOL-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Edu-PanxαA', 'Hca-PanxαB',
                  'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
     child = rdmcl.Cluster(child_ids, hf.get_sim_scores(child_ids), parent=parent)
-    assert child.score() == 44.05560826220814
+    assert child.score() == 2.509451849986866
 
     # Single sequence
     child_ids = ['BOL-PanxαA']
     child = rdmcl.Cluster(child_ids, hf.get_sim_scores(child_ids), parent=parent)
-    assert round(child.score(), 12) == -6.000949946302
+    assert round(child.score(), 12) == 0.111362339768
 
     # Include an orphan sequence
     child_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC']
     sim_scores = hf.get_sim_scores(child_ids)
     child = rdmcl.Cluster(child_ids, sim_scores, parent=parent)
-    assert child.score() == 0.5466386920733747
+    assert child.score() == 0.47154070373644036
     child.seq_ids.append("Foo-Bar3")
-    assert child.score(force=True) == 1.3326109193908637
+    assert child.score(force=True) == 0.47421351841360954
 
     # Edge case where child is full size of parent
     child = rdmcl.Cluster(parent.seq_ids, parent.sim_scores, parent=parent)
-    assert child.score() == -208.64552691255088
+    assert child.score() == 21.44164379757426
 
 
 def test_cluster_pull_scores_subgraph(hf):
@@ -389,7 +389,7 @@ def test_cluster2database(hf):
     assert 'BOL-PanxαA, BOL-PanxαB, BOL-PanxαC, BOL-PanxαD' in response[0][1]   # seq_ids
     assert response[0][2] == '>Seq1\nMPQQCS-SS\n>Seq2\nMPQICMAAS'               # alignment
     assert 'Hca-PanxαG,Lla-PanxαC,0.42864589074736\n' in response[0][3]         # graph
-    # assert response[0][4] == '-55324684799997.984'  # ToDo: decide on final scoring system, or remove  # score
+    assert response[0][4] == '21.44164379757426'                                # score
     connect.close()
 
 
@@ -469,7 +469,7 @@ def test_orthogroup_caller(hf):
     for rec in seqbuddy.records:
         psi_pred_ss2_dfs[rec.id] = rdmcl.read_ss2_file("%spsi_pred%s%s.ss2" % (hf.resource_path, os.sep, rec.id))
     steps = 10
-    r_seed = 1
+    r_seed = 2
     orthogroups = rdmcl.orthogroup_caller(cluster, cluster_list, seqbuddy, broker, progress, outdir.path,
                                           psi_pred_ss2_dfs, steps, r_seed=r_seed)
 
@@ -658,29 +658,25 @@ def test_mcmcmc_mcl(hf):
     args = (6.372011782427792, 0.901221218627, 1)  # inflation, gq, r_seed
     params = [ext_tmp_dir.path, min_score, seqbuddy, cluster, taxa_separator, sql_broker, psi_pred_ss2_dfs, progress]
 
-    assert rdmcl.mcmcmc_mcl(args, params) == 16.623569649255856
+    assert rdmcl.mcmcmc_mcl(args, params) == 45.197602130824144
     with open(os.path.join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
         assert ifile.read() == "6b39ebc4f5fe7dfef786d8ee3e1594ed,cb23cf3b4d355140e525a1158af5102d,8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9,09cac4f034df8a2805171e1e61cc8666"
 
     args = (3.1232, 0.73432, 1)  # inflation, gq, r_seed
-    assert rdmcl.mcmcmc_mcl(args, params) == 15.20963391409833
+    assert rdmcl.mcmcmc_mcl(args, params) == 119.94564620739592
     with open(os.path.join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
         assert ifile.read() == """6b39ebc4f5fe7dfef786d8ee3e1594ed,cb23cf3b4d355140e525a1158af5102d,8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9,09cac4f034df8a2805171e1e61cc8666
 af97327b21920e6d2b2fb31e181ce7f4,a06adee8cc3631773890bb5842bf8df9"""
 
     args = (10.1232, 0.43432, 1)  # inflation, gq, r_seed
-    assert rdmcl.mcmcmc_mcl(args, params) == 20.487957298141357
+    assert rdmcl.mcmcmc_mcl(args, params) == 169.0
     with open(os.path.join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
         assert ifile.read() == """3c15516819aa19b069b0e8858444f876
 6b39ebc4f5fe7dfef786d8ee3e1594ed,cb23cf3b4d355140e525a1158af5102d,8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9,09cac4f034df8a2805171e1e61cc8666
 af97327b21920e6d2b2fb31e181ce7f4,a06adee8cc3631773890bb5842bf8df9"""
 
     with open(os.path.join(ext_tmp_dir.path, "best_group"), "r") as ifile:
-        assert ifile.read() == """BOL-PanxαA	Bab-PanxαB	Bfo-PanxαB	Dgl-PanxαE	Hca-PanxαB	Hru-PanxαA	Lcr-PanxαH	Tin-PanxαC	Vpa-PanxαB
-Oma-PanxαC
-Mle-Panxα10A
-Edu-PanxαA
-Bch-PanxαC"""
+        assert ifile.read() == """BOL-PanxαA	Bab-PanxαB	Bch-PanxαC	Bfo-PanxαB	Dgl-PanxαE	Edu-PanxαA	Hca-PanxαB	Hru-PanxαA	Lcr-PanxαH	Mle-Panxα10A	Oma-PanxαC	Tin-PanxαC	Vpa-PanxαB"""
     sql_broker.close()
 
 
@@ -929,20 +925,24 @@ def test_full_run(hf, monkeypatch, capsys):
 
     with open(os.path.join(out_dir.path, "final_clusters.txt"), "r") as ifile:
         assert ifile.read() == """\
-group_0_0	10.4045	BOL-PanxαA	Lcr-PanxαH	Mle-Panxα10A	Mle-Panxα9	Vpa-PanxαB
-group_0_1	16.8327	BOL-PanxαF	Lcr-PanxαI	Mle-Panxα4	Vpa-PanxαA
-group_0_2	8.7558	BOL-PanxαC	Mle-Panxα12	Vpa-PanxαG
-group_0_3	9.933	BOL-PanxαD	Lcr-PanxαD	Mle-Panxα2
-group_0_4	2.6426	Mle-Panxα5	Vpa-PanxαF
-group_0_5	3.567	Lcr-PanxαK	Mle-Panxα7A
-group_0_6	2.954	BOL-PanxαH	Mle-Panxα8
-group_0_7	2.6426	BOL-PanxαG	Lcr-PanxαF
-group_0_11	-10.5742	Lcr-PanxαE	Lcr-PanxαJ
-group_0_13	-10.5742	Lcr-PanxαA	Lcr-PanxαL
-group_0_8	-0.9204	Vpa-PanxαC
-group_0_9	-0.0495	Mle-Panxα6
-group_0_10	-0.0495	Mle-Panxα1
-group_0_12	-0.1402	Lcr-PanxαB
+group_0_0	0.3782	BOL-PanxαA	Lcr-PanxαH	Mle-Panxα10A	Mle-Panxα9	Vpa-PanxαB
+group_0_1	0.3633	BOL-PanxαF	Lcr-PanxαI	Mle-Panxα4	Vpa-PanxαA
+group_0_2	0.2746	BOL-PanxαC	Mle-Panxα12	Vpa-PanxαG
+group_0_3	0.1735	Mle-Panxα5	Vpa-PanxαF
+group_0_4	0.1464	BOL-PanxαH	Mle-Panxα8
+group_0_12	0.0962	Lcr-PanxαE	Lcr-PanxαJ
+group_0_15	0.0962	Lcr-PanxαA	Lcr-PanxαL
+group_0_5	0.1337	Vpa-PanxαC
+group_0_6	0.0642	Mle-Panxα7A
+group_0_7	0.0642	Mle-Panxα6
+group_0_8	0.0642	Mle-Panxα2
+group_0_9	0.0642	Mle-Panxα1
+group_0_10	0.0743	Lcr-PanxαK
+group_0_11	0.0743	Lcr-PanxαF
+group_0_13	0.0743	Lcr-PanxαD
+group_0_14	0.0743	Lcr-PanxαB
+group_0_16	0.1065	BOL-PanxαG
+group_0_17	0.1065	BOL-PanxαD
 """
     out, err = capsys.readouterr()
     assert "RESUME: All PSI-Pred .ss2 files found" in err
@@ -985,10 +985,11 @@ group_0_12	-0.1402	Lcr-PanxαB
         assert os.path.isfile(os.path.join(out_dir.path, expected_file))
 
     with open(os.path.join(out_dir.path, "final_clusters.txt"), "r") as ifile:
-        assert ifile.read() == '''\
-group_0_0	7.961	BOL-PanxαA	Lcr-PanxαH	Mle-Panxα10A	Mle-Panxα9	Vpa-PanxαB
-group_0_1	17.4529	BOL-PanxαF	Lcr-PanxαI	Mle-Panxα4	Vpa-PanxαA
-group_0_2	10.4753	BOL-PanxαC	Mle-Panxα12	Vpa-PanxαG
+        ifile = ifile.read()
+        assert ifile == '''\
+group_0_0	2.0953	BOL-PanxαA	Lcr-PanxαH	Mle-Panxα10A	Mle-Panxα9	Vpa-PanxαB
+group_0_1	2.25	BOL-PanxαF	Lcr-PanxαI	Mle-Panxα4	Vpa-PanxαA
+group_0_2	1.0	BOL-PanxαC	Mle-Panxα12	Vpa-PanxαG
 '''
     out, err = capsys.readouterr()
     assert "Generating initial multiple sequence alignment with MAFFT" in err

@@ -286,17 +286,62 @@ class Cluster(object):
                 return cluster
             cluster = cluster.parent
 
-    def score(self, force=False):
-        # TODO: Change the scoring system. Arrange all genes into a table with species as column headings, filling in rows
-        # as possible. The top row will therefore have the most sequences in it, with equal or fewer in each subsequent row.
-        # The first row gets a full score. The second gets 1/2 score, third 1/4, nth 1/2^(n-1). Remove extra modifiers for
-        # cluster size relative to total dataset size.
-        """
-        :return:
-        """
+    def score(self, algorithm="dem_ret", force=False):
         if self.cluster_score and not force:
             return self.cluster_score
 
+        assert algorithm in ["dem_ret", "drp"]
+
+        if algorithm == "dem_ret":
+            return self._score_deminishing_returns()
+        elif algorithm == "drp":
+            return self._score_direct_replicate_penalty()
+
+    def _score_deminishing_returns(self):
+        """
+        Arrange all genes into a table with species as column headings, filling in rows as possible.
+        The top row will therefore have the most sequences in it, with equal or fewer in each subsequent row.
+        The first row gets a full score. The second gets 1/2 score, third 1/4, nth 1/2^(n-1).
+        :return:
+        """
+        base_cluster = deepcopy(self.get_base_cluster())
+
+        # It's possible that a cluster can have sequences not present in the parent (i.e., following orphan placement);
+        # check for this, and add the sequences to base_cluster if necessary.
+        items_not_in_parent = set(self.seq_ids) - set(base_cluster.seq_ids)
+        for orphan in items_not_in_parent:
+            base_cluster.seq_ids.append(orphan)
+            orphan_taxa = orphan.split(self.taxa_separator)[0]
+            base_cluster.taxa.setdefault(orphan_taxa, [])
+            base_cluster.taxa[orphan_taxa].append(orphan)
+
+        subclusters = [[]]
+        for taxon, genes in self.taxa.items():
+            for indx, gene in enumerate(genes):
+                if len(subclusters) > indx:
+                    subclusters[indx].append(taxon)
+                else:
+                    subclusters.append([taxon])
+
+        score = 0
+        for indx, subcluster in enumerate(subclusters):
+            subscore = 0
+            # For each taxon in subcluster, get between 0-1 as a fraction of how many genes exist for that taxon
+            for taxon in subcluster:
+                subscore += 1 / len(base_cluster.taxa[taxon])
+
+            # Raise subscore to power 1-2, based on how many taxa contained (perfect score if all possible taxa present)
+            subscore **= len(subcluster) / len(base_cluster.taxa) + 1
+
+            # Reduce subscores as we encounter replicate taxa
+            subscore *= 0.5 ** indx
+            score += subscore
+
+        self.cluster_score = score
+        return self.cluster_score
+
+    def _score_direct_replicate_penalty(self):
+        # This is currently only accessible by modifying the default in score()
         unique_taxa = 0
         replicate_taxa = 0
         base_cluster = deepcopy(self.parent) if self.parent else self
@@ -507,20 +552,6 @@ class Cluster(object):
         log_file.write("\tCliques identified and spun off:\n\t\t%s\n\n" %
                        "\n\t\t".join([str(res.seq_ids) for res in results]))
         return results
-
-    """The following are other possible score modifier schemes to account for group size
-    def gpt(self, score, taxa):  # groups per taxa
-        genes_per_taxa = self.size / len(taxa.value_counts())
-        num_clusters_modifier = abs(genes_per_taxa - len(self.clusters))
-        score = round(score / len(self.clusters) - num_clusters_modifier ** 1.2, 2)
-        return score
-
-    def srs(self, score):  # Square root sequences
-        # print(len(self.clusters))
-        modifier = abs(self.size ** 0.5 - len(self.clusters)) ** 1.2
-        score = round(score / len(self.clusters) - modifier, 2)
-        return score
-    """
 
     def __len__(self):
         return len(self.seq_ids)
@@ -1673,4 +1704,13 @@ def main():
 
 
 if __name__ == '__main__':
+    '''
+    cteno_panxs = Sb.SeqBuddy("tests/unit_test_resources/Cteno_pannexins.fa")
+    ids = [rec.id for rec in cteno_panxs.records]
+    sim_scores = pd.read_csv("tests/unit_test_resources/Cteno_pannexins_sim.scores", "\t", index_col=False, header=None)
+    sim_scores.columns = ["seq1", "seq2", "score"]
+
+    cluster = Cluster(ids, sim_scores)
+    cluster.score()
+    '''
     main()
