@@ -4,7 +4,6 @@
 
 """
 Use the Metropolis-Hastings algorithm to estimate optimal parameters for a given function.
-ToDo: Auto-detect when to end the run (when the stationary distribution is more or less established)
 """
 
 import os
@@ -17,6 +16,7 @@ from buddysuite.buddy_resources import DynamicPrint, TempDir, usable_cpu_count
 from copy import deepcopy
 from multiprocessing import Process
 from collections import OrderedDict
+import pandas as pd
 
 
 class Variable:
@@ -85,9 +85,9 @@ History: {}
 
 
 class _Walker:
-    def __init__(self, variables, function, params=None, quiet=False, r_seed=None):
+    def __init__(self, variables, func, params=None, quiet=False, r_seed=None):
         self.variables = variables
-        self.function = function
+        self.function = func
         self.params = params
         self.heat = 0.32
         self.current_score = None
@@ -193,6 +193,10 @@ class _Chain(object):
         cold_walker = sorted(self.walkers, key=lambda walker: walker.heat)[0]
         return cold_walker
 
+    def get_results(self):
+        results = pd.read_csv(self.outfile)
+        return results
+
     def write_sample(self):
         output = "%s\t" % self.step_counter
         best_walker = self.get_best_walker()
@@ -208,9 +212,10 @@ class MCMCMC:
     """
     Sets up the infrastructure to run a Metropolis Hasting random walk
     """
-    def __init__(self, variables, function, params=None, steps=10000, sample_rate=1, num_walkers=3, num_chains=2,
+    def __init__(self, variables, func, params=None, steps=10000, sample_rate=1, num_walkers=3, num_chains=3,
                  outfiles='./chain', burn_in=100, quiet=False, r_seed=None):
         self.global_variables = variables
+        assert steps >= 10
         self.steps = steps
         self.sample_rate = sample_rate
         self.outfile = os.path.abspath(outfiles)
@@ -220,7 +225,7 @@ class MCMCMC:
         for i in range(num_chains):
             walkers = []
             for j in range(num_walkers):
-                walker = _Walker(deepcopy(self.global_variables), function, params=params,
+                walker = _Walker(deepcopy(self.global_variables), func, params=params,
                                  quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999))
                 for variable in walker.variables:
                     variable.rand_gen.seed(self.rand_gen.randint(1, 999999999999999))
@@ -277,7 +282,8 @@ class MCMCMC:
         counter = 0
         from buddysuite import buddy_resources as br
         valve = br.SafetyValve(1000)
-        while self._check_mixing() and counter <= self.steps:
+        while not self._check_convergence() and counter <= self.steps:
+            counter += 1
             valve.step()  # ToDo: This needs to be removed in place of a functional _check_mixing() method
             child_list = OrderedDict()
             for chain in self.chains:  # Note that this will spin off as many new processes as there are walkers
@@ -312,8 +318,8 @@ class MCMCMC:
                         self.best["variables"] = OrderedDict([(x.name, x.current_value) for x in walker.variables])
 
                     # Burn in: discard first 100
-                    if counter == self.burn_in:
-                        walker.score_history = [walker.raw_max - np.std(walker.score_history), walker.raw_max]
+                    # if counter == self.burn_in:
+                    #    walker.score_history = [walker.raw_max - np.std(walker.score_history), walker.raw_max]
 
             for chain in self.chains:
                 chain.swap_hot_cold()
@@ -322,13 +328,72 @@ class MCMCMC:
                 if counter % self.sample_rate == 0:
                     chain.step_counter += 1
                     chain.write_sample()
-            counter += 1
         return
 
-    def _check_mixing(self):
-        for _ in self.chains:
-            pass
-        return True
+    def _check_convergence(self):
+        """
+        Implements the Gelman-Rubin statistic:
+            1) Discard burn in (10%)
+            2) Calculate within-chain variance for each scalar
+            3) Calculate between-chain variance for each scalar
+            4) Compute 'potential scale reduction factor' (PSRF) for each scalar --> aiming for < 1.1 for everything
+
+        :return: True or False
+        """
+        if self.chains[0].step_counter < 10:
+            return False
+
+        data = [pd.read_csv(chain.outfile, sep="\t") for chain in self.chains]
+        # 1) Strip out 10% burn in
+        start_indx = round(len(data[0]) * 0.1)
+        data = [x.iloc[start_indx:, :] for x in data]
+
+        # 2) Calculate within-chain variance for each scalar
+        within_variance = OrderedDict()
+        for df in data:
+            scalars = df.drop(["Gen", "result"], axis=1)
+            for name, series in scalars.items():
+                mean = series.mean()
+                series_mean_sqr = (series - mean) ** 2
+                variance = series_mean_sqr.sum()/(len(series_mean_sqr) - 1)
+                within_variance.setdefault(name, 0.0000001)
+                within_variance[name] += variance / len(scalars.columns)
+
+        for name, variance in within_variance.items():
+            within_variance[name] /= len(data)
+
+        # 3) Calculate between-chain variance for each scalar
+        between_variance = OrderedDict()
+        counter = 0
+        for i, chain_i in enumerate(data[:-1]):
+            scalars_i = chain_i.drop(["Gen", "result"], axis=1)
+            for j, chain_j in enumerate(data[i+1:]):
+                counter += 2  # Between-variances will be added in both directions
+                scalars_j = chain_j.drop(["Gen", "result"], axis=1)
+                for name, series_i in scalars_i.items():
+                    mean_i = series_i.mean()
+                    mean_j = scalars_j[name].mean()
+
+                    series_mean_sqr_i = (series_i - mean_j) ** 2
+                    variance_i = series_mean_sqr_i.sum()/(len(series_mean_sqr_i) - 1)
+                    between_variance.setdefault(name, 0)
+                    between_variance[name] += variance_i / len(scalars_i.columns)
+
+                    series_mean_sqr_j = (scalars_j[name] - mean_i) ** 2
+                    variance_j = series_mean_sqr_j.sum()/(len(series_mean_sqr_j) - 1)
+                    between_variance[name] += variance_j / len(scalars_j.columns)
+
+        for name, variance in between_variance.items():
+            between_variance[name] /= counter
+
+        # 4) Compute 'potential scale reduction factor' (PSRF) for each scalar
+        n = len(data[0].columns)
+        for name, b in between_variance.items():
+            w = within_variance[name]
+            psrf = (((n - 1) / n) + (b / (n * w))) ** (1/2)
+            if psrf >= 1.1:
+                return False
+        return True  # If all PSRFs are below 1.1, time to call it quits
 
     def reset_params(self, params):
         """
