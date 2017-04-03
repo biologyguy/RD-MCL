@@ -721,7 +721,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         result = mcmcmc_output.loc[mcmcmc_output["result"] == mcmcmc_output["result"].max()]
         best_score = result if best_score.empty or result["result"].iloc[0] > best_score["result"].iloc[0] else best_score
 
-    if best_score["result"].iloc[0] <= master_cluster.score():
+    if round(best_score["result"].iloc[0], 8) <= round(master_cluster.score(), 8):
         save_cluster("New best score of %s is less than master cluster at %s"
                      % (best_score["result"].iloc[0], master_cluster.score()))
         return cluster_list
@@ -753,7 +753,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         if sub_cluster.seq_id_hash == master_cluster.seq_id_hash:  # This shouldn't ever happen
             raise ArithmeticError("The sub_cluster and master_cluster are the same, but are returning different "
                                   "scores\nsub-cluster score: %s, master score: %s\n%s"
-                                  % (sub_cluster.score(), master_cluster.score(),
+                                  % (best_score["result"].iloc[0], master_cluster.score(),
                                      sub_cluster.seq_id_hash))
         sub_cluster.set_name()
         if len(sub_cluster) in [1, 2]:
