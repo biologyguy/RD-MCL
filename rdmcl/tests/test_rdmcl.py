@@ -588,7 +588,7 @@ def test_generate_msa(hf):
 def test_mc_score_sequence(hf):
     seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
     rdmcl.Sb.pull_recs(seqbuddy, "Mle")
-    alignbuddy = rdmcl.Alb.generate_msa(seqbuddy, "mafft", params="--globalpair --thread -2", quiet=True)
+    alignbuddy = rdmcl.Alb.generate_msa(seqbuddy, "mafft", params="--globalpair --thread 2", quiet=True)
     psi_pred_files = [(rec.id, rdmcl.read_ss2_file("%spsi_pred%s%s.ss2" % (hf.resource_path, hf.sep, rec.id)))
                       for rec in alignbuddy.records()]
     psi_pred_files = OrderedDict(psi_pred_files)
@@ -599,14 +599,15 @@ def test_mc_score_sequence(hf):
     rdmcl.mc_score_sequences(seq_pairs, args)
     assert os.path.isfile("%s%s50687872cdaaed1fee7e809b5a032377" % (tmp_dir.path, hf.sep))
     with open("%s%s50687872cdaaed1fee7e809b5a032377" % (tmp_dir.path, hf.sep), "r") as ifile:
-        assert ifile.read() == """
-Mle-Panxα2,Mle-Panxα12,0.4789936469710511
-Mle-Panxα1,Mle-Panxα3,0.3706607994410156"""
+        content = ifile.read()
+        assert content == """
+Mle-Panxα2,Mle-Panxα12,1.132395533636306
+Mle-Panxα1,Mle-Panxα3,1.0322618579462186""", print(content)
 
 
 def test_compare_pairwise_alignment():
     seqbuddy = rdmcl.Sb.SeqBuddy(">seq1\nMPQMSASWI\n>Seq2\nMPPQISASI")
-    alignbuddy = rdmcl.Alb.generate_msa(seqbuddy, "mafft", params="--globalpair --op 0 --thread -2", quiet=True)
+    alignbuddy = rdmcl.Alb.generate_msa(seqbuddy, "mafft", params="--globalpair --op 0 --thread 2", quiet=True)
     assert str(alignbuddy) == """\
 >seq1
 MP-QMSASWI
@@ -614,13 +615,13 @@ MP-QMSASWI
 MPPQISAS-I
 """
     subs_mat_score = rdmcl.compare_pairwise_alignment(alignbuddy, -5, 0)
-    assert subs_mat_score == 0.5176252319109462
+    assert subs_mat_score == 1.4594801354837685
 
 
 def test_create_all_by_all_scores(hf):
     seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
     rdmcl.Sb.pull_recs(seqbuddy, "Mle")
-    alignbuddy = rdmcl.Alb.generate_msa(seqbuddy, "mafft", params="--globalpair --thread -2", quiet=True)
+    alignbuddy = rdmcl.Alb.generate_msa(seqbuddy, "mafft", params="--globalpair --thread 2", quiet=True)
     psi_pred_files = [(rec.id, rdmcl.read_ss2_file("%spsi_pred%s%s.ss2" % (hf.resource_path, hf.sep, rec.id)))
                       for rec in alignbuddy.records()]
     psi_pred_files = OrderedDict(psi_pred_files)
@@ -628,7 +629,7 @@ def test_create_all_by_all_scores(hf):
     sim_scores = rdmcl.create_all_by_all_scores(alignbuddy, psi_pred_files)
     assert len(sim_scores.index) == 66  # This is for 12 starting sequences --> (a * (a - 1)) / 2
     compare = sim_scores.loc[:][(sim_scores['seq1'] == "Mle-Panxα2") & (sim_scores['seq2'] == "Mle-Panxα12")]
-    assert compare.iloc[0]['score'] == 0.54706454433078899
+    assert compare.iloc[0]['score'] == 1.1536414713735881
 
     rdmcl.Alb.pull_records(alignbuddy, "Mle-Panxα2")
     sim_scores = rdmcl.create_all_by_all_scores(alignbuddy, psi_pred_files)
@@ -899,7 +900,7 @@ def test_argparse_init(monkeypatch, hf):
     argv = ['rdmcl.py', os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa"), out_dir.path]
     monkeypatch.setattr(rdmcl.sys, "argv", argv)
     temp_in_args = rdmcl.argparse_init()
-    assert temp_in_args.mcmcmc_steps == 1000
+    assert temp_in_args.mcmcmc_steps == 0
     assert temp_in_args.open_penalty == -5
     assert temp_in_args.extend_penalty == 0
 
@@ -924,7 +925,8 @@ def test_full_run(hf, monkeypatch, capsys):
         assert os.path.isfile(os.path.join(out_dir.path, expected_file))
 
     with open(os.path.join(out_dir.path, "final_clusters.txt"), "r") as ifile:
-        assert ifile.read() == """\
+        content = ifile.read()
+        assert content == """\
 group_0_0	0.3782	BOL-PanxαA	Lcr-PanxαH	Mle-Panxα10A	Mle-Panxα9	Vpa-PanxαB
 group_0_1	0.3633	BOL-PanxαF	Lcr-PanxαI	Mle-Panxα4	Vpa-PanxαA
 group_0_2	0.2746	BOL-PanxαC	Mle-Panxα12	Vpa-PanxαG
@@ -943,7 +945,8 @@ group_0_13	0.0743	Lcr-PanxαD
 group_0_14	0.0743	Lcr-PanxαB
 group_0_16	0.1065	BOL-PanxαG
 group_0_17	0.1065	BOL-PanxαD
-"""
+""", print(content)
+
     out, err = capsys.readouterr()
     assert "RESUME: All PSI-Pred .ss2 files found" in err
     assert "RESUME: Initial multiple sequence alignment found" in err
@@ -985,12 +988,14 @@ group_0_17	0.1065	BOL-PanxαD
         assert os.path.isfile(os.path.join(out_dir.path, expected_file))
 
     with open(os.path.join(out_dir.path, "final_clusters.txt"), "r") as ifile:
-        ifile = ifile.read()
-        assert ifile == '''\
-group_0_0	2.0953	BOL-PanxαA	Lcr-PanxαH	Mle-Panxα10A	Mle-Panxα9	Vpa-PanxαB
-group_0_1	2.25	BOL-PanxαF	Lcr-PanxαI	Mle-Panxα4	Vpa-PanxαA
-group_0_2	1.0	BOL-PanxαC	Mle-Panxα12	Vpa-PanxαG
-'''
+        content = ifile.read()
+        assert content == '''\
+group_0_0_0	2.0069	BOL-PanxαA	Lcr-PanxαH	Mle-Panxα9	Vpa-PanxαB
+group_0_1	2.0069	BOL-PanxαF	Lcr-PanxαI	Mle-Panxα4	Vpa-PanxαA
+group_0_2	0.8588	BOL-PanxαC	Mle-Panxα12	Vpa-PanxαG
+group_0_0_1	0.1768	Mle-Panxα10A
+''', print(content)
+
     out, err = capsys.readouterr()
     assert "Generating initial multiple sequence alignment with MAFFT" in err
     assert "Generating initial all-by-all similarity graph (66 comparisons)" in err

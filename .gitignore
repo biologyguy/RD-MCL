@@ -22,6 +22,7 @@ htmlcov
 
 # Unsaved runs of the software
 workshop/*
+datasets/KOGS/*
 
 # IPython
 .ipynb_checkpoints/*
@@ -36,3 +37,6 @@ workshop/*
 
 # Experiment directory contains too much data
 experiments/*
+
+# Release builds
+dist/

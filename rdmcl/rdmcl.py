@@ -919,10 +919,10 @@ def generate_msa(seqbuddy, sql_broker):
         if len(seqbuddy) == 1:
             alignment = Alb.AlignBuddy(str(seqbuddy))
         else:
-            alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), MAFFT, params="--globalpair --thread -2", quiet=True)
+            alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), MAFFT, params="--globalpair --thread -1", quiet=True)
 
-        sql_broker.query("""UPDATE data_table SET alignment='{0}'
-                            WHERE hash='{1}'""".format(str(alignment), seq_id_hash))
+        sql_broker.query("UPDATE data_table SET alignment='{0}' "
+                         "WHERE hash='{1}'".format(str(alignment), seq_id_hash))
     return alignment
 
 
@@ -956,20 +956,6 @@ def create_all_by_all_scores(alignment, psi_pred_ss2_dfs, gap_open=GAP_OPEN, gap
                 ss_counter += 1
         psi_pred_ss2_dfs[rec.id] = ss_file
 
-    # Scores seem to be improved by removing gaps. Need to test this explicitly for the paper though
-    alignment = Alb.trimal(alignment, "gappyout")
-
-    # Re-update PsiPred files, now that some columns are removed
-    for rec in alignment.records_iter():
-        new_psi_pred = [0 for _ in range(len(psi_pred_ss2_dfs[rec.id].index))]  # Instantiate list of max possible size
-        indx = 0
-        for row in psi_pred_ss2_dfs[rec.id].itertuples():
-            if alignment.alignments[0].position_map[int(row[1])][1]:
-                new_psi_pred[indx] = list(row)[1:]
-                indx += 1
-        new_psi_pred = new_psi_pred[:indx]
-        psi_pred_ss2_dfs[rec.id] = pd.DataFrame(new_psi_pred, columns=["indx", "aa", "ss", "coil_prob",
-                                                                       "helix_prob", "sheet_prob"])
     ids1 = [rec.id for rec in alignment.records_iter()]
     ids2 = [rec.id for rec in alignment.records_iter()]
     all_by_all = [0 for _ in range(int((len(ids1)**2 - len(ids1)) / 2))]
@@ -1008,6 +994,20 @@ def mc_score_sequences(seq_pairs, args):
         # Alignment comparison
         alb_copy = Alb.make_copy(alb_obj)
         Alb.pull_records(alb_copy, id_regex)
+
+        # Re-update PsiPred files, now that some columns are removed by pull_records
+        for rec in alb_copy.records_iter():
+            # Instantiate list correct size instead of dynamically growing it
+            new_psi_pred = [0 for _ in range(len(psi_pred_ss2_dfs[rec.id].index))]
+            indx = 0
+            for row in psi_pred_ss2_dfs[rec.id].itertuples():
+                if alb_copy.alignments[0].position_map[int(row[1])][1]:
+                    new_psi_pred[indx] = list(row)[1:]
+                    indx += 1
+            new_psi_pred = new_psi_pred[:indx]
+            psi_pred_ss2_dfs[rec.id] = pd.DataFrame(new_psi_pred, columns=["indx", "aa", "ss", "coil_prob",
+                                                                           "helix_prob", "sheet_prob"])
+
         subs_mat_score = compare_pairwise_alignment(alb_copy, gap_open, gap_extend)
 
         # PSI PRED comparison
@@ -1044,8 +1044,9 @@ def compare_pairwise_alignment(alb_obj, gap_open, gap_extend):
             observed_score += BLOSUM62[aa1, aa2]
         prev_aa1 = str(aa1)
         prev_aa2 = str(aa2)
-
-    subs_mat_score = ((observed_score / seq1_best) + (observed_score / seq2_best)) / 2
+    # Remember that these scores are all log-odds ratios.
+    # I believe that the best score that can happen here is 1.0
+    subs_mat_score = 2 ** (observed_score - seq1_best) + 2 ** (observed_score / seq2_best)
     return subs_mat_score
 # ################ END SCORING FUNCTIONS ################ #
 
@@ -1251,7 +1252,7 @@ def argparse_init():
     parser.add_argument("-sql", "--sqlite_db", action="store", help="Specify a SQLite database location.")
     parser.add_argument("-psi", "--psi_pred_dir", action="store",
                         help="If PSI-Pred files are pre-calculated, tell us where.")
-    parser.add_argument("-mcs", "--mcmcmc_steps", default=1000, type=int,
+    parser.add_argument("-mcs", "--mcmcmc_steps", default=0, type=int,
                         help="Specify how deeply to sample MCL parameters")
     parser.add_argument("-sr", "--suppress_recursion", action="store_true",
                         help="Stop after a single round of MCL. For testing.")
@@ -1460,6 +1461,14 @@ Please do so now:
 
     # Ortholog caller
     logging.warning("\n** Recursive MCL **")
+    if in_args.mcmcmc_steps >= 10:
+        logging.warning("User specified maximum MCMCMC steps: %s" % in_args.mcmcmc_steps)
+    elif in_args.mcmcmc_steps == 0:
+        logging.warning("Auto detect MCMCMC convergence")
+    else:
+        logging.warning("User specified maximum MCMCMC steps of %s is too low. "
+                        "Switching to auto-detect" % in_args.mcmcmc_steps)
+        in_args.mcmcmc_steps = 0
     final_clusters = []
     progress_tracker = Progress(in_args.outdir, group_0_cluster)
 

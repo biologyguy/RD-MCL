@@ -212,10 +212,10 @@ class MCMCMC:
     """
     Sets up the infrastructure to run a Metropolis Hasting random walk
     """
-    def __init__(self, variables, func, params=None, steps=10000, sample_rate=1, num_walkers=3, num_chains=3,
+    def __init__(self, variables, func, params=None, steps=0, sample_rate=1, num_walkers=3, num_chains=3,
                  outfiles='./chain', burn_in=100, quiet=False, r_seed=None):
         self.global_variables = variables
-        assert steps >= 10
+        assert steps >= 10 or steps == 0
         self.steps = steps
         self.sample_rate = sample_rate
         self.outfile = os.path.abspath(outfiles)
@@ -281,8 +281,8 @@ class MCMCMC:
         temp_dir = TempDir()
         counter = 0
         from buddysuite import buddy_resources as br
-        valve = br.SafetyValve(1000)
-        while not self._check_convergence() and counter <= self.steps:
+        valve = br.SafetyValve(10000)
+        while not self._check_convergence() and (counter <= self.steps or self.steps == 0):
             counter += 1
             valve.step()  # ToDo: This needs to be removed in place of a functional _check_mixing() method
             child_list = OrderedDict()
