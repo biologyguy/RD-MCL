@@ -30,7 +30,7 @@ DEPENDENCIES = [
     'pytest',
     'pytest-xdist',
     'pytest-cov',
-    'pandas',
+    'pandas>=0.19',
     'numpy',
     'scipy',
     'statsmodels',
