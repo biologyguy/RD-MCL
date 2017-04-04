@@ -1342,6 +1342,7 @@ Please do so now:
                                        "graph TEXT", "cluster_score TEXT"])
     broker.start_broker()
     sequences = Sb.SeqBuddy(in_args.sequences)
+    sequences = Sb.delete_metadata(sequences)
     check_sequences(sequences, in_args.taxa_separator)
     seq_ids_str = ", ".join(sorted([rec.id for rec in sequences.records]))
     seq_ids_hash = helpers.md5_hash(seq_ids_str)
