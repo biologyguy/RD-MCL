@@ -956,6 +956,21 @@ def create_all_by_all_scores(alignment, psi_pred_ss2_dfs, gap_open=GAP_OPEN, gap
                 ss_counter += 1
         psi_pred_ss2_dfs[rec.id] = ss_file
 
+    # Scores seem to be improved by removing gaps. Need to test this explicitly for the paper though
+    alignment = Alb.trimal(alignment, threshold=0.9)
+
+    # Re-update PsiPred files now that some columns, posibily including non-gap characters, are removed
+    for rec in alignment.records_iter():
+        new_psi_pred = [0 for _ in range(len(psi_pred_ss2_dfs[rec.id].index))]  # Instantiate list of max possible size
+        indx = 0
+        for row in psi_pred_ss2_dfs[rec.id].itertuples():
+            if alignment.alignments[0].position_map[int(row[1])][1]:
+                new_psi_pred[indx] = list(row)[1:]
+                indx += 1
+        new_psi_pred = new_psi_pred[:indx]
+        psi_pred_ss2_dfs[rec.id] = pd.DataFrame(new_psi_pred, columns=["indx", "aa", "ss", "coil_prob",
+                                                                       "helix_prob", "sheet_prob"])
+
     ids1 = [rec.id for rec in alignment.records_iter()]
     ids2 = [rec.id for rec in alignment.records_iter()]
     all_by_all = [0 for _ in range(int((len(ids1)**2 - len(ids1)) / 2))]
@@ -994,19 +1009,6 @@ def mc_score_sequences(seq_pairs, args):
         # Alignment comparison
         alb_copy = Alb.make_copy(alb_obj)
         Alb.pull_records(alb_copy, id_regex)
-
-        # Re-update PsiPred files, now that some columns are removed by pull_records
-        for rec in alb_copy.records_iter():
-            # Instantiate list correct size instead of dynamically growing it
-            new_psi_pred = [0 for _ in range(len(psi_pred_ss2_dfs[rec.id].index))]
-            indx = 0
-            for row in psi_pred_ss2_dfs[rec.id].itertuples():
-                if alb_copy.alignments[0].position_map[int(row[1])][1]:
-                    new_psi_pred[indx] = list(row)[1:]
-                    indx += 1
-            new_psi_pred = new_psi_pred[:indx]
-            psi_pred_ss2_dfs[rec.id] = pd.DataFrame(new_psi_pred, columns=["indx", "aa", "ss", "coil_prob",
-                                                                           "helix_prob", "sheet_prob"])
 
         subs_mat_score = compare_pairwise_alignment(alb_copy, gap_open, gap_extend)
 

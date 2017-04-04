@@ -242,9 +242,9 @@ class MCMCMC:
         high dimensional variable space because it will increase the probability of accepting a new sample. It isn't
         implemented here, but good to keep in mind.
         """
-        def mc_step_run(_chain, args):
+        def mc_step_run(_walker, args):
             _func_args, out_path = args
-            score = _chain.function(func_args) if not _chain.params else _chain.function(func_args, _chain.params)
+            score = _walker.function(func_args) if not _walker.params else _walker.function(func_args, _walker.params)
             with open(out_path, "w") as ofile:
                 ofile.write(str(score))
             return
