@@ -1012,7 +1012,7 @@ def mc_score_sequences(seq_pairs, args):
 
         # PSI PRED comparison
         ss_score = compare_psi_pred(psi_pred_ss2_dfs[id1], psi_pred_ss2_dfs[id2])
-        pair_score = (ss_score * 0.3) + (subs_mat_score * 0.7)  # Magic number weights...
+        pair_score = (ss_score * 0.3) + (subs_mat_score * 0.7)  # ToDo: Experiment testing these magic number weights...
         ofile.write("\n%s,%s,%s" % (id1, id2, pair_score))
     ofile.close()
     return
@@ -1046,7 +1046,7 @@ def compare_pairwise_alignment(alb_obj, gap_open, gap_extend):
         prev_aa2 = str(aa2)
     # Remember that these scores are all log-odds ratios.
     # I believe that the best score that can happen here is 1.0
-    subs_mat_score = 2 ** (observed_score - seq1_best) + 2 ** (observed_score / seq2_best)
+    subs_mat_score = (2 ** (observed_score - seq1_best) + 2 ** (observed_score / seq2_best)) / 2
     return subs_mat_score
 # ################ END SCORING FUNCTIONS ################ #
 
