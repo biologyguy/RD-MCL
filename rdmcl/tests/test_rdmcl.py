@@ -615,7 +615,7 @@ MP-QMSASWI
 MPPQISAS-I
 """
     subs_mat_score = rdmcl.compare_pairwise_alignment(alignbuddy, -5, 0)
-    assert subs_mat_score == 1.4594801354837685
+    assert subs_mat_score == 0.4658627087198515
 
 
 def test_create_all_by_all_scores(hf):

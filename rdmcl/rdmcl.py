@@ -233,7 +233,7 @@ class Cluster(object):
         best_hits = self.sim_scores[(self.sim_scores.seq1 == gene) | (self.sim_scores.seq2 == gene)]
         if not best_hits.empty:
             best_hits = best_hits.loc[best_hits.score == max(best_hits.score)].values
-            best_hits = pd.DataFrame(best_hits, columns=["seq1", "seq2", "score"])
+            best_hits = pd.DataFrame(best_hits, columns=list(self.sim_scores.columns.values))
         return best_hits
 
     def recursive_best_hits(self, gene, global_best_hits, tested_ids):
@@ -410,7 +410,9 @@ class Cluster(object):
         for taxa_id, group in self.taxa.items():
             if len(group) > 1:
                 for gene in group:
-                    rbhc = self.recursive_best_hits(gene, pd.DataFrame(columns=["seq1", "seq2", "score"]), [gene])
+                    rbhc = self.recursive_best_hits(gene,
+                                                    pd.DataFrame(columns=list(self.sim_scores.columns.values)),
+                                                    [gene])
                     # If ANY clique encompasses the entire cluster, we're done
                     if len(set(list(rbhc.seq1.values) + list(rbhc.seq2.values))) == len(self):
                         log_file.write("\tTERMINATED: Entire cluster pulled into clique on %s." % taxa_id)
@@ -741,12 +743,12 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     for sub_cluster in mcl_clusters:
         cluster_ids_hash = helpers.md5_hash(", ".join(sorted(sub_cluster)))
         if len(sub_cluster) == 1:
-            sim_scores = pd.DataFrame(columns=["seq1", "seq2", "score"])
+            sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "score"])
         else:
             # All mcl sub clusters are written to database in mcmcmc_mcl(), so no need to check if exists
             graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_ids_hash))[0][0]
             sim_scores = pd.read_csv(StringIO(graph), index_col=False, header=None)
-            sim_scores.columns = ["seq1", "seq2", "score"]
+            sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "score"]
 
         sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster,
                               taxa_separator=taxa_separator, r_seed=rand_gen.randint(1, 999999999999999))
@@ -938,7 +940,7 @@ def create_all_by_all_scores(alignment, psi_pred_ss2_dfs, gap_open=GAP_OPEN, gap
     :return:
     """
     if len(alignment.records()) == 1:
-        sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "score"])
+        sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "subsmat", "psi", "score"])
         return sim_scores
 
     # Don't want to modify the alignbuddy object in place
@@ -989,12 +991,22 @@ def create_all_by_all_scores(alignment, psi_pred_ss2_dfs, gap_open=GAP_OPEN, gap
         br.run_multicore_function(all_by_all, mc_score_sequences, score_sequences_params,
                                   quiet=quiet)
     sim_scores_file = br.TempFile()
-    sim_scores_file.write("seq1,seq2,score")
+    sim_scores_file.write("seq1,seq2,subsmat,psi")
     aba_root, aba_dirs, aba_files = next(os.walk(all_by_all_outdir.path))
     for aba_file in aba_files:
         with open(os.path.join(aba_root, aba_file), "r") as ifile:
             sim_scores_file.write(ifile.read())
     sim_scores = pd.read_csv(sim_scores_file.get_handle("r"), index_col=False)
+
+    # Distribute final scores_components between 0-1.
+    sim_scores['psi'] = (sim_scores['psi'] - sim_scores['psi'].min()) / \
+                          (sim_scores['psi'].max() - sim_scores['psi'].min())
+
+    sim_scores['subsmat'] = (sim_scores['subsmat'] - sim_scores['subsmat'].min()) / \
+                            (sim_scores['subsmat'].max() - sim_scores['subsmat'].min())
+
+    # ToDo: Experiment testing these magic number weights...
+    sim_scores['score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
     return sim_scores
 
 
@@ -1013,30 +1025,37 @@ def mc_score_sequences(seq_pairs, args):
         subs_mat_score = compare_pairwise_alignment(alb_copy, gap_open, gap_extend)
 
         # PSI PRED comparison
+        alb_copy = Sb.SeqBuddy(alb_copy.records())
+        Sb.clean_seq(alb_copy)
+        # assert len(psi_pred_ss2_dfs[id1]) == len(alb_copy.records[0].seq)
+        # assert len(psi_pred_ss2_dfs[id2]) == len(alb_copy.records[1].seq)
         ss_score = compare_psi_pred(psi_pred_ss2_dfs[id1], psi_pred_ss2_dfs[id2])
-        pair_score = (ss_score * 0.3) + (subs_mat_score * 0.7)  # ToDo: Experiment testing these magic number weights...
-        ofile.write("\n%s,%s,%s" % (id1, id2, pair_score))
+        ofile.write("\n%s,%s,%s,%s" % (id1, id2, subs_mat_score, ss_score))
     ofile.close()
     return
 
 
 def compare_pairwise_alignment(alb_obj, gap_open, gap_extend):
     observed_score = 0
+    observed_len = alb_obj.lengths()[0]
     seq1_best = 0
+    seq1_len = 0
     seq2_best = 0
+    seq2_len = 0
     seq1, seq2 = alb_obj.records()
     prev_aa1 = "-"
     prev_aa2 = "-"
 
-    for aa_pos in range(alb_obj.lengths()[0]):
+    for aa_pos in range(observed_len):
         aa1 = seq1.seq[aa_pos]
         aa2 = seq2.seq[aa_pos]
 
         if aa1 != "-":
             seq1_best += BLOSUM62[aa1, aa1]
+            seq1_len += 1
         if aa2 != "-":
             seq2_best += BLOSUM62[aa2, aa2]
-
+            seq2_len += 1
         if aa1 == "-" or aa2 == "-":
             if prev_aa1 == "-" or prev_aa2 == "-":
                 observed_score += gap_extend
@@ -1046,9 +1065,18 @@ def compare_pairwise_alignment(alb_obj, gap_open, gap_extend):
             observed_score += BLOSUM62[aa1, aa2]
         prev_aa1 = str(aa1)
         prev_aa2 = str(aa2)
-    # Remember that these scores are all log-odds ratios.
-    # I believe that the best score that can happen here is 1.0
-    subs_mat_score = (2 ** (observed_score - seq1_best) + 2 ** (observed_score / seq2_best)) / 2
+
+    # Calculate average per-residue log-odds ratios for both best possible alignments and observed
+    # Note: The best score range is 4 to 11. Possible observed range is -4 to 11.
+    observed_score = (observed_score / observed_len)
+
+    seq1_best = (seq1_best / seq1_len)
+    seq1_score = observed_score / seq1_best
+
+    seq2_best = (seq2_best / seq2_len)
+    seq2_score = observed_score / seq2_best
+
+    subs_mat_score = (seq1_score + seq2_score) / 2
     return subs_mat_score
 # ################ END SCORING FUNCTIONS ################ #
 
@@ -1108,7 +1136,7 @@ class Orphans(object):
                                           "WHERE hash='{0}'".format(helpers.md5_hash(", ".join(seq_ids))))
             if graph and graph[0][0]:
                 sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
-                sim_scores.columns = ["seq1", "seq2", "score"]
+                sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "score"]
             else:
                 sim_scores = create_all_by_all_scores(alb_obj, self.psi_pred_ss2_dfs, quiet=True)
                 cluster2database(Cluster(seq_ids, sim_scores, collapse=False), self.sql_broker, alb_obj)
@@ -1437,7 +1465,7 @@ Please do so now:
     if graph_data and graph_data[0][0]:
         logging.warning("RESUME: Initial all-by-all similarity graph found")
         scores_data = pd.read_csv(StringIO(graph_data[0][0]), index_col=False, header=None)
-        scores_data.columns = ["seq1", "seq2", "score"]
+        scores_data.columns = ["seq1", "seq2", "subsmat", "psi", "score"]
 
     else:
         num_comparisons = ((len(alignbuddy.alignments[0]) ** 2) - len(alignbuddy.alignments[0])) / 2
@@ -1727,7 +1755,7 @@ if __name__ == '__main__':
     cteno_panxs = Sb.SeqBuddy("tests/unit_test_resources/Cteno_pannexins.fa")
     ids = [rec.id for rec in cteno_panxs.records]
     sim_scores = pd.read_csv("tests/unit_test_resources/Cteno_pannexins_sim.scores", "\t", index_col=False, header=None)
-    sim_scores.columns = ["seq1", "seq2", "score"]
+    sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "score"]
 
     cluster = Cluster(ids, sim_scores)
     cluster.score()
