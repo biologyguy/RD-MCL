@@ -280,11 +280,8 @@ class MCMCMC:
 
         temp_dir = TempDir()
         counter = 0
-        from buddysuite import buddy_resources as br
-        valve = br.SafetyValve(10000)
         while not self._check_convergence() and (counter <= self.steps or self.steps == 0):
             counter += 1
-            valve.step()  # ToDo: This needs to be removed in place of a functional _check_mixing() method
             child_list = OrderedDict()
             for chain in self.chains:  # Note that this will spin off as many new processes as there are walkers
                 for walker in chain.walkers:
@@ -316,10 +313,6 @@ class MCMCMC:
                     if self.best["score"] is None or walker.current_score > self.best["score"]:
                         self.best["score"] = walker.current_score
                         self.best["variables"] = OrderedDict([(x.name, x.current_value) for x in walker.variables])
-
-                    # Burn in: discard first 100
-                    # if counter == self.burn_in:
-                    #    walker.score_history = [walker.raw_max - np.std(walker.score_history), walker.raw_max]
 
             for chain in self.chains:
                 chain.swap_hot_cold()
