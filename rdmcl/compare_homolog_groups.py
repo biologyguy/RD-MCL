@@ -85,28 +85,23 @@ class Clusters(object):
         return count if count > 0 else None
 
 
+def prepare_clusters(ifile):
+    with open(ifile, "r") as ifile:
+        output = ifile.readlines()
+    if output[-1] == "\n":
+        del output[-1]
+
+    for indx, line in enumerate(output):
+        line = re.sub("group_.*?\t", "", line)
+        line = re.sub("^-*[0-9]+\.[0-9]*\t", "", line)
+        line = line.split()
+        output[indx] = line
+    return output
+
+
 def write_difference(subject, query):
-    with open(subject, "r") as ifile:
-        subject = ifile.readlines()
-    if subject[-1] == "\n":
-        del subject[-1]
-
-    for indx, line in enumerate(subject):
-        line = re.sub("group_.*?\t", "", line)
-        line = re.sub("-*[0-9]+\.[0-9]*\t", "", line)
-        line = line.split()
-        subject[indx] = line
-
-    with open(query, "r") as ifile:
-        query = ifile.readlines()
-    if query[-1] == "\n":
-        del query[-1]
-
-    for indx, line in enumerate(query):
-        line = re.sub("group_.*?\t", "", line)
-        line = re.sub("-*[0-9]+\.[0-9]*\t", "", line)
-        line = line.split()
-        query[indx] = line
+    subject = prepare_clusters(subject)
+    query = prepare_clusters(query)
 
     # For each query cluster, find the subject cluster with the most overlap
     final_clusters = [[] for _ in range(len(query))]
@@ -145,6 +140,7 @@ if __name__ == '__main__':
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("subject", help="Input file 1", action="store")
     parser.add_argument("query", help="Input file 2", action="store")
+    parser.add_argument("--score", "-s", action="store_true")
     parser.add_argument("--group_split", "-gs", action="store", default="\n",
                         help="specify the delimiting string between groups")
     parser.add_argument("--taxa_split", "-ts", action="store", default=" ",
