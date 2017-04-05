@@ -25,112 +25,62 @@ import re
 import sys
 
 
-class Clusters(object):
-    def __init__(self, path, group_split="\n", taxa_split=" "):
-        with open(path, "r") as ifile:
-            self.input = ifile.read()
+class Comparison(object):
+    def __init__(self, subject, query):
+        self.subject = self.prepare_clusters(subject)
+        self.query = self.prepare_clusters(query)
 
-        self.clusters = self.input.strip().split(group_split)
-        self.clusters = [[y for y in x.strip().split(taxa_split)] for x in self.clusters]
-        self.clusters.reverse()
-        self.size = 0.
-        for group in self.clusters:
-            self.size += len(group)
-        self.printer = MyFuncs.DynamicPrint()
-
-    def compare(self, query_clusters, output_file):
-        score = 0.
-        counter = 1
-        output = ""
-        for subj in self.clusters:
-            printer.write("Cluster %s of %s" % (counter, len(self.clusters)))
-            output += "Subj: %s\n" % subj
-            counter += 1
-            tally = 0.
-            len_subj = len(subj)
-
-            # This is inefficient, bc it iterates from the top of query list every time... Need a way to better manage
-            # search if this ever starts to be used regularly. Possibly by converting Clusters.clusters to to a set()
-            for query in query_clusters.clusters:
-                matches = self.num_matches(subj, query)
-                if not matches:
-                    continue
-                else:
-                    weighted_match = (matches * 2.) / (len(subj) + len(query))
-                    weighted_match *= matches / len(subj)
-                    output += "Query: %s\n%s\n" % (query, weighted_match)
-                    tally += weighted_match
-                    len_subj -= matches
-                    if len_subj == 0:
-                        break
-
-            tally *= (len(subj) / self.size)
-            score += tally
-            output += "Score: %s\n\n" % tally
-
-        print("")
-
-        if output_file:
-            with open(output_file, "w") as _ofile:
-                _ofile.write(output)
-
-        return score
+        self.total_size = len([seq_id for cluster in self.subject for seq_id in cluster])
+        self.score = 0
+        self.pretty_out = ""
+        self._prepare_difference()
 
     @staticmethod
-    def num_matches(_subj, _query):
-        count = 0.
-        for next_item in _subj:
-            if next_item in _query:
-                count += 1
-        return count if count > 0 else None
+    def prepare_clusters(ifile):
+        with open(ifile, "r") as ifile:
+            output = ifile.readlines()
+        if output[-1] == "\n":
+            del output[-1]
 
+        for indx, line in enumerate(output):
+            line = re.sub("group_.*?\t", "", line)
+            line = re.sub("^-*[0-9]+\.[0-9]*\t", "", line)
+            line = line.split()
+            output[indx] = line
+        return output
 
-def prepare_clusters(ifile):
-    with open(ifile, "r") as ifile:
-        output = ifile.readlines()
-    if output[-1] == "\n":
-        del output[-1]
+    def _prepare_difference(self):
+        # For each query cluster, find the subject cluster with the most overlap
+        final_clusters = [[] for _ in range(len(self.query))]
+        success_tally = 0
+        for query_indx, cluster in enumerate(self.query):
+            intersections = [list(filter(lambda x: x in cluster, sublist)) for sublist in self.subject]
+            max_match = 0
+            max_match_indx = None
+            for sub_indx, intersect in enumerate(intersections):
+                if len(intersect) > max_match:
+                    max_match = len(intersect)
+                    max_match_indx = sub_indx
 
-    for indx, line in enumerate(output):
-        line = re.sub("group_.*?\t", "", line)
-        line = re.sub("^-*[0-9]+\.[0-9]*\t", "", line)
-        line = line.split()
-        output[indx] = line
-    return output
-
-
-def write_difference(subject, query):
-    subject = prepare_clusters(subject)
-    query = prepare_clusters(query)
-
-    # For each query cluster, find the subject cluster with the most overlap
-    final_clusters = [[] for _ in range(len(query))]
-    for query_indx, cluster in enumerate(query):
-        intersections = [list(filter(lambda x: x in cluster, sublist)) for sublist in subject]
-        max_match = 0
-        max_match_indx = None
-        for sub_indx, intersect in enumerate(intersections):
-            if len(intersect) > max_match:
-                max_match = len(intersect)
-                max_match_indx = sub_indx
-
-        for seq_id in cluster:
-            if max_match_indx is None or seq_id not in subject[max_match_indx]:
-                if re.search("Mle", seq_id):
-                    final_clusters[query_indx].append("\033[91m\033[4m%s\033[24m\033[39m" % seq_id)
+            for seq_id in cluster:
+                if max_match_indx is None or seq_id not in self.subject[max_match_indx]:
+                    if re.search("Mle", seq_id):
+                        final_clusters[query_indx].append("\033[91m\033[4m%s\033[24m\033[39m" % seq_id)
+                    else:
+                        final_clusters[query_indx].append("\033[91m%s\033[39m" % seq_id)
                 else:
-                    final_clusters[query_indx].append("\033[91m%s\033[39m" % seq_id)
-            else:
-                if re.search("Mle", seq_id):
-                    final_clusters[query_indx].append("\033[92m\033[4m%s\033[24m\033[39m" % seq_id)
-                else:
-                    final_clusters[query_indx].append("\033[92m%s\033[39m" % seq_id)
-        if max_match_indx is not None:
-            subject[max_match_indx] = []
+                    success_tally += 1
+                    if re.search("Mle", seq_id):
+                        final_clusters[query_indx].append("\033[92m\033[4m%s\033[24m\033[39m" % seq_id)
+                    else:
+                        final_clusters[query_indx].append("\033[92m%s\033[39m" % seq_id)
+            if max_match_indx is not None:
+                self.subject[max_match_indx] = []
 
-    for cluster in final_clusters:
-        print("\t".join(cluster))
-    return
+        for cluster in final_clusters:
+            self.pretty_out += "%s\n" % "\t".join(cluster)
+        self.score = success_tally / self.total_size
+        return
 
 
 if __name__ == '__main__':
@@ -149,14 +99,11 @@ if __name__ == '__main__':
 
     in_args = parser.parse_args()
 
-    timer = MyFuncs.Timer()
-    printer = MyFuncs.DynamicPrint()
-
     ofile = None if not in_args.output_file else os.path.abspath(in_args.output_file)
 
-    # groups1 = Clusters(in_args.subject, in_args.group_split, in_args.taxa_split)
-    # groups2 = Clusters(in_args.query, in_args.group_split, in_args.taxa_split)
+    comparison = Comparison(in_args.subject, in_args.query)
 
-    # print("Score: %s\n%s" % (groups1.compare(groups2, ofile), timer.total_elapsed()))
-
-    write_difference(in_args.subject, in_args.query)
+    if in_args.score:
+        print(round(comparison.score, 3))
+    else:
+        print(comparison.pretty_out)
