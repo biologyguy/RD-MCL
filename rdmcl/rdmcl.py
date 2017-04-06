@@ -241,6 +241,8 @@ class Cluster(object):
         Compile a best-hit clique.
         The best hit for a given gene may not have the query gene as its reciprocal best hit, so find the actual best
         hit and continue until a fully contained clique is formed.
+        Note that this does not build a COG-like clique, which should grab triangles from all included taxa (I would 
+        prefer to fix this)
         :param gene: Query gene name
         :type gene: str
         :param global_best_hits: Growing list of best hits that is passed to each recursive call
@@ -297,7 +299,7 @@ class Cluster(object):
         elif algorithm == "drp":
             return self._score_direct_replicate_penalty()
 
-    def _score_deminishing_returns(self, base=0.5):
+    def _score_deminishing_returns(self, base=0.75):
         """
         Arrange all genes into a table with species as column headings, filling in rows as possible.
         The top row will therefore have the most sequences in it, with equal or fewer in each subsequent row.
