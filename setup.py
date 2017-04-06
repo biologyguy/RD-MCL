@@ -36,6 +36,7 @@ DEPENDENCIES = [
     'statsmodels',
     'biopython',
     'buddysuite',
+    'pyvolve',
 ]
 
 KEYWORDS = [
