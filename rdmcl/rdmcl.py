@@ -297,7 +297,7 @@ class Cluster(object):
         elif algorithm == "drp":
             return self._score_direct_replicate_penalty()
 
-    def _score_deminishing_returns(self):
+    def _score_deminishing_returns(self, base=0.5):
         """
         Arrange all genes into a table with species as column headings, filling in rows as possible.
         The top row will therefore have the most sequences in it, with equal or fewer in each subsequent row.
@@ -334,7 +334,7 @@ class Cluster(object):
             subscore **= len(subcluster) / len(base_cluster.taxa) + 1
 
             # Reduce subscores as we encounter replicate taxa
-            subscore *= 0.5 ** indx
+            subscore *= base ** indx
             score += subscore
 
         self.cluster_score = score
@@ -643,7 +643,7 @@ def compare_psi_pred(psi1_df, psi2_df):
 
 
 def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progress, outdir, psi_pred_ss2_dfs,
-                      steps=1000, quiet=True, taxa_separator="-", r_seed=None):
+                      steps=1000, chains=3, quiet=True, taxa_separator="-", r_seed=None):
     """
     Run MCMCMC on MCL to find the best orthogroups
     :param master_cluster: The group to be subdivided
@@ -655,6 +655,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     :param outdir: where are files being written to?
     :param psi_pred_ss2_dfs: OrdredDict of all ss2 dataframes with record IDs as key
     :param steps: How many MCMCMC iterations to run TODO: calculate this on the fly
+    :param chains: Number of MCMCMC chains to spin off
     :param quiet: Suppress StdErr
     :param taxa_separator: The string that separates taxon names from gene names
     :param r_seed: Set the random generator seed value
@@ -700,7 +701,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         open(os.path.join(temp_dir.path, "max.txt"), "w").close()
         mcmcmc_params = ["%s" % temp_dir.path, False, seqbuddy, master_cluster,
                          taxa_separator, sql_broker, psi_pred_ss2_dfs, progress]
-        mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1,
+        mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, num_chains=chains,
                                        params=mcmcmc_params, outfiles=os.path.join(temp_dir.path, "mcmcmc_out"),
                                        quiet=quiet, r_seed=rand_gen.randint(1, 999999999999999))
 
@@ -1284,6 +1285,8 @@ def argparse_init():
                         help="If PSI-Pred files are pre-calculated, tell us where.")
     parser.add_argument("-mcs", "--mcmcmc_steps", default=0, type=int,
                         help="Specify how deeply to sample MCL parameters")
+    parser.add_argument("-ch", "--chains", default=3, type=int,
+                        help="Specify how many MCMCMC chains to run (default=3)")
     parser.add_argument("-sr", "--suppress_recursion", action="store_true",
                         help="Stop after a single round of MCL. For testing.")
     parser.add_argument("-scc", "--suppress_clique_check", action="store_true",
@@ -1348,11 +1351,11 @@ Please do so now:
     logging.warning("\n** Environment setup **")
     if not in_args.r_seed:
         in_args.r_seed = randint(1, 999999999999)
-    logging.warning("Random seed used for this run: %s" % in_args.r_seed)
+    logging.warning("Random seed used for this run: %s\n" % in_args.r_seed)
 
-    logging.info("\nWorking directory: %s" % os.getcwd())
+    logging.info("Working directory: %s" % os.getcwd())
+    logging.warning("Output directory: %s" % in_args.outdir)
     if not os.path.isdir(in_args.outdir):
-        logging.info("Output directory: %s" % in_args.outdir)
         os.makedirs(in_args.outdir)
 
     if not os.path.isfile(MAFFT):
@@ -1500,6 +1503,14 @@ Please do so now:
         logging.warning("User specified maximum MCMCMC steps of %s is too low. "
                         "Switching to auto-detect" % in_args.mcmcmc_steps)
         in_args.mcmcmc_steps = 0
+
+    if in_args.chains >= 2:
+        logging.warning("Number of MCMC chains: %s" % in_args.chains)
+    else:
+        logging.warning("User specified value of %s MCMC chains is too low. "
+                        "Switching to 3" % in_args.chains)
+        in_args.chains = 3
+
     final_clusters = []
     progress_tracker = Progress(in_args.outdir, group_0_cluster)
 
@@ -1509,7 +1520,7 @@ Please do so now:
     final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences, sql_broker=broker,
                                        progress=progress_tracker, outdir=in_args.outdir, steps=in_args.mcmcmc_steps,
                                        quiet=True, taxa_separator=in_args.taxa_separator, r_seed=in_args.r_seed,
-                                       psi_pred_ss2_dfs=psi_pred_files,)
+                                       psi_pred_ss2_dfs=psi_pred_files, chains=in_args.chains)
     final_clusters = [cluster for cluster in final_clusters if cluster.subgroup_counter == 0]
     run_time.end()
 
