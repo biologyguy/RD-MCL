@@ -1,20 +1,157 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Created on: Aug 04 2016
-from pyvolve import newick, evolver, model, partition
-from tree_generator import TreeGenerator
-from multiprocessing import Process, SimpleQueue, Pipe
-from MyFuncs import run_multicore_function, TempFile, DynamicPrint, TempDir
+# Standard library
 import argparse
-import shutil
-import subprocess
+import copy
 import json
+import math
+from multiprocessing import Process, SimpleQueue, Pipe
 import os
+from random import Random
 import re
-import sys
+import shutil
 import sqlite3
+import string
+import subprocess
+import sys
+
+# Third party
+from Bio.Phylo.BaseTree import Tree
+from Bio.Phylo.BaseTree import TreeMixin
 from buddysuite import SeqBuddy as Sb
+from buddysuite.buddy_resources import run_multicore_function, TempFile, DynamicPrint, TempDir
 import numpy as np
+from pyvolve import newick, evolver, model, partition
+
+
+def generate_perfect_tree(num_taxa, groups):  # Generates a perfect bipartition tree
+    tree_str = "[&R] "
+    lefts = 0
+    for group in range(groups-1):
+        tree_str += "("
+        lefts += 1
+        for taxa in range(num_taxa-1):
+            tree_str += "({0}{1},".format(string.ascii_uppercase[taxa], group+1)
+            lefts += 1
+        tree_str += "{0}{1}".format(string.ascii_uppercase[num_taxa-1], group+1)
+        for x in range(num_taxa-1):
+            tree_str += ")"
+            lefts -= 1
+        tree_str += ","
+
+    for taxa in range(num_taxa-1):
+        tree_str += "({0}{1},".format(string.ascii_uppercase[taxa], groups)
+        lefts += 1
+    tree_str += "{0}{1}".format(string.ascii_uppercase[num_taxa-1], groups)
+
+    while lefts > 0:
+        tree_str += ")"
+        lefts -= 1
+    tree_str += ";"
+    return tree_str
+
+
+class TreeGenerator:
+    def __init__(self, num_paralogs, num_taxa, seed=None, branch_length=1.0, branch_stdev=None, drop_chance=0.0,
+                 num_drops=0, duplication_chance=0.0, num_duplications=0):
+        self.num_genes = num_paralogs
+        self.num_taxa = num_taxa
+        self.branch_length = branch_length
+
+        self.rand_gen = Random(seed)  # Random seed for the hashing
+        self.drop_chance = drop_chance
+        self.num_drops = num_drops
+        self.duplication_chance = duplication_chance
+        self.num_duplications = num_duplications
+
+        self.genes = list()  # Lists of hashes to prevent collisions
+        self.taxa = list()
+
+        self._groups = list()
+
+        for x in range(num_taxa):
+            self._generate_taxa_name()
+        labels = ["%s-GENE_NAME" % self.taxa[x] for x in range(num_taxa)]  # Generates a list of taxa
+
+        self.gene_tree = Tree.randomized(num_paralogs, branch_length=branch_length, branch_stdev=branch_stdev)
+        self.species_tree = Tree.randomized(labels, branch_length=branch_length, branch_stdev=branch_stdev)
+        self.root = self.gene_tree.clade
+
+        self._recursive_build(self.root)  # Assembles the tree
+
+    def _generate_gene_name(self):
+        hash_length = int(math.log(self.num_genes, len(string.ascii_uppercase)) + .5)
+        hash_length = hash_length if hash_length > 2 else 3
+
+        while True:
+            new_hash = self.rand_gen.choice(string.ascii_uppercase)
+            new_hash += "".join([self.rand_gen.choice(string.ascii_lowercase) for _ in range(hash_length)])
+            if new_hash in self.genes:
+                continue
+            else:
+                self.genes.append(new_hash)
+                return new_hash
+
+    def _generate_taxa_name(self):
+        hash_length = int(math.log(self.num_taxa, len(string.ascii_uppercase)) + .5)
+        hash_length = hash_length if hash_length > 2 else 2
+
+        while True:
+            new_hash = self.rand_gen.choice(string.ascii_uppercase)
+            new_hash += "".join([self.rand_gen.choice(string.ascii_lowercase) for _ in range(hash_length)])
+            if new_hash in self.taxa:
+                continue
+            else:
+                self.taxa.append(new_hash)
+                return new_hash
+
+    def _recursive_rename(self, node, gene):  # Helper method for _copy_species_tree that renames nodes recursively
+        for indx, child in enumerate(node):
+            if child.is_terminal():
+                node.clades[indx].name = re.sub("GENE_NAME", gene, node.clades[indx].name)
+            else:
+                self._recursive_rename(child, gene)
+
+    def _copy_species_tree(self, gene):  # Returns a copy of the species tree with a unique gene name
+        sub_tree = copy.deepcopy(self.species_tree.clade)
+        self._recursive_rename(sub_tree, gene)
+
+        for x in range(self.num_duplications):
+            leaves = sub_tree.get_terminals()
+            duplicate = self.rand_gen.random()
+            if duplicate <= self.duplication_chance:
+                duplicate = self.rand_gen.choice(leaves)
+                duplicate.split(branch_length=self.branch_length)
+                duplicate.name = ""
+
+        for x in range(self.num_drops):
+            leaves = sub_tree.get_terminals()
+            drop = self.rand_gen.random()
+            if drop <= self.drop_chance:
+                dropped_gene = self.rand_gen.choice(leaves)
+                sub_tree.collapse(dropped_gene)
+
+        leaf_names = sub_tree.get_terminals()
+        for x in range(len(leaf_names)):
+            leaf_names[x] = leaf_names[x].name
+        self._groups.append(leaf_names)
+
+        return sub_tree
+
+    def _recursive_build(self, node):  # Recursively replaces the terminal nodes of the gene tree with species trees
+        for indx, child in enumerate(node):
+            if child.is_terminal():
+                node.clades[indx] = self._copy_species_tree(self._generate_gene_name())
+            else:
+                self._recursive_build(child)
+
+    def groups(self):
+        return self._groups
+
+    def __str__(self):
+        tree_string = self.gene_tree.format("newick")
+        return re.sub("\)n[0-9]*", ")", tree_string)  # Removes strange node IDs that biopython includes
 
 
 def broker_func(queue):
