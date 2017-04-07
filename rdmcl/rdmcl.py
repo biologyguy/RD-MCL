@@ -88,6 +88,7 @@ GAP_OPEN = -5
 GAP_EXTEND = 0
 BLOSUM62 = helpers.make_full_mat(SeqMat(MatrixInfo.blosum62))
 MCMCMC_CHAINS = 3
+DR_BASE = 0.75
 
 ambiguous_X = {"A": 0, "R": -1, "N": -1, "D": -1, "C": -2, "Q": -1, "E": -1, "G": -1, "H": -1, "I": -1, "L": -1,
                "K": -1, "M": -1, "F": -1, "P": -2, "S": 0, "T": 0, "W": -2, "Y": -1, "V": -1}
@@ -295,11 +296,11 @@ class Cluster(object):
         assert algorithm in ["dem_ret", "drp"]
 
         if algorithm == "dem_ret":
-            return self._score_deminishing_returns()
+            return self._score_diminishing_returns()
         elif algorithm == "drp":
             return self._score_direct_replicate_penalty()
 
-    def _score_deminishing_returns(self, base=0.75):
+    def _score_diminishing_returns(self):
         """
         Arrange all genes into a table with species as column headings, filling in rows as possible.
         The top row will therefore have the most sequences in it, with equal or fewer in each subsequent row.
@@ -336,7 +337,7 @@ class Cluster(object):
             subscore **= len(subcluster) / len(base_cluster.taxa) + 1
 
             # Reduce subscores as we encounter replicate taxa
-            subscore *= base ** indx
+            subscore *= DR_BASE ** indx
             score += subscore
 
         self.cluster_score = score
@@ -1307,6 +1308,7 @@ def argparse_init():
     parser.add_argument("-ts", "--taxa_separator", action="store", default="-",
                         help="Specify a string that separates taxa ids from gene names")
     parser.add_argument("-rs", "--r_seed", help="Specify a random seed for repeating a specific run", type=int)
+    parser.add_argument("-drb", "--dr_base", help="Set the base for diminishing returns function", type=float)
     parser.add_argument("-f", "--force", action="store_true",
                         help="Overwrite previous run")
     parser.add_argument("-q", "--quiet", action="store_true",
@@ -1481,6 +1483,11 @@ Please do so now:
         scores_data.to_csv(os.path.join(in_args.outdir, "sim_scores", "complete_all_by_all.scores"),
                            header=None, index=False, sep="\t")
         logging.info("\t-- finished in %s --\n" % TIMER.split())
+
+    if in_args.dr_base:
+        global DR_BASE
+        DR_BASE = in_args.dr_base
+        logging.info("Setting diminishing base to %s" % DR_BASE)
 
     # First push the really raw first alignment in the database, without any collapsing.
     uncollapsed_group_0 = Cluster([rec.id for rec in sequences.records], scores_data,
