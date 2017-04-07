@@ -85,11 +85,12 @@ History: {}
 
 
 class _Walker:
-    def __init__(self, variables, func, params=None, quiet=False, r_seed=None):
+    def __init__(self, variables, func, params=None, quiet=False, r_seed=None, lava=False):
         self.variables = variables
         self.function = func
         self.params = params
         self.heat = 0.32
+        self.lava = lava  # This will cause the walker to draw brand new parameters every time
         self.current_score = None
         self.proposed_score = None
         self.score_history = []
@@ -179,10 +180,14 @@ class _Chain(object):
 
     def swap_hot_cold(self):
         # Swap any hot chain into the cold chain position if the hot chain score is better than the cold chain score
-        cold_walker = self.get_cold_walker()
-        cold_walker.set_heat(self.hot_heat)
         best_walker = self.get_best_walker()
-        best_walker.set_heat(self.cold_heat)
+        cold_walker = self.get_cold_walker()
+        if best_walker.lava:
+            for cold_var, lava_var in zip(cold_walker.variables, best_walker.variables):
+                cold_var.current_value = float(lava_var.current_value)
+        else:
+            cold_walker.set_heat(self.hot_heat)
+            best_walker.set_heat(self.cold_heat)
         return
 
     def get_best_walker(self):
@@ -213,7 +218,7 @@ class MCMCMC:
     Sets up the infrastructure to run a Metropolis Hasting random walk
     """
     def __init__(self, variables, func, params=None, steps=0, sample_rate=1, num_walkers=3, num_chains=3,
-                 outfiles='./chain', burn_in=100, quiet=False, r_seed=None):
+                 include_lava=False, outfiles='./chain', burn_in=100, quiet=False, r_seed=None):
         self.global_variables = variables
         assert steps >= 100 or steps == 0
         self.steps = steps
@@ -226,6 +231,12 @@ class MCMCMC:
             walkers = []
             for j in range(num_walkers):
                 walker = _Walker(deepcopy(self.global_variables), func, params=params,
+                                 quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999))
+                for variable in walker.variables:
+                    variable.rand_gen.seed(self.rand_gen.randint(1, 999999999999999))
+                walkers.append(walker)
+            if include_lava:
+                walker = _Walker(deepcopy(self.global_variables), func, params=params, lava=True,
                                  quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999))
                 for variable in walker.variables:
                     variable.rand_gen.seed(self.rand_gen.randint(1, 999999999999999))
@@ -288,7 +299,10 @@ class MCMCMC:
                     # Start new process
                     func_args = []
                     for variable in walker.variables:
-                        variable.draw_new_value()
+                        if walker.lava:
+                            variable.draw_random()
+                        else:
+                            variable.draw_new_value()
                         func_args.append(variable.draw_value)
 
                     # Always add a new seed for the target function

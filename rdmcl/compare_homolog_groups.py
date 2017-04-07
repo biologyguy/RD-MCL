@@ -55,10 +55,6 @@ class Comparison(object):
             output[indx] = line
         return output
 
-    def _accuracy(self):
-        for cluster in self.query_clusters:
-            pass
-
     def _prepare_difference(self):
         # For each query cluster, find the true cluster with the most overlap
         final_clusters = [[] for _ in range(len(self.query_clusters))]
@@ -139,6 +135,6 @@ if __name__ == '__main__':
         print("Precision: %s%%" % (round(comparison.precision, 4) * 100))
         print("Recall:    %s%%" % (round(comparison.recall, 4) * 100))
         print("Accuracy:  %s%%" % (round(comparison.accuracy, 4) * 100))
-        print("tn rate:   %s%%" % (round(comparison.tn_rate, 4) * 100))
+        print("tn rate:   %s%%\n" % (round(comparison.tn_rate, 4) * 100))
     else:
         print(comparison.pretty_out)

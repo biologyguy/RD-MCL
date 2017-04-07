@@ -703,9 +703,10 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         open(os.path.join(temp_dir.path, "max.txt"), "w").close()
         mcmcmc_params = ["%s" % temp_dir.path, False, seqbuddy, master_cluster,
                          taxa_separator, sql_broker, psi_pred_ss2_dfs, progress]
-        mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, num_chains=chains,
-                                       params=mcmcmc_params, outfiles=os.path.join(temp_dir.path, "mcmcmc_out"),
-                                       quiet=quiet, r_seed=rand_gen.randint(1, 999999999999999))
+        mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, num_walkers=2,
+                                       num_chains=chains, quiet=quiet,  r_seed=rand_gen.randint(1, 999999999999999),
+                                       outfiles=os.path.join(temp_dir.path, "mcmcmc_out"), params=mcmcmc_params,
+                                       include_lava=True)
 
     except RuntimeError:  # Happens when mcmcmc fails to find different initial chain parameters
         save_cluster("MCMCMC failed to find parameters")

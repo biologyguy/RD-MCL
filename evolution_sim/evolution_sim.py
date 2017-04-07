@@ -284,6 +284,8 @@ if __name__ == '__main__':
     parser.add_argument('-np', '--num_paralogs', nargs='+', type=int, required=True,
                         help='The number of orthogroups to be generated. Specify number or range')
 
+    parser.add_argument('-rpl', '--replicates', type=int, default=1,
+                        help='Specify how many of each type of tree should be generated')
     parser.add_argument('-bl', '--branch_length', nargs="+", type=float, default=[1],
                         help='The average gene tree branch length as substitutions per position')
     parser.add_argument('-bs', '--branch_stdev', nargs="+", type=float, default=[0.2],
@@ -369,6 +371,7 @@ if __name__ == '__main__':
                                                 arguments.append((grp, tax, mdl, br, stdv, alp, 
                                                                   cat, drp, ndr, dup, ndp))
 
+    arguments *= in_args.replicates
     broker_queue = SimpleQueue()
     broker = Process(target=broker_func, args=[broker_queue])
     broker.daemon = True
@@ -382,10 +385,6 @@ if __name__ == '__main__':
         ofile.write("\n")
     os.remove("site_rates_info.txt")
     os.remove("site_rates.txt")
-
-    # Broken
-    #if call_rdmcl:
-    #    rd_mcl()
 
     while not broker_queue.empty():
         pass
