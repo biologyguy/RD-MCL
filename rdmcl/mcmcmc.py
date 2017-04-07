@@ -215,7 +215,7 @@ class MCMCMC:
     def __init__(self, variables, func, params=None, steps=0, sample_rate=1, num_walkers=3, num_chains=3,
                  outfiles='./chain', burn_in=100, quiet=False, r_seed=None):
         self.global_variables = variables
-        assert steps >= 10 or steps == 0
+        assert steps >= 100 or steps == 0
         self.steps = steps
         self.sample_rate = sample_rate
         self.outfile = os.path.abspath(outfiles)
@@ -333,7 +333,7 @@ class MCMCMC:
 
         :return: True or False
         """
-        if self.chains[0].step_counter < 10:
+        if self.chains[0].step_counter < 100:
             return False
 
         data = [pd.read_csv(chain.outfile, sep="\t") for chain in self.chains]

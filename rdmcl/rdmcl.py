@@ -1497,12 +1497,12 @@ Please do so now:
 
     # Ortholog caller
     logging.warning("\n** Recursive MCL **")
-    if in_args.mcmcmc_steps >= 10:
+    if in_args.mcmcmc_steps >= 100:
         logging.warning("User specified maximum MCMCMC steps: %s" % in_args.mcmcmc_steps)
     elif in_args.mcmcmc_steps == 0:
         logging.warning("Auto detect MCMCMC convergence")
     else:
-        logging.warning("User specified maximum MCMCMC steps of %s is too low. "
+        logging.warning("User specified maximum MCMCMC steps of %s is too low (min=100). "
                         "Switching to auto-detect" % in_args.mcmcmc_steps)
         in_args.mcmcmc_steps = 0
 
