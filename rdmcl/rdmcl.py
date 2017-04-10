@@ -646,7 +646,7 @@ def compare_psi_pred(psi1_df, psi2_df):
 
 
 def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progress, outdir, psi_pred_ss2_dfs,
-                      steps=1000, chains=3, quiet=True, taxa_separator="-", r_seed=None):
+                      steps=1000, chains=3, quiet=True, taxa_separator="-", r_seed=None, convergence=1.05):
     """
     Run MCMCMC on MCL to find the best orthogroups
     :param master_cluster: The group to be subdivided
@@ -662,6 +662,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     :param quiet: Suppress StdErr
     :param taxa_separator: The string that separates taxon names from gene names
     :param r_seed: Set the random generator seed value
+    :param convergence: Set minimum Gelman-Rubin PSRF value for convergence
     :return: list of sequence_ids objects
     """
     def save_cluster(end_message=None):
@@ -707,7 +708,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, num_walkers=2,
                                        num_chains=chains, quiet=quiet,  r_seed=rand_gen.randint(1, 999999999999999),
                                        outfiles=os.path.join(temp_dir.path, "mcmcmc_out"), params=mcmcmc_params,
-                                       include_lava=True)
+                                       include_lava=True, convergence=convergence)
 
     except RuntimeError:  # Happens when mcmcmc fails to find different initial chain parameters
         save_cluster("MCMCMC failed to find parameters")
@@ -778,7 +779,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, sql_broker=sql_broker,
                                          progress=progress, outdir=outdir, steps=steps, quiet=quiet,
                                          taxa_separator=taxa_separator, r_seed=rand_gen.randint(1, 999999999999999),
-                                         psi_pred_ss2_dfs=psi_pred_ss2_dfs)
+                                         psi_pred_ss2_dfs=psi_pred_ss2_dfs, convergence=convergence)
 
     save_cluster("Sub clusters returned")
     return cluster_list
@@ -1309,6 +1310,7 @@ def argparse_init():
                         help="Specify a string that separates taxa ids from gene names")
     parser.add_argument("-rs", "--r_seed", help="Specify a random seed for repeating a specific run", type=int)
     parser.add_argument("-drb", "--dr_base", help="Set the base for diminishing returns function", type=float)
+    parser.add_argument("-cnv", "--converge", help="Set minimum Gelman-Rubin PSRF value for convergence", type=float)
     parser.add_argument("-f", "--force", action="store_true",
                         help="Overwrite previous run")
     parser.add_argument("-q", "--quiet", action="store_true",
@@ -1521,6 +1523,9 @@ Please do so now:
                         "Switching to 3" % in_args.chains)
         in_args.chains = 3
 
+    converge = in_args.converge if in_args.converge else 0.05
+    logging.warning("Gelman-Rubin convergence value: %s" % converge)
+
     final_clusters = []
     progress_tracker = Progress(in_args.outdir, group_0_cluster)
 
@@ -1530,7 +1535,8 @@ Please do so now:
     final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences, sql_broker=broker,
                                        progress=progress_tracker, outdir=in_args.outdir, steps=in_args.mcmcmc_steps,
                                        quiet=True, taxa_separator=in_args.taxa_separator, r_seed=in_args.r_seed,
-                                       psi_pred_ss2_dfs=psi_pred_files, chains=in_args.chains)
+                                       psi_pred_ss2_dfs=psi_pred_files, chains=in_args.chains,
+                                       convergence=converge)
     final_clusters = [cluster for cluster in final_clusters if cluster.subgroup_counter == 0]
     run_time.end()
 

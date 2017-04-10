@@ -218,7 +218,7 @@ class MCMCMC:
     Sets up the infrastructure to run a Metropolis Hasting random walk
     """
     def __init__(self, variables, func, params=None, steps=0, sample_rate=1, num_walkers=3, num_chains=3,
-                 include_lava=False, outfiles='./chain', burn_in=100, quiet=False, r_seed=None):
+                 include_lava=False, outfiles='./chain', burn_in=100, quiet=False, r_seed=None, convergence=1.05):
         self.global_variables = variables
         assert steps >= 100 or steps == 0
         self.steps = steps
@@ -245,6 +245,10 @@ class MCMCMC:
             self.chains.append(chain)
         self.best = OrderedDict([("score", None), ("variables", OrderedDict([(x.name, None) for x in variables]))])
         self.burn_in = burn_in
+        if convergence > 1.0:
+            self.convergence = convergence
+        else:
+            raise ValueError("Gelman-Rubin convergence ratio must be greater than 1")
         self.quiet = quiet
 
     def run(self):
@@ -398,7 +402,7 @@ class MCMCMC:
         for name, b in between_variance.items():
             w = within_variance[name]
             psrf = (((n - 1) / n) + (b / (n * w))) ** (1/2)
-            if psrf >= 1.1:
+            if psrf >= self.convergence:
                 return False
         return True  # If all PSRFs are below 1.1, time to call it quits
 
