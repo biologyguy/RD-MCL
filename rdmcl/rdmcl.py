@@ -583,10 +583,10 @@ def cluster2database(cluster, sql_broker, alignment):
 # ################ PSI-PRED FUNCTIONS ################ #
 def mc_psi_pred(seq_obj, args):
     outdir = args[0]
-    if os.path.isfile("{0}{1}psi_pred{1}{2}.ss2".format(outdir, os.sep, seq_obj.id)):
+    if os.path.isfile("{0}{1}{2}.ss2".format(outdir, os.sep, seq_obj.id)):
         return
     result = run_psi_pred(seq_obj)
-    with open("{0}{1}psi_pred{1}{2}.ss2".format(outdir, os.sep, seq_obj.id), "w") as ofile:
+    with open("{0}{1}{2}.ss2".format(outdir, os.sep, seq_obj.id), "w") as ofile:
         ofile.write(result)
     return
 
@@ -1430,9 +1430,11 @@ Please do so now:
                         % in_args.psi_pred_dir)
         in_args.psi_pred_dir = False
 
+    in_args.psi_pred_dir = "{0}{1}psi_pred".format(in_args.outdir, os.sep) if not in_args.psi_pred_dir \
+        else in_args.psi_pred_dir
+
     for record in sequences.records:
-        if (in_args.psi_pred_dir and os.path.isfile(os.path.join(in_args.psi_pred_dir, "%s.ss2" % record.id))) \
-                or os.path.isfile(os.path.join(in_args.outdir, "psi_pred", "%s.ss2" % record.id)):
+        if os.path.isfile(os.path.join(in_args.psi_pred_dir, "%s.ss2" % record.id)):
             records_with_ss_files.append(record.id)
         else:
             records_missing_ss_files.append(record)
@@ -1441,19 +1443,15 @@ Please do so now:
 
     if records_missing_ss_files:
         logging.warning("Executing PSI-Pred on %s sequences" % len(records_missing_ss_files))
-        br.run_multicore_function(records_missing_ss_files, mc_psi_pred, [in_args.outdir])
+        br.run_multicore_function(records_missing_ss_files, mc_psi_pred, [in_args.psi_pred_dir])
         logging.info("\t-- finished in %s --" % TIMER.split())
-        logging.info("\tfiles saved to {0}{1}psi_pred{1}".format(in_args.outdir, os.sep))
+        logging.info("\tfiles saved to {0}{1}".format(in_args.psi_pred_dir, os.sep))
     else:
         logging.warning("RESUME: All PSI-Pred .ss2 files found")
 
     psi_pred_files = []
     for record in sequences.records:
-        default_path = os.path.join(in_args.outdir, "psi_pred", "%s.ss2" % record.id)
-        if os.path.isfile(default_path):
-            psi_pred_files.append((record.id, read_ss2_file(default_path)))
-        else:
-            psi_pred_files.append((record.id, read_ss2_file(os.path.join(in_args.psi_pred_dir, "%s.ss2" % record.id))))
+        psi_pred_files.append((record.id, read_ss2_file(os.path.join(in_args.psi_pred_dir, "%s.ss2" % record.id))))
 
     psi_pred_files = OrderedDict(psi_pred_files)
 
