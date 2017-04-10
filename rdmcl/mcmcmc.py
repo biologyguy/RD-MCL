@@ -129,8 +129,7 @@ class _Walker:
         # To adapt to any range of min/max, transform the set of possible scores to {0, (max - min)}
         self.raw_max = max(self.score_history)
         self.raw_min = min(self.score_history)
-        trans_max = self.raw_max - self.raw_min
-        self.gaussian_pdf = norm(trans_max, trans_max * self.heat)
+        self.gaussian_pdf = norm(self.raw_max, self.raw_max * self.heat)
 
     def accept(self):
         for variable in self.variables:
@@ -139,8 +138,7 @@ class _Walker:
         return
 
     def set_gaussian(self):
-        trans_max = self.raw_max - self.raw_min
-        self.gaussian_pdf = norm(trans_max, trans_max * self.heat)
+        self.gaussian_pdf = norm(self.raw_max, self.raw_max * self.heat)
         return
 
     def set_heat(self, heat):

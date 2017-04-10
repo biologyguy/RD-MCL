@@ -1355,6 +1355,7 @@ Please do so now:
         return
 
     logging.info("Function call: %s" % " ".join(sys.argv))
+    logging.info("Date: %s" % time.strftime("%H:%M-%d-%m-%Y"))
     logging.warning("\n** Environment setup **")
     if not in_args.r_seed:
         in_args.r_seed = randint(1, 999999999999)
