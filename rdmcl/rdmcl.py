@@ -1522,7 +1522,7 @@ Please do so now:
                         "Switching to 3" % in_args.chains)
         in_args.chains = 3
 
-    converge = in_args.converge if in_args.converge else 0.05
+    converge = in_args.converge if in_args.converge else 1.05
     logging.warning("Gelman-Rubin convergence value: %s" % converge)
 
     final_clusters = []
