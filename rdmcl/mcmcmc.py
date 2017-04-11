@@ -85,12 +85,14 @@ History: {}
 
 
 class _Walker:
-    def __init__(self, variables, func, params=None, quiet=False, r_seed=None, lava=False):
+    def __init__(self, variables, func, params=None, quiet=False, r_seed=None, lava=False, ice=False):
         self.variables = variables
         self.function = func
         self.params = params
         self.heat = 0.32
+        assert not (lava and ice)  # These two are mutually exclusive
         self.lava = lava  # This will cause the walker to draw brand new parameters every time
+        self.ice = ice  # This will cause the walker to only accept new parameters that improve the score
         self.current_score = None
         self.proposed_score = None
         self.score_history = []
@@ -175,17 +177,30 @@ class _Chain(object):
         # Set a cold walker
         self.walkers[0].set_heat(self.cold_heat)  # Set a cold walker
         self.step_counter = 0
+        self.best_score_ever_seen = 0.
 
     def swap_hot_cold(self):
         # Swap any hot chain into the cold chain position if the hot chain score is better than the cold chain score
         best_walker = self.get_best_walker()
         cold_walker = self.get_cold_walker()
+        ice_walker = self.get_ice_walker()
         if best_walker.lava:
             for cold_var, lava_var in zip(cold_walker.variables, best_walker.variables):
                 cold_var.current_value = float(lava_var.current_value)
+        elif best_walker.ice:
+            if best_walker.current_score > self.best_score_ever_seen:
+                for cold_var, ice_var in zip(cold_walker.variables, ice_walker.variables):
+                    cold_var.current_value = float(ice_var.current_value)
         else:
             cold_walker.set_heat(self.hot_heat)
             best_walker.set_heat(self.cold_heat)
+
+        if best_walker.current_score > self.best_score_ever_seen:
+            self.best_score_ever_seen = best_walker.current_score
+
+        if ice_walker and best_walker.current_score >= self.best_score_ever_seen:
+            for ice_var, best_var in zip(ice_walker.variables, best_walker.variables):
+                ice_var.current_value = float(best_var.current_value)
         return
 
     def get_best_walker(self):
@@ -196,16 +211,24 @@ class _Chain(object):
         cold_walker = sorted(self.walkers, key=lambda walker: walker.heat)[0]
         return cold_walker
 
+    def get_ice_walker(self):
+        ice_walker = False
+        for walker in self.walkers:
+            if walker.ice:
+                ice_walker = walker
+                break
+        return ice_walker
+
     def get_results(self):
         results = pd.read_csv(self.outfile)
         return results
 
     def write_sample(self):
         output = "%s\t" % self.step_counter
-        best_walker = self.get_best_walker()
-        for var in best_walker.variables:
+        cold_walker = self.get_cold_walker()
+        for var in cold_walker.variables:
             output += "%s\t" % var.current_value
-        output += "%s\n" % best_walker.current_score
+        output += "%s\n" % cold_walker.current_score
         with open(self.outfile, "a") as ofile:
             ofile.write(output)
         return
@@ -215,8 +238,8 @@ class MCMCMC:
     """
     Sets up the infrastructure to run a Metropolis Hasting random walk
     """
-    def __init__(self, variables, func, params=None, steps=0, sample_rate=1, num_walkers=3, num_chains=3,
-                 include_lava=False, outfiles='./chain', burn_in=100, quiet=False, r_seed=None, convergence=1.05):
+    def __init__(self, variables, func, params=None, steps=0, sample_rate=1, num_walkers=3, num_chains=3, quiet=False,
+                 include_lava=False, include_ice=False, outfiles='./chain', burn_in=100, r_seed=None, convergence=1.05):
         self.global_variables = variables
         assert steps >= 100 or steps == 0
         self.steps = steps
@@ -235,6 +258,12 @@ class MCMCMC:
                 walkers.append(walker)
             if include_lava:
                 walker = _Walker(deepcopy(self.global_variables), func, params=params, lava=True,
+                                 quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999))
+                for variable in walker.variables:
+                    variable.rand_gen.seed(self.rand_gen.randint(1, 999999999999999))
+                walkers.append(walker)
+            if include_ice:
+                walker = _Walker(deepcopy(self.global_variables), func, params=params, ice=True,
                                  quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999))
                 for variable in walker.variables:
                     variable.rand_gen.seed(self.rand_gen.randint(1, 999999999999999))
@@ -287,7 +316,7 @@ class MCMCMC:
                 cur_gaus = 2.2250738585072014e-308 if cur_gaus == 0 else cur_gaus  # Set '0' values to smallest float
                 accept_check = prop_gaus / cur_gaus
 
-                if accept_check > rand_check_val:
+                if accept_check > rand_check_val and not _walker.ice:
                     _walker.accept()
             return
 

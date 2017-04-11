@@ -708,7 +708,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, num_walkers=2,
                                        num_chains=chains, quiet=quiet,  r_seed=rand_gen.randint(1, 999999999999999),
                                        outfiles=os.path.join(temp_dir.path, "mcmcmc_out"), params=mcmcmc_params,
-                                       include_lava=True, convergence=convergence)
+                                       include_lava=True, include_ice=True, convergence=convergence)
 
     except RuntimeError:  # Happens when mcmcmc fails to find different initial chain parameters
         save_cluster("MCMCMC failed to find parameters")
@@ -1523,7 +1523,7 @@ Please do so now:
         in_args.chains = 3
 
     converge = in_args.converge if in_args.converge else 1.05
-    logging.warning("Gelman-Rubin convergence value: %s" % converge)
+    logging.warning("Gelman-Rubin convergence breakpoint: %s" % converge)
 
     final_clusters = []
     progress_tracker = Progress(in_args.outdir, group_0_cluster)
