@@ -262,33 +262,33 @@ class MCMCMC:
                 ofile.write(str(score))
             return
 
-        def step_parse(_chain):  # Implements Metropolis-Hastings
-            with open(os.path.join(temp_dir.path, _chain.name), "r") as ifile:
-                _chain.proposed_score = float(ifile.read())
+        def step_parse(_walker):  # Implements Metropolis-Hastings
+            with open(os.path.join(temp_dir.path, _walker.name), "r") as ifile:
+                _walker.proposed_score = float(ifile.read())
 
-            if len(_chain.score_history) >= 1000:
-                _chain.score_history.pop(0)
+            if len(_walker.score_history) >= 1000:
+                _walker.score_history.pop(0)
 
-            _chain.score_history.append(_chain.proposed_score)
-            _chain.raw_max = max(_chain.score_history)
-            _chain.raw_min = min(_chain.score_history)
-            _chain.set_gaussian()
+            _walker.score_history.append(_walker.proposed_score)
+            _walker.raw_max = max(_walker.score_history)
+            _walker.raw_min = min(_walker.score_history)
+            _walker.set_gaussian()
 
             # If the score hasn't been set or the new score is better, the step is accepted
-            if _chain.current_score is None or _chain.proposed_score >= _chain.current_score:
-                _chain.accept()
+            if _walker.current_score is None or _walker.proposed_score >= _walker.current_score:
+                _walker.accept()
 
             # Even if the score is worse, there's a chance of accepting it relative to how much worse it is
             else:
-                rand_check_val = _chain.rand_gen.random()
+                rand_check_val = _walker.rand_gen.random()
                 # Calculate acceptance ratio as α=f(x')/f(xt), then compare to rand_check_val
-                prop_gaus = _chain.gaussian_pdf.pdf(_chain.proposed_score)
-                cur_gaus = _chain.gaussian_pdf.pdf(_chain.current_score)
+                prop_gaus = _walker.gaussian_pdf.pdf(_walker.proposed_score)
+                cur_gaus = _walker.gaussian_pdf.pdf(_walker.current_score)
                 cur_gaus = 2.2250738585072014e-308 if cur_gaus == 0 else cur_gaus  # Set '0' values to smallest float
                 accept_check = prop_gaus / cur_gaus
 
                 if accept_check > rand_check_val:
-                    _chain.accept()
+                    _walker.accept()
             return
 
         temp_dir = TempDir()
