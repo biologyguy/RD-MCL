@@ -11,7 +11,7 @@ import sys
 import random
 import string
 import numpy as np
-from scipy.stats import norm
+from scipy.stats import norm, gaussian_kde
 from buddysuite.buddy_resources import DynamicPrint, TempDir, usable_cpu_count
 from copy import deepcopy
 from multiprocessing import Process
@@ -20,12 +20,11 @@ import pandas as pd
 
 
 class Variable:
-    def __init__(self, _name, _min, _max, variance_covariate=0.05, r_seed=None):
+    def __init__(self, _name, _min, _max, r_seed=None):
         self.name = _name
         self.min = _min
         self.max = _max
         _range = _max - _min
-        self.variance = _range * variance_covariate
 
         # select a random start value
         self.rand_gen = random.Random(r_seed)
@@ -33,9 +32,9 @@ class Variable:
         self.draw_value = self.current_value
         self.history = OrderedDict([("draws", [self.draw_value]), ("accepts", [])])
 
-    def draw_new_value(self):
-        #  NOTE: Might need to tune _variance if the acceptance rate is to low or high.
-        draw_val = self.rand_gen.gauss(self.current_value, self.variance)
+    def draw_new_value(self, heat):
+        #  NOTE: Might need to tune heat if the acceptance rate is to low or high.
+        draw_val = self.rand_gen.gauss(self.current_value, ((self.max - self.min) * heat))
         safety_check = 100
         while draw_val < self.min or draw_val > self.max:
             if draw_val < self.min:
@@ -85,14 +84,14 @@ History: {}
 
 
 class _Walker:
-    def __init__(self, variables, func, params=None, quiet=False, r_seed=None, lava=False, ice=False):
+    def __init__(self, variables, func, heat, params=None, quiet=False, r_seed=None, lava=False, ice=False):
         self.variables = variables
         self.function = func
         self.params = params
-        self.heat = 0.32
         assert not (lava and ice)  # These two are mutually exclusive
         self.lava = lava  # This will cause the walker to draw brand new parameters every time
         self.ice = ice  # This will cause the walker to only accept new parameters that improve the score
+        self.heat = heat
         self.current_score = None
         self.proposed_score = None
         self.score_history = []
@@ -100,8 +99,6 @@ class _Walker:
         self.name = "".join([self.rand_gen.choice(string.ascii_letters + string.digits) for _ in range(20)])
 
         # Sample `function` for starting min/max scores
-        self.raw_min = 0.
-        self.raw_max = 0.
         valve = 0
         if not quiet:
             print("Setting initial chain parameters:")
@@ -128,28 +125,18 @@ class _Walker:
         for variable in self.variables:
             variable.draw_random()
 
-        # To adapt to any range of min/max, transform the set of possible scores to {0, (max - min)}
-        self.raw_max = max(self.score_history)
-        self.raw_min = min(self.score_history)
-        self.gaussian_pdf = norm(self.raw_max, self.raw_max * self.heat)
-
     def accept(self):
         for variable in self.variables:
             variable.accept_draw()
         self.current_score = self.proposed_score
         return
 
-    def set_gaussian(self):
-        self.gaussian_pdf = norm(self.raw_max, self.raw_max * self.heat)
-        return
-
     def set_heat(self, heat):
         # Higher heat = more likely to accept step.
-        # Default is 0.32, try 0.1 for low heat
+        # Default is 0.1, try 0.01 for low heat
         if heat <= 0. or heat > 1.:
             raise ValueError("heat values must be positive, between 0.000001 and 1.0.")
         self.heat = heat
-        self.set_gaussian()
         return
 
     def __str__(self):
@@ -161,7 +148,7 @@ class _Walker:
 
 
 class _Chain(object):
-    def __init__(self, walkers, outfile):
+    def __init__(self, walkers, outfile, cold_heat, hot_heat):
         self.walkers = walkers
         self.outfile = outfile
 
@@ -172,10 +159,8 @@ class _Chain(object):
             heading += "result\n"
             ofile.write(heading)
 
-        self.cold_heat = 0.1
-        self.hot_heat = 0.32  # Default given to each new _Walker on instantiation
-        # Set a cold walker
-        self.walkers[0].set_heat(self.cold_heat)  # Set a cold walker
+        self.cold_heat = cold_heat
+        self.hot_heat = hot_heat
         self.step_counter = 0
         self.best_score_ever_seen = 0.
 
@@ -208,7 +193,7 @@ class _Chain(object):
         return best_walker
 
     def get_cold_walker(self):
-        cold_walker = sorted(self.walkers, key=lambda walker: walker.heat)[0]
+        cold_walker = [walker for walker in self.walkers if walker.heat == self.cold_heat][0]
         return cold_walker
 
     def get_ice_walker(self):
@@ -239,7 +224,8 @@ class MCMCMC:
     Sets up the infrastructure to run a Metropolis Hasting random walk
     """
     def __init__(self, variables, func, params=None, steps=0, sample_rate=1, num_walkers=3, num_chains=3, quiet=False,
-                 include_lava=False, include_ice=False, outfiles='./chain', burn_in=100, r_seed=None, convergence=1.05):
+                 include_lava=False, include_ice=False, outfiles='./chain', burn_in=100, r_seed=None, convergence=1.05,
+                 cold_heat=0.05, hot_heat=0.2):
         self.global_variables = variables
         assert steps >= 100 or steps == 0
         self.steps = steps
@@ -247,28 +233,34 @@ class MCMCMC:
         self.outfile = os.path.abspath(outfiles)
         self.rand_gen = random.Random(r_seed)
         self.chains = []
+        self.cold_heat = cold_heat
+        self.hot_heat = hot_heat
+
         # The deepcopy below duplicates r_seed, so walkers need to be updated with a new one
         for i in range(num_chains):
             walkers = []
             for j in range(num_walkers):
-                walker = _Walker(deepcopy(self.global_variables), func, params=params,
+                walker = _Walker(deepcopy(self.global_variables), func, self.hot_heat, params=params,
                                  quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999))
                 for variable in walker.variables:
                     variable.rand_gen.seed(self.rand_gen.randint(1, 999999999999999))
                 walkers.append(walker)
+            # Set a cold walker
+            walkers[0].set_heat(self.cold_heat)
+
             if include_lava:
-                walker = _Walker(deepcopy(self.global_variables), func, params=params, lava=True,
+                walker = _Walker(deepcopy(self.global_variables), func, 1.0, params=params, lava=True,
                                  quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999))
                 for variable in walker.variables:
                     variable.rand_gen.seed(self.rand_gen.randint(1, 999999999999999))
                 walkers.append(walker)
             if include_ice:
-                walker = _Walker(deepcopy(self.global_variables), func, params=params, ice=True,
+                walker = _Walker(deepcopy(self.global_variables), func, 0.005, params=params, ice=True,
                                  quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999))
                 for variable in walker.variables:
                     variable.rand_gen.seed(self.rand_gen.randint(1, 999999999999999))
                 walkers.append(walker)
-            chain = _Chain(walkers, "%s_%s.csv" % (self.outfile, i + 1))
+            chain = _Chain(walkers, "%s_%s.csv" % (self.outfile, i + 1), self.cold_heat, self.hot_heat)
             self.chains.append(chain)
         self.best = OrderedDict([("score", None), ("variables", OrderedDict([(x.name, None) for x in variables]))])
         self.burn_in = burn_in
@@ -295,13 +287,11 @@ class MCMCMC:
             with open(os.path.join(temp_dir.path, _walker.name), "r") as ifile:
                 _walker.proposed_score = float(ifile.read())
 
+            # Don't keep the entire history when determining min
             if len(_walker.score_history) >= 1000:
                 _walker.score_history.pop(0)
 
             _walker.score_history.append(_walker.proposed_score)
-            _walker.raw_max = max(_walker.score_history)
-            _walker.raw_min = min(_walker.score_history)
-            _walker.set_gaussian()
 
             # If the score hasn't been set or the new score is better, the step is accepted
             if _walker.current_score is None or _walker.proposed_score >= _walker.current_score:
@@ -310,12 +300,9 @@ class MCMCMC:
             # Even if the score is worse, there's a chance of accepting it relative to how much worse it is
             else:
                 rand_check_val = _walker.rand_gen.random()
+                raw_min = min(_walker.score_history)
                 # Calculate acceptance ratio as α=f(x')/f(xt), then compare to rand_check_val
-                prop_gaus = _walker.gaussian_pdf.pdf(_walker.proposed_score)
-                cur_gaus = _walker.gaussian_pdf.pdf(_walker.current_score)
-                cur_gaus = 2.2250738585072014e-308 if cur_gaus == 0 else cur_gaus  # Set '0' values to smallest float
-                accept_check = prop_gaus / cur_gaus
-
+                accept_check = ((_walker.proposed_score + 1) - raw_min) / ((_walker.current_score + 1) - raw_min) * 0.3
                 if accept_check > rand_check_val and not _walker.ice:
                     _walker.accept()
             return
@@ -333,7 +320,7 @@ class MCMCMC:
                         if walker.lava:
                             variable.draw_random()
                         else:
-                            variable.draw_new_value()
+                            variable.draw_new_value(walker.heat)
                         func_args.append(variable.draw_value)
 
                     # Always add a new seed for the target function
@@ -361,7 +348,6 @@ class MCMCMC:
 
             for chain in self.chains:
                 chain.swap_hot_cold()
-
                 # Send output to files
                 if counter % self.sample_rate == 0:
                     chain.step_counter += 1

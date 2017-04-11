@@ -139,12 +139,14 @@ class Cluster(object):
             self.taxa[taxa].append(next_seq_id)
 
         if parent:
+            self.max_genes_in_a_taxa = parent.max_genes_in_a_taxa
             for indx, genes in parent.collapsed_genes.items():
                 if indx in seq_ids:
                     self.collapsed_genes[indx] = genes
             self.seq_ids = seq_ids
 
         else:
+            self.max_genes_in_a_taxa = max([len(self.taxa[taxa]) for taxa in self.taxa])
             self._name = "group_0"
             # This next bit collapses all paralog reciprocal best-hit cliques so they don't gum up MCL
             # Set the full cluster score first though, in case it's needed
@@ -329,15 +331,18 @@ class Cluster(object):
         score = 0
         for indx, subcluster in enumerate(subclusters):
             subscore = 0
-            # For each taxon in subcluster, get between 0-1 as a fraction of how many genes exist for that taxon
+            # Minimum score for a single gene is 1, which is given to the genes contained in the the taxa with the
+            # largest number of genes. All other genes are pegged to this value, and increase in value if included in
+            # a cluster proportionally to how many genes are in the taxa.
             for taxon in subcluster:
-                subscore += 1 / len(base_cluster.taxa[taxon])
+                subscore += (1 / len(base_cluster.taxa[taxon])) / (1 / self.max_genes_in_a_taxa)
 
-            # Raise subscore to power 1-2, based on how many taxa contained (perfect score if all possible taxa present)
-            subscore **= len(subcluster) / len(base_cluster.taxa) + 1
+            # Multiply subscore by 1-2, based on how many taxa contained (perfect score if all possible taxa present)
+            subscore *= (len(subcluster) / len(base_cluster.taxa) + 1)
 
             # Reduce subscores as we encounter replicate taxa
             subscore *= DR_BASE ** indx
+
             score += subscore
 
         self.cluster_score = score
@@ -718,7 +723,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     worst_score = None
     for chain in mcmcmc_factory.chains:
         for walker in chain.walkers:
-            worst_score = walker.raw_min if worst_score is None or walker.raw_min < worst_score else worst_score
+            raw_min = min(walker.score_history)
+            worst_score = raw_min if worst_score is None or raw_min < worst_score else worst_score
 
     mcmcmc_factory.reset_params(["%s" % temp_dir.path, worst_score, seqbuddy, master_cluster,
                                  taxa_separator, sql_broker, psi_pred_ss2_dfs, progress])
