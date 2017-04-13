@@ -140,7 +140,7 @@ class _Walker:
         return
 
     def __str__(self):
-        output = "Chain %s" % self.name
+        output = "Walker %s" % self.name
         for variable in self.variables:
             output += "\n\t%s:\t%s" % (variable.name, variable.current_value)
         output += "\n\tScore:\t%s" % self.current_score
@@ -181,7 +181,7 @@ class _Chain(object):
             best_walker.set_heat(self.cold_heat)
 
         if best_walker.current_score > self.best_score_ever_seen:
-            self.best_score_ever_seen = best_walker.current_score
+            self.best_score_ever_seen = float(best_walker.current_score)
 
         if ice_walker and best_walker.current_score >= self.best_score_ever_seen:
             for ice_var, best_var in zip(ice_walker.variables, best_walker.variables):
@@ -225,7 +225,7 @@ class MCMCMC:
     """
     def __init__(self, variables, func, params=None, steps=0, sample_rate=1, num_walkers=3, num_chains=3, quiet=False,
                  include_lava=False, include_ice=False, outfiles='./chain', burn_in=100, r_seed=None, convergence=1.05,
-                 cold_heat=0.05, hot_heat=0.2):
+                 cold_heat=0.3, hot_heat=0.75):
         self.global_variables = variables
         assert steps >= 100 or steps == 0
         self.steps = steps
@@ -255,7 +255,7 @@ class MCMCMC:
                     variable.rand_gen.seed(self.rand_gen.randint(1, 999999999999999))
                 walkers.append(walker)
             if include_ice:
-                walker = _Walker(deepcopy(self.global_variables), func, 0.005, params=params, ice=True,
+                walker = _Walker(deepcopy(self.global_variables), func, 0.05, params=params, ice=True,
                                  quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999))
                 for variable in walker.variables:
                     variable.rand_gen.seed(self.rand_gen.randint(1, 999999999999999))
@@ -283,7 +283,7 @@ class MCMCMC:
                 ofile.write(str(score))
             return
 
-        def step_parse(_walker):  # Implements Metropolis-Hastings
+        def step_parse(_walker, _std):  # Implements Metropolis-Hastings
             with open(os.path.join(temp_dir.path, _walker.name), "r") as ifile:
                 _walker.proposed_score = float(ifile.read())
 
@@ -294,15 +294,14 @@ class MCMCMC:
             _walker.score_history.append(_walker.proposed_score)
 
             # If the score hasn't been set or the new score is better, the step is accepted
-            if _walker.current_score is None or _walker.proposed_score >= _walker.current_score:
+            if _walker.current_score is None or _walker.proposed_score >= _walker.current_score or walker.lava:
                 _walker.accept()
 
             # Even if the score is worse, there's a chance of accepting it relative to how much worse it is
             else:
                 rand_check_val = _walker.rand_gen.random()
-                raw_min = min(_walker.score_history)
-                # Calculate acceptance ratio as α=f(x')/f(xt), then compare to rand_check_val
-                accept_check = ((_walker.proposed_score + 1) - raw_min) / ((_walker.current_score + 1) - raw_min) * 0.3
+                # Calculate acceptance rate
+                accept_check = 1 - norm.cdf(_walker.current_score - _walker.proposed_score, 0, _std * 2 * _walker.heat)
                 if accept_check > rand_check_val and not _walker.ice:
                     _walker.accept()
             return
@@ -340,8 +339,10 @@ class MCMCMC:
                         break
 
             for chain in self.chains:
+                history_series = pd.Series([score for walker in chain.walkers for score in walker.score_history])
+                mu, std = norm.fit(history_series)
                 for walker in chain.walkers:
-                    step_parse(walker)
+                    step_parse(walker, std)
                     if self.best["score"] is None or walker.current_score > self.best["score"]:
                         self.best["score"] = walker.current_score
                         self.best["variables"] = OrderedDict([(x.name, x.current_value) for x in walker.variables])
