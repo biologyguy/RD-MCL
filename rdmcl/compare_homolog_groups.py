@@ -19,10 +19,11 @@ Generate a similarity metric between two homolog groups files
 take the average (not currently implemented).
 """
 
-import MyFuncs
+import rdmcl
 import os
 import re
 import sys
+from collections import OrderedDict
 
 
 class Comparison(object):
@@ -37,6 +38,8 @@ class Comparison(object):
         self.recall = 0
         self.accuracy = 0
         self.tn_rate = 0
+        self.query_score = 0
+        self.true_score = 0
 
         self.pretty_out = ""
         self._prepare_difference()
@@ -106,9 +109,32 @@ class Comparison(object):
             self.accuracy += ((tp + tn) / self.total_size) * (len(self.query_clusters[q_indx]) / self.total_size)
             self.tn_rate += (tn / (tn + fp)) * (len(self.query_clusters[q_indx]) / self.total_size)
 
+        query_parent = Cluster([_id for _ids in self.query_clusters for _id in _ids])
+        self.query_score = sum([Cluster(next_set, parent=query_parent).score() for next_set in self.query_clusters])
+
+        true_parent = Cluster([_id for _ids in self.true_clusters for _id in _ids])
+        self.true_score = sum([Cluster(next_set, parent=true_parent).score() for next_set in self.true_clusters])
+
         for q_cluster in final_clusters:
             self.pretty_out += "%s\n" % "\t".join(q_cluster)
         return
+
+
+class Cluster(rdmcl.Cluster):
+    def __init__(self, seq_ids, parent=None, taxa_separator="-"):
+        self.taxa_separator = taxa_separator
+        self.taxa = OrderedDict()  # key = taxa id. value = list of genes coming fom that taxa.
+        self.seq_ids = sorted(seq_ids)
+        for next_seq_id in seq_ids:
+            taxa = next_seq_id.split(taxa_separator)[0]
+            self.taxa.setdefault(taxa, [])
+            self.taxa[taxa].append(next_seq_id)
+        self.parent = parent
+        self.cluster_score = None
+        if parent:
+            self.max_genes_in_a_taxa = parent.max_genes_in_a_taxa
+        else:
+            self.max_genes_in_a_taxa = max([len(self.taxa[taxa]) for taxa in self.taxa])
 
 
 if __name__ == '__main__':
@@ -132,9 +158,11 @@ if __name__ == '__main__':
     comparison = Comparison(in_args.true_clusters, in_args.query_clusters)
 
     if in_args.score:
-        print("Precision: %s%%" % (round(comparison.precision, 4) * 100))
-        print("Recall:    %s%%" % (round(comparison.recall, 4) * 100))
-        print("Accuracy:  %s%%" % (round(comparison.accuracy, 4) * 100))
-        print("tn rate:   %s%%\n" % (round(comparison.tn_rate, 4) * 100))
+        print("Precision:    %s%%" % (round(comparison.precision, 4) * 100))
+        print("Recall:       %s%%" % (round(comparison.recall, 4) * 100))
+        print("Accuracy:     %s%%" % (round(comparison.accuracy, 4) * 100))
+        print("tn rate:      %s%%" % (round(comparison.tn_rate, 4) * 100))
+        print("Query score:  %s" % round(comparison.query_score, 2))
+        print("True score:   %s\n" % round(comparison.true_score, 2))
     else:
         print(comparison.pretty_out)
