@@ -709,7 +709,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
     try:
         open(os.path.join(temp_dir.path, "max.txt"), "w").close()
-        mcmcmc_params = ["%s" % temp_dir.path, False, seqbuddy, master_cluster,
+        mcmcmc_params = ["%s" % temp_dir.path, seqbuddy, master_cluster,
                          taxa_separator, sql_broker, psi_pred_ss2_dfs, progress]
         mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, quiet=quiet,
                                        num_walkers=walkers, num_chains=chains, r_seed=rand_gen.randint(1, 999999999999999),
@@ -720,14 +720,33 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         save_cluster("MCMCMC failed to find parameters")
         return cluster_list
 
-    # Set a 'worst score' that is reasonable for the data set
-    worst_score = None
+    # I know what the best and worst possible scores are, so let MCMCMC know (better for calculating acceptance rates)
+    # The worst score possible would be every gene separate, or every gene in one group. Compute both and take the lower
+    worst_score = 0
+    for seq_id in master_cluster.seq_ids:
+        single_seq = Cluster([seq_id], master_cluster.pull_scores_subgraph([seq_id]), parent=master_cluster)
+        worst_score += single_seq.score()
+
+    worst_score = min([worst_score, master_cluster.score()])
+
+    # The best score would be perfect separation of taxa
+    sub_clusters = [[]]
+    for taxon, genes in master_cluster.taxa.items():
+        for indx, gene in enumerate(genes):
+            if len(sub_clusters) > indx:
+                sub_clusters[indx].append(gene)
+            else:
+                sub_clusters.append([gene])
+    best_score = 0
+    for seq_ids in sub_clusters:
+        subcluster = Cluster(seq_ids, master_cluster.pull_scores_subgraph(seq_ids), parent=master_cluster)
+        best_score += subcluster.score()
+
     for chain in mcmcmc_factory.chains:
         for walker in chain.walkers:
-            raw_min = min(walker.score_history)
-            worst_score = raw_min if worst_score is None or raw_min < worst_score else worst_score
+            walker.score_history += [worst_score, best_score]
 
-    mcmcmc_factory.reset_params(["%s" % temp_dir.path, worst_score, seqbuddy, master_cluster,
+    mcmcmc_factory.reset_params(["%s" % temp_dir.path, seqbuddy, master_cluster,
                                  taxa_separator, sql_broker, psi_pred_ss2_dfs, progress])
     mcmcmc_factory.run()
     best_score = pd.DataFrame()
@@ -827,7 +846,7 @@ def mcmcmc_mcl(args, params):
     :return:
     """
     inflation, gq, r_seed = args
-    exter_tmp_dir, min_score, seqbuddy, parent_cluster, taxa_separator, sql_broker, psi_pred_ss2_dfs, progress = params
+    exter_tmp_dir, seqbuddy, parent_cluster, taxa_separator, sql_broker, psi_pred_ss2_dfs, progress = params
     rand_gen = Random(r_seed)
     mcl_obj = helpers.MarkovClustering(parent_cluster.sim_scores, inflation=inflation, edge_sim_threshold=gq)
     mcl_obj.run()

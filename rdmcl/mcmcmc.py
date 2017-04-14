@@ -300,7 +300,7 @@ class MCMCMC:
             # Even if the score is worse, there's a chance of accepting it relative to how much worse it is
             else:
                 rand_check_val = _walker.rand_gen.random()
-                # Calculate acceptance rate
+                # Calculate acceptance rate: Multiply std by 2 to make it one-tailed and transform by heat coefficient
                 accept_check = 1 - norm.cdf(_walker.current_score - _walker.proposed_score, 0, _std * 2 * _walker.heat)
                 if accept_check > rand_check_val and not _walker.ice:
                     _walker.accept()
