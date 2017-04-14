@@ -651,7 +651,7 @@ def compare_psi_pred(psi1_df, psi2_df):
 
 
 def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progress, outdir, psi_pred_ss2_dfs,
-                      steps=1000, chains=3, quiet=True, taxa_separator="-", r_seed=None, convergence=1.05):
+                      steps=1000, chains=3, walkers=2, quiet=True, taxa_separator="-", r_seed=None, convergence=1.05):
     """
     Run MCMCMC on MCL to find the best orthogroups
     :param master_cluster: The group to be subdivided
@@ -664,6 +664,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     :param psi_pred_ss2_dfs: OrdredDict of all ss2 dataframes with record IDs as key
     :param steps: How many MCMCMC iterations to run TODO: calculate this on the fly
     :param chains: Number of MCMCMC chains to spin off
+    :param walkers: Number of Metropolis-Hastings walkers per chain
     :param quiet: Suppress StdErr
     :param taxa_separator: The string that separates taxon names from gene names
     :param r_seed: Set the random generator seed value
@@ -710,8 +711,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         open(os.path.join(temp_dir.path, "max.txt"), "w").close()
         mcmcmc_params = ["%s" % temp_dir.path, False, seqbuddy, master_cluster,
                          taxa_separator, sql_broker, psi_pred_ss2_dfs, progress]
-        mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, num_walkers=2,
-                                       num_chains=chains, quiet=quiet,  r_seed=rand_gen.randint(1, 999999999999999),
+        mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, quiet=quiet,
+                                       num_walkers=walkers, num_chains=chains, r_seed=rand_gen.randint(1, 999999999999999),
                                        outfiles=os.path.join(temp_dir.path, "mcmcmc_out"), params=mcmcmc_params,
                                        include_lava=True, include_ice=True, convergence=convergence)
 
@@ -783,9 +784,9 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
         # Recursion... Reassign cluster_list, as all clusters are returned at the end of a call to orthogroup_caller
         cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, sql_broker=sql_broker,
-                                         progress=progress, outdir=outdir, steps=steps, quiet=quiet,
-                                         taxa_separator=taxa_separator, r_seed=rand_gen.randint(1, 999999999999999),
-                                         psi_pred_ss2_dfs=psi_pred_ss2_dfs, convergence=convergence)
+                                         progress=progress, outdir=outdir, steps=steps, quiet=quiet, chains=chains,
+                                         walkers=walkers, taxa_separator=taxa_separator, convergence=convergence,
+                                         r_seed=rand_gen.randint(1, 999999999999999), psi_pred_ss2_dfs=psi_pred_ss2_dfs)
 
     save_cluster("Sub clusters returned")
     return cluster_list
@@ -1298,16 +1299,8 @@ def argparse_init():
                         help="Specify how deeply to sample MCL parameters")
     parser.add_argument("-ch", "--chains", default=3, type=int,
                         help="Specify how many MCMCMC chains to run (default=3)")
-    parser.add_argument("-sr", "--suppress_recursion", action="store_true",
-                        help="Stop after a single round of MCL. For testing.")
-    parser.add_argument("-scc", "--suppress_clique_check", action="store_true",
-                        help="Do not check for or break up cliques. For testing.")
-    parser.add_argument("-ssf", "--suppress_singlet_folding", action="store_true",
-                        help="Do not check for or merge singlets. For testing.")
-    parser.add_argument("-sit", "--suppress_iteration", action="store_true",
-                        help="Only check for cliques and orphans once")
-    parser.add_argument("-nt", "--no_msa_trim", action="store_true",
-                        help="Don't apply the gappyout algorithm to MSAs before scoring")
+    parser.add_argument("-wlk", "--walkers", default=2, type=int,
+                        help="Specify how many Metropolis-Hastings walkers are in each chain (default=2)")
     parser.add_argument("-op", "--open_penalty", help="Penalty for opening a gap in pairwise alignment scoring",
                         type=float, default=GAP_OPEN)
     parser.add_argument("-ep", "--extend_penalty", help="Penalty for extending a gap in pairwise alignment scoring",
@@ -1319,6 +1312,19 @@ def argparse_init():
     parser.add_argument("-cnv", "--converge", help="Set minimum Gelman-Rubin PSRF value for convergence", type=float)
     parser.add_argument("-f", "--force", action="store_true",
                         help="Overwrite previous run")
+    # Mostly for testing
+    parser.add_argument("-spc", "--suppress_paralog_collapse", action="store_true",
+                        help="Do not merge best hit paralogs. For testing.")
+    parser.add_argument("-sr", "--suppress_recursion", action="store_true",
+                        help="Stop after a single round of MCL. For testing.")
+    parser.add_argument("-scc", "--suppress_clique_check", action="store_true",
+                        help="Do not check for or break up cliques. For testing.")
+    parser.add_argument("-ssf", "--suppress_singlet_folding", action="store_true",
+                        help="Do not check for or merge singlets. For testing.")
+    parser.add_argument("-sit", "--suppress_iteration", action="store_true",
+                        help="Only check for cliques and orphans once. For testing.")
+    # parser.add_argument("-nt", "--no_msa_trim", action="store_true",
+    #                    help="Don't apply the gappyout algorithm to MSAs before scoring")
     parser.add_argument("-q", "--quiet", action="store_true",
                         help="Suppress all output during run (only final output is returned)")
     parser.add_argument("-setup", action="setup", dest=argparse.SUPPRESS, default=argparse.SUPPRESS)
@@ -1502,8 +1508,11 @@ Please do so now:
     cluster2database(uncollapsed_group_0, broker, alignbuddy)
 
     # Then prepare the 'real' group_0 cluster
-    group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data,
-                              taxa_separator=in_args.taxa_separator, r_seed=in_args.r_seed)
+    if not in_args.suppress_paralog_collapse:
+        group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data,
+                                  taxa_separator=in_args.taxa_separator, r_seed=in_args.r_seed)
+    else:
+        group_0_cluster = uncollapsed_group_0
     cluster2database(group_0_cluster, broker, alignbuddy)
 
     # Base cluster score
@@ -1528,6 +1537,13 @@ Please do so now:
                         "Switching to 3" % in_args.chains)
         in_args.chains = 3
 
+    if in_args.walkers >= 2:
+        logging.warning("Number of Metropolis-Hastings walkers per chain: %s" % in_args.walkers)
+    else:
+        logging.warning("User specified value of %s Metropolis-Hastings walkers per chain is too low. "
+                        "Switching to 2" % in_args.walkers)
+        in_args.walkers = 2
+
     converge = in_args.converge if in_args.converge else 1.05
     logging.warning("Gelman-Rubin convergence breakpoint: %s" % converge)
 
@@ -1540,7 +1556,7 @@ Please do so now:
     final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences, sql_broker=broker,
                                        progress=progress_tracker, outdir=in_args.outdir, steps=in_args.mcmcmc_steps,
                                        quiet=True, taxa_separator=in_args.taxa_separator, r_seed=in_args.r_seed,
-                                       psi_pred_ss2_dfs=psi_pred_files, chains=in_args.chains,
+                                       psi_pred_ss2_dfs=psi_pred_files, chains=in_args.chains, walkers=in_args.walkers,
                                        convergence=converge)
     final_clusters = [cluster for cluster in final_clusters if cluster.subgroup_counter == 0]
     run_time.end()
