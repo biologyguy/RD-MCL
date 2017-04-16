@@ -721,13 +721,11 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         return cluster_list
 
     # I know what the best and worst possible scores are, so let MCMCMC know (better for calculating acceptance rates)
-    # The worst score possible would be every gene separate, or every gene in one group. Compute both and take the lower
+    # The worst score possible would be all genes in each taxa segregated.
     worst_score = 0
-    for seq_id in master_cluster.seq_ids:
-        single_seq = Cluster([seq_id], master_cluster.pull_scores_subgraph([seq_id]), parent=master_cluster)
-        worst_score += single_seq.score()
-
-    worst_score = min([worst_score, master_cluster.score()])
+    for taxon, seq_ids in master_cluster.taxa.items():
+        bad_clust = Cluster(seq_ids, master_cluster.pull_scores_subgraph(seq_ids), parent=master_cluster)
+        worst_score += bad_clust.score()
 
     # The best score would be perfect separation of taxa
     sub_clusters = [[]]
