@@ -19,7 +19,10 @@ Generate a similarity metric between two homolog groups files
 take the average (not currently implemented).
 """
 
-import rdmcl
+try:
+    from . import rdmcl
+except ImportError:
+    from rdmcl import rdmcl
 import os
 import re
 import sys
