@@ -137,13 +137,14 @@ class TreeGenerator:
         for x in range(len(leaf_names)):
             leaf_names[x] = leaf_names[x].name
         self._groups.append(leaf_names)
-
         return sub_tree
 
-    def _recursive_build(self, node):  # Recursively replaces the terminal nodes of the gene tree with species trees
+    def _recursive_build(self, node):  # Recursively replace terminal nodes of the generic gene tree with species trees
         for indx, child in enumerate(node):
             if child.is_terminal():
+                branch_len = node.clades[indx].branch_length
                 node.clades[indx] = self._copy_species_tree(self._generate_gene_name())
+                node.clades[indx].branch_length = branch_len
             else:
                 self._recursive_build(child)
 
