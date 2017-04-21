@@ -20,9 +20,10 @@ take the average (not currently implemented).
 """
 
 try:
-    from . import rdmcl
-except ImportError:
     from rdmcl import rdmcl
+except ImportError:
+    import rdmcl
+
 import os
 import re
 import sys
