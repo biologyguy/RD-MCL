@@ -80,6 +80,7 @@ This is free software; see the LICENSE for further details.
 There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE.
 Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
+--------------------
 '''
 LOCK = Lock()
 CPUS = br.usable_cpu_count()
@@ -1019,7 +1020,7 @@ def create_all_by_all_scores(alignment, psi_pred_ss2_dfs, gap_open=GAP_OPEN, gap
         all_by_all = [all_by_all[i:i + n] for i in range(0, len(all_by_all), n)] if all_by_all else []
         score_sequences_params = [alignment, psi_pred_ss2_dfs, all_by_all_outdir.path, gap_open, gap_extend]
         br.run_multicore_function(all_by_all, mc_score_sequences, score_sequences_params,
-                                  quiet=quiet)
+                                  quiet=quiet, max_processes=CPUS)
     sim_scores_file = br.TempFile()
     sim_scores_file.write("seq1,seq2,subsmat,psi")
     aba_root, aba_dirs, aba_files = next(os.walk(all_by_all_outdir.path))
@@ -1255,7 +1256,7 @@ class Orphans(object):
             tmp_file = br.TempFile()
             small_clusters = [clust for clust_name, clust in self.small_clusters.items()]
             if multi_core:
-                # This will spin off other run_multicore_function calls if clusters are not in database...
+                # ToDo: This will spin off other run_multicore_function calls if clusters are not in database... FIX!
                 br.run_multicore_function(small_clusters, self.mc_check_orphans, [tmp_file.path],
                                           quiet=True, max_processes=CPUS)
             else:
@@ -1316,7 +1317,7 @@ def argparse_init():
                         help="Specify how deeply to sample MCL parameters")
     parser.add_argument("-ch", "--chains", default=3, type=int,
                         help="Specify how many MCMCMC chains to run (default=3)")
-    parser.add_argument("-wlk", "--walkers", default=2, type=int,
+    parser.add_argument("-wlk", "--walkers", default=3, type=int,
                         help="Specify how many Metropolis-Hastings walkers are in each chain (default=2)")
     parser.add_argument("-op", "--open_penalty", help="Penalty for opening a gap in pairwise alignment scoring",
                         type=float, default=GAP_OPEN)
@@ -1327,8 +1328,9 @@ def argparse_init():
     parser.add_argument("-rs", "--r_seed", help="Specify a random seed for repeating a specific run", type=int)
     parser.add_argument("-drb", "--dr_base", help="Set the base for diminishing returns function", type=float)
     parser.add_argument("-cnv", "--converge", help="Set minimum Gelman-Rubin PSRF value for convergence", type=float)
-    parser.add_argument("-f", "--force", action="store_true",
-                        help="Overwrite previous run")
+    parser.add_argument("-cpu", "--max_cpus", type=int, action="store", default=CPUS,
+                        help="Specify the maximum number of cores RD-MCL can use.")
+
     # Mostly for testing
     parser.add_argument("-spc", "--suppress_paralog_collapse", action="store_true",
                         help="Do not merge best hit paralogs. For testing.")
@@ -1340,8 +1342,7 @@ def argparse_init():
                         help="Do not check for or merge singlets. For testing.")
     parser.add_argument("-sit", "--suppress_iteration", action="store_true",
                         help="Only check for cliques and orphans once. For testing.")
-    # parser.add_argument("-nt", "--no_msa_trim", action="store_true",
-    #                    help="Don't apply the gappyout algorithm to MSAs before scoring")
+
     parser.add_argument("-q", "--quiet", action="store_true",
                         help="Suppress all output during run (only final output is returned)")
     parser.add_argument("-setup", action="setup", dest=argparse.SUPPRESS, default=argparse.SUPPRESS)
@@ -1451,6 +1452,10 @@ Please do so now:
                       "# single representative. The collapses are itemized here. #\n"
                       "###########################################################\n\n")
 
+    # Set CPU limits
+    global CPUS
+    CPUS = in_args.max_cpus
+
     # PSIPRED
     logging.warning("\n** PSI-Pred **")
     records_missing_ss_files = []
@@ -1473,7 +1478,7 @@ Please do so now:
 
     if records_missing_ss_files:
         logging.warning("Executing PSI-Pred on %s sequences" % len(records_missing_ss_files))
-        br.run_multicore_function(records_missing_ss_files, mc_psi_pred, [in_args.psi_pred_dir])
+        br.run_multicore_function(records_missing_ss_files, mc_psi_pred, [in_args.psi_pred_dir], max_processes=CPUS)
         logging.info("\t-- finished in %s --" % TIMER.split())
         logging.info("\tfiles saved to {0}{1}".format(in_args.psi_pred_dir, os.sep))
     else:
