@@ -306,11 +306,9 @@ if __name__ == '__main__':
 
     in_args = parser.parse_args()
 
-    taxa_range = sorted(in_args.num_taxa)
-    taxa_range = taxa_range if len(taxa_range) == 1 else list(range(taxa_range[0], taxa_range[1] + 1))
+    taxa_range = in_args.num_taxa if len(in_args.num_taxa) == 1 else list(range(*in_args.num_taxa))
 
-    group_range = sorted(in_args.num_paralogs)
-    group_range = group_range if len(group_range) == 1 else list(range(group_range[0], group_range[1] + 1))
+    group_range = in_args.num_paralogs if len(in_args.num_paralogs) == 1 else list(range(*in_args.num_paralogs))
 
     gene_branch_len = make_range_from_inargs(in_args.gene_branch_len)
     gene_branch_stdev = make_range_from_inargs(in_args.gene_branch_stdev)
