@@ -1234,7 +1234,7 @@ class Orphans(object):
 
     def mc_check_orphans(self, small_cluster, args):
         tmp_file = args[0]
-        foster_score = self._check_orphan(small_cluster)
+        foster_score = self._check_orphan(small_cluster) if self.large_clusters else False
         if foster_score:
             large_name, mean_diff = foster_score
             with LOCK:
