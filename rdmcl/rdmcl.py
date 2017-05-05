@@ -30,7 +30,6 @@ import re
 import shutil
 import json
 import logging
-import sqlite3
 import time
 import argparse
 from io import StringIO
@@ -1304,48 +1303,70 @@ def argparse_init():
     def fmt(prog):
         return br.CustomHelpFormatter(prog)
 
-    parser = argparse.ArgumentParser(prog="rdmcl", description="", formatter_class=fmt)
+    parser = argparse.ArgumentParser(prog="rdmcl", formatter_class=fmt, add_help=False, usage=argparse.SUPPRESS,
+                                     description='''\
+\033[1mRD-MCL\033[m
+  Identifying hierarchical orthogroups among homologous sequences
+
+\033[1mUsage\033[m:
+  rdmcl.py "/path/to/sequence_file" [-options]
+''')
+
     parser.register('action', 'setup', _SetupAction)
 
-    parser.add_argument("sequences", help="Location of sequence file", action="store")
-    parser.add_argument("outdir", action="store", help="Where should results be written?", nargs="?",
-                        default=os.path.join(os.getcwd(), "rdmcd-%s" % time.strftime("%d-%m-%Y")))
-    parser.add_argument("-sql", "--sqlite_db", action="store", help="Specify a SQLite database location.")
-    parser.add_argument("-psi", "--psi_pred_dir", action="store",
-                        help="If PSI-Pred files are pre-calculated, tell us where.")
-    parser.add_argument("-mcs", "--mcmcmc_steps", default=0, type=int,
-                        help="Specify how deeply to sample MCL parameters")
-    parser.add_argument("-ch", "--chains", default=3, type=int,
-                        help="Specify how many MCMCMC chains to run (default=3)")
-    parser.add_argument("-wlk", "--walkers", default=3, type=int,
-                        help="Specify how many Metropolis-Hastings walkers are in each chain (default=2)")
-    parser.add_argument("-op", "--open_penalty", help="Penalty for opening a gap in pairwise alignment scoring",
-                        type=float, default=GAP_OPEN)
-    parser.add_argument("-ep", "--extend_penalty", help="Penalty for extending a gap in pairwise alignment scoring",
-                        type=float, default=GAP_EXTEND)
-    parser.add_argument("-ts", "--taxa_separator", action="store", default="-",
-                        help="Specify a string that separates taxa ids from gene names")
-    parser.add_argument("-rs", "--r_seed", help="Specify a random seed for repeating a specific run", type=int)
-    parser.add_argument("-drb", "--dr_base", help="Set the base for diminishing returns function", type=float)
-    parser.add_argument("-cnv", "--converge", help="Set minimum Gelman-Rubin PSRF value for convergence", type=float)
-    parser.add_argument("-cpu", "--max_cpus", type=int, action="store", default=CPUS,
-                        help="Specify the maximum number of cores RD-MCL can use.")
+    # Positional
+    positional = parser.add_argument_group(title="\033[1mPositional argument\033[m")
 
-    # Mostly for testing
-    parser.add_argument("-spc", "--suppress_paralog_collapse", action="store_true",
-                        help="Do not merge best hit paralogs. For testing.")
-    parser.add_argument("-sr", "--suppress_recursion", action="store_true",
-                        help="Stop after a single round of MCL. For testing.")
-    parser.add_argument("-scc", "--suppress_clique_check", action="store_true",
-                        help="Do not check for or break up cliques. For testing.")
-    parser.add_argument("-ssf", "--suppress_singlet_folding", action="store_true",
-                        help="Do not check for or merge singlets. For testing.")
-    parser.add_argument("-sit", "--suppress_iteration", action="store_true",
-                        help="Only check for cliques and orphans once. For testing.")
+    positional.add_argument("sequences", help="Location of sequence file (most formats are fine)", action="store")
+    positional.add_argument("outdir", action="store", help="Where should results be written? (optional)", nargs="?",
+                            default=os.path.join(os.getcwd(), "rdmcd-%s" % time.strftime("%d-%m-%Y")))
 
-    parser.add_argument("-q", "--quiet", action="store_true",
-                        help="Suppress all output during run (only final output is returned)")
-    parser.add_argument("-setup", action="setup", dest=argparse.SUPPRESS, default=argparse.SUPPRESS)
+    # Optional commands
+    parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
+
+    parser_flags.add_argument("-sql", "--sqlite_db", action="store", help="Specify a SQLite database location.")
+    parser_flags.add_argument("-psi", "--psi_pred_dir", action="store",
+                              help="If PSI-Pred files are pre-calculated, tell us where.")
+    parser_flags.add_argument("-mcs", "--mcmcmc_steps", default=0, type=int,
+                              help="Specify how deeply to sample MCL parameters")
+    parser_flags.add_argument("-ch", "--chains", default=3, type=int,
+                              help="Specify how many MCMCMC chains to run (default=3)")
+    parser_flags.add_argument("-wlk", "--walkers", default=3, type=int,
+                              help="Specify how many Metropolis-Hastings walkers are in each chain (default=2)")
+    parser_flags.add_argument("-op", "--open_penalty", help="Penalty for opening a gap in pairwise alignment scoring",
+                              type=float, default=GAP_OPEN)
+    parser_flags.add_argument("-ep", "--extend_penalty", type=float, default=GAP_EXTEND,
+                              help="Penalty for extending a gap in pairwise alignment scoring")
+    parser_flags.add_argument("-ts", "--taxa_separator", action="store", default="-",
+                              help="Specify a string that separates taxa ids from gene names")
+    parser_flags.add_argument("-rs", "--r_seed", help="Specify a random seed for repeating a specific run", type=int)
+    parser_flags.add_argument("-drb", "--dr_base", help="Set the base for diminishing returns function", type=float)
+    parser_flags.add_argument("-cnv", "--converge", type=float,
+                              help="Set minimum Gelman-Rubin PSRF value for convergence")
+    parser_flags.add_argument("-cpu", "--max_cpus", type=int, action="store", default=CPUS,
+                              help="Specify the maximum number of cores RD-MCL can use.")
+    parser_flags.add_argument("-q", "--quiet", action="store_true",
+                              help="Suppress all output during run (only final output is returned)")
+
+    # Developer testing
+    dev_flags = parser.add_argument_group(title="\033[1mDeveloper commands (caution!)\033[m")
+    dev_flags.add_argument("-spc", "--suppress_paralog_collapse", action="store_true",
+                           help="Do not merge best hit paralogs")
+    # parser.add_argument("-sr", "--suppress_recursion", action="store_true",
+    #                    help="Stop after a single round of MCL. For testing.")
+    dev_flags.add_argument("-scc", "--suppress_clique_check", action="store_true",
+                           help="Do not check for or break up cliques")
+    dev_flags.add_argument("-ssf", "--suppress_singlet_folding", action="store_true",
+                           help="Do not check for or merge singlets")
+    dev_flags.add_argument("-sit", "--suppress_iteration", action="store_true",
+                           help="Only check for cliques and orphans once")
+
+    # Misc
+    misc = parser.add_argument_group(title="\033[1mMisc options\033[m")
+    misc.add_argument('-h', '--help', action="help", help="show this help message and exit")
+    misc.add_argument('-v', '--version', action='version', version="RD-MCL version %s\n\n%s" % (VERSION, NOTICE))
+    misc.add_argument("-setup", action="setup", dest=argparse.SUPPRESS, default=argparse.SUPPRESS)
+
     in_args = parser.parse_args()
     return in_args
 
