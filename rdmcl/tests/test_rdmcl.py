@@ -174,33 +174,33 @@ def test_cluster_get_base_cluster(hf):
                  'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
     child = rdmcl.Cluster(child_ids, hf.get_sim_scores(child_ids), parent=parent)
     # First time calling Cluster.score() calculates the score
-    assert child.score() == 3.057710379183684
+    assert child.score() == 46.138159371492705
 
     # The second call just retrieves the attribute from the cluster saved during first call
-    assert child.score() == 3.057710379183684
+    assert child.score() == 46.138159371492705
 
     # With paralogs
     child_ids = ['BOL-PanxαA', 'BOL-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Edu-PanxαA', 'Hca-PanxαB',
                  'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
     child = rdmcl.Cluster(child_ids, hf.get_sim_scores(child_ids), parent=parent)
-    assert child.score() == 2.509451849986866
+    assert child.score() == 41.36858164983165
 
     # Single sequence
     child_ids = ['BOL-PanxαA']
     child = rdmcl.Cluster(child_ids, hf.get_sim_scores(child_ids), parent=parent)
-    assert round(child.score(), 12) == 0.111362339768
+    assert round(child.score(), 12) == 1.847222222222
 
     # Include an orphan sequence
     child_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC']
     sim_scores = hf.get_sim_scores(child_ids)
     child = rdmcl.Cluster(child_ids, sim_scores, parent=parent)
-    assert child.score() == 0.47154070373644036
+    assert child.score() == 8.575000000000003
     child.seq_ids.append("Foo-Bar3")
-    assert child.score(force=True) == 0.47421351841360954
+    assert child.score(force=True) == 8.510526315789475
 
     # Edge case where child is full size of parent
     child = rdmcl.Cluster(parent.seq_ids, parent.sim_scores, parent=parent)
-    assert child.score() == 21.44164379757426
+    assert child.score() == 266.22361814582393
 
 
 def test_cluster_pull_scores_subgraph(hf):
@@ -389,7 +389,7 @@ def test_cluster2database(hf):
     assert 'BOL-PanxαA, BOL-PanxαB, BOL-PanxαC, BOL-PanxαD' in response[0][1]   # seq_ids
     assert response[0][2] == '>Seq1\nMPQQCS-SS\n>Seq2\nMPQICMAAS'               # alignment
     assert 'Hca-PanxαG,Lla-PanxαC,0.42864589074736\n' in response[0][3]         # graph
-    assert response[0][4] == '21.44164379757426'                                # score
+    assert response[0][4] == '266.22361814582393'                               # score
     connect.close()
 
 
@@ -403,18 +403,17 @@ def test_run_psi_pred(hf):
 
 def test_mc_psi_pred(hf):
     tmpdir = br.TempDir()
-    tmpdir.subdir("psi_pred")
     rdmcl.mc_psi_pred(hf.get_data("cteno_panxs").to_dict()["BOL-PanxαB"], [tmpdir.path])
-    with open("{0}{1}psi_pred{1}BOL-PanxαB.ss2".format(tmpdir.path, hf.sep), "r") as ifile:
+    with open("{0}{1}BOL-PanxαB.ss2".format(tmpdir.path, hf.sep), "r") as ifile:
         output = ifile.read()
         assert hf.string2hash(output) == "da4192e125808e501495dfe4169d56c0", print(output)
 
-    with open("%s/psi_pred/BOL-PanxαB.ss2" % tmpdir.path, "a") as ofile:
+    with open("%s/BOL-PanxαB.ss2" % tmpdir.path, "a") as ofile:
         ofile.write("\nfoo")
 
     # Confirm that sequences are not reprocessed if already present
     rdmcl.mc_psi_pred(hf.get_data("cteno_panxs").to_dict()["BOL-PanxαB"], [tmpdir.path])
-    with open("{0}{1}psi_pred{1}BOL-PanxαB.ss2".format(tmpdir.path, hf.sep), "r") as ifile:
+    with open("{0}{1}BOL-PanxαB.ss2".format(tmpdir.path, hf.sep), "r") as ifile:
         output = ifile.read()
         assert hf.string2hash(output) == "af9666d37426caa2bbf6b9075ce8df96", print(output)
 
@@ -471,22 +470,19 @@ def test_orthogroup_caller(hf):
     steps = 10
     r_seed = 2
     orthogroups = rdmcl.orthogroup_caller(cluster, cluster_list, seqbuddy, broker, progress, outdir.path,
-                                          psi_pred_ss2_dfs, steps, r_seed=r_seed)
+                                          psi_pred_ss2_dfs, steps=steps, r_seed=r_seed)
 
-    expected = [['BOL-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Vpa-PanxαB'],
+    expected = [['BOL-PanxαC', 'BOL-PanxαH', 'Lcr-PanxαE', 'Mle-Panxα12', 'Mle-Panxα6', 'Mle-Panxα8', 'Vpa-PanxαG'],
+                ['BOL-PanxαC', 'Lcr-PanxαE', 'Mle-Panxα12', 'Mle-Panxα6', 'Vpa-PanxαG'],
+                ['BOL-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Vpa-PanxαB'],
                 ['BOL-PanxαF', 'Lcr-PanxαI', 'Mle-Panxα4', 'Vpa-PanxαA'],
-                ['BOL-PanxαC', 'Mle-Panxα12', 'Vpa-PanxαG'],
+                ['Lcr-PanxαA', 'Mle-Panxα5', 'Vpa-PanxαF'],
                 ['BOL-PanxαD', 'Lcr-PanxαD', 'Mle-Panxα2'],
-                ['Mle-Panxα5', 'Vpa-PanxαF'],
                 ['Lcr-PanxαK', 'Mle-Panxα7A'],
-                ['BOL-PanxαH', 'Mle-Panxα8'],
+                ['Lcr-PanxαB', 'Mle-Panxα1'],
                 ['BOL-PanxαG', 'Lcr-PanxαF'],
-                ['Vpa-PanxαC'],
-                ['Mle-Panxα6'],
-                ['Mle-Panxα1'],
-                ['Lcr-PanxαE'],
-                ['Lcr-PanxαB'],
-                ['Lcr-PanxαA']]
+                ['BOL-PanxαH', 'Mle-Panxα8'],
+                ['Vpa-PanxαC']]
 
     orthogroup_seqs = [clust.seq_ids for clust in orthogroups]
     assert cluster.seq_ids in orthogroup_seqs
@@ -601,8 +597,8 @@ def test_mc_score_sequence(hf):
     with open("%s%s50687872cdaaed1fee7e809b5a032377" % (tmp_dir.path, hf.sep), "r") as ifile:
         content = ifile.read()
         assert content == """
-Mle-Panxα2,Mle-Panxα12,1.132395533636306
-Mle-Panxα1,Mle-Panxα3,1.0322618579462186""", print(content)
+Mle-Panxα2,Mle-Panxα12,0.3760737547928561,0.6767437070938215
+Mle-Panxα1,Mle-Panxα3,0.2237341940045855,0.6656420029895364""", print(content)
 
 
 def test_compare_pairwise_alignment():
@@ -629,7 +625,7 @@ def test_create_all_by_all_scores(hf):
     sim_scores = rdmcl.create_all_by_all_scores(alignbuddy, psi_pred_files)
     assert len(sim_scores.index) == 66  # This is for 12 starting sequences --> (a * (a - 1)) / 2
     compare = sim_scores.loc[:][(sim_scores['seq1'] == "Mle-Panxα2") & (sim_scores['seq2'] == "Mle-Panxα12")]
-    assert compare.iloc[0]['score'] == 1.1536414713735881
+    assert compare.iloc[0]['score'] == 0.45681517586068199
 
     rdmcl.Alb.pull_records(alignbuddy, "Mle-Panxα2")
     sim_scores = rdmcl.create_all_by_all_scores(alignbuddy, psi_pred_files)
@@ -640,7 +636,6 @@ def test_create_all_by_all_scores(hf):
 def test_mcmcmc_mcl(hf):
     ext_tmp_dir = br.TempDir()
     ext_tmp_dir.subfile("max.txt")
-    min_score = False
     cluster_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Hca-PanxαB',
                    'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Tin-PanxαC',
                    'Vpa-PanxαB', 'Oma-PanxαC', 'Edu-PanxαA', 'Bch-PanxαC']
@@ -649,6 +644,7 @@ def test_mcmcmc_mcl(hf):
     taxa_separator = "-"
     sql_broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
     sql_broker.start_broker()
+    
     cluster = rdmcl.Cluster(cluster_ids, hf.get_db_graph("3c15516819aa19b069b0e8858444f876", sql_broker))
     psi_pred_ss2_dfs = OrderedDict()
     for rec in seqbuddy.records:
@@ -657,27 +653,43 @@ def test_mcmcmc_mcl(hf):
     progress = rdmcl.Progress(os.path.join(ext_tmp_dir.path, "progress"), cluster)
 
     args = (6.372011782427792, 0.901221218627, 1)  # inflation, gq, r_seed
-    params = [ext_tmp_dir.path, min_score, seqbuddy, cluster, taxa_separator, sql_broker, psi_pred_ss2_dfs, progress]
+    params = [ext_tmp_dir.path, seqbuddy, cluster, taxa_separator, sql_broker, psi_pred_ss2_dfs, progress]
 
-    assert rdmcl.mcmcmc_mcl(args, params) == 45.197602130824144
+    assert rdmcl.mcmcmc_mcl(args, params) == 18.307692307692307
     with open(os.path.join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
-        assert ifile.read() == "6b39ebc4f5fe7dfef786d8ee3e1594ed,cb23cf3b4d355140e525a1158af5102d,8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9,09cac4f034df8a2805171e1e61cc8666"
+        output = ifile.read()
+        assert output == "76d0cf67bbdd773b2676a2bab2e0c1c8,cb23cf3b4d355140e525a1158af5102d," \
+                         "8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9," \
+                         "3dee08bfba869d1128cedd1680dfefe6,09cac4f034df8a2805171e1e61cc8666", print(output)
 
     args = (3.1232, 0.73432, 1)  # inflation, gq, r_seed
-    assert rdmcl.mcmcmc_mcl(args, params) == 119.94564620739592
+    assert rdmcl.mcmcmc_mcl(args, params) == 19.538461538461537
     with open(os.path.join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
-        assert ifile.read() == """6b39ebc4f5fe7dfef786d8ee3e1594ed,cb23cf3b4d355140e525a1158af5102d,8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9,09cac4f034df8a2805171e1e61cc8666
-af97327b21920e6d2b2fb31e181ce7f4,a06adee8cc3631773890bb5842bf8df9"""
+        output = ifile.read()
+        assert output == "6b39ebc4f5fe7dfef786d8ee3e1594ed,cb23cf3b4d355140e525a1158af5102d," \
+                         "8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9," \
+                         "09cac4f034df8a2805171e1e61cc8666\n" \
+                         "76d0cf67bbdd773b2676a2bab2e0c1c8,cb23cf3b4d355140e525a1158af5102d," \
+                         "8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9," \
+                         "3dee08bfba869d1128cedd1680dfefe6,09cac4f034df8a2805171e1e61cc8666", print(output)
 
     args = (10.1232, 0.43432, 1)  # inflation, gq, r_seed
-    assert rdmcl.mcmcmc_mcl(args, params) == 169.0
+    assert rdmcl.mcmcmc_mcl(args, params) == 24.153846153846153
     with open(os.path.join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
-        assert ifile.read() == """3c15516819aa19b069b0e8858444f876
-6b39ebc4f5fe7dfef786d8ee3e1594ed,cb23cf3b4d355140e525a1158af5102d,8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9,09cac4f034df8a2805171e1e61cc8666
-af97327b21920e6d2b2fb31e181ce7f4,a06adee8cc3631773890bb5842bf8df9"""
+        output = ifile.read()
+        assert output == "6b39ebc4f5fe7dfef786d8ee3e1594ed,cb23cf3b4d355140e525a1158af5102d," \
+                         "8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9," \
+                         "09cac4f034df8a2805171e1e61cc8666\n" \
+                         "76d0cf67bbdd773b2676a2bab2e0c1c8,cb23cf3b4d355140e525a1158af5102d," \
+                         "8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9," \
+                         "3dee08bfba869d1128cedd1680dfefe6,09cac4f034df8a2805171e1e61cc8666\n" \
+                         "af97327b21920e6d2b2fb31e181ce7f4,a06adee8cc3631773890bb5842bf8df9", print(output)
 
     with open(os.path.join(ext_tmp_dir.path, "best_group"), "r") as ifile:
-        assert ifile.read() == """BOL-PanxαA	Bab-PanxαB	Bch-PanxαC	Bfo-PanxαB	Dgl-PanxαE	Edu-PanxαA	Hca-PanxαB	Hru-PanxαA	Lcr-PanxαH	Mle-Panxα10A	Oma-PanxαC	Tin-PanxαC	Vpa-PanxαB"""
+        output = ifile.read()
+        assert output == "BOL-PanxαA	Bab-PanxαB	Bch-PanxαC	Bfo-PanxαB	Dgl-PanxαE	Hca-PanxαB	Hru-PanxαA	" \
+                         "Lcr-PanxαH	Mle-Panxα10A	Oma-PanxαC	Tin-PanxαC	Vpa-PanxαB\n" \
+                         "Edu-PanxαA", print(output)
     sql_broker.close()
 
 
@@ -699,40 +711,57 @@ def test_instantiate_orphan(hf):
     # Get starting graph from pre-computed database
     broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
     broker.start_broker()
-    graph = hf.get_db_graph("6935966a6b9967c3006785488d968230", broker)
+    psi_pred_ss2_dfs = hf.get_data("ss2_dfs")
 
     parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
-
-    psi_pred_ss2_dfs = OrderedDict()
-    for rec in parent_sb.records:
-        psi_pred_ss2_dfs[rec.id] = rdmcl.read_ss2_file("%spsi_pred%s%s.ss2" % (hf.resource_path, os.sep, rec.id))
+    graph = hf.get_db_graph("6935966a6b9967c3006785488d968230", broker)
 
     parent_ids = [rec.id for rec in parent_sb.records]
     parent_cluster = rdmcl.Cluster(parent_ids, graph, collapse=False)
 
     cluster1 = ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE', 'Bfr-PanxαA']
-    cluster1 = rdmcl.Cluster(cluster1, hf.get_db_graph("14f1cd0e985ed87b4e31bc07453481d2", broker),
-                             parent=parent_cluster)
+    # alignbuddy = rdmcl.generate_msa(rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb),
+    #                                                   "^%s$" % "$|^".join(cluster1)), broker)
+    graph = hf.get_db_graph("14f1cd0e985ed87b4e31bc07453481d2", broker)
+    # graph = rdmcl.create_all_by_all_scores(alignbuddy, psi_pred_ss2_dfs)
+    cluster1 = rdmcl.Cluster(cluster1, graph, parent=parent_cluster)
+    # rdmcl.cluster2database(cluster1, broker, alignbuddy)
     cluster1.set_name()
 
     cluster2 = ['Lla-PanxαA', 'Mle-Panxα11', 'Oma-PanxαD', 'Pba-PanxαB', 'Tin-PanxαF']
-    cluster2 = rdmcl.Cluster(cluster2, hf.get_db_graph("441c3610506fda8a6820da5f67fdc470", broker),
-                             parent=parent_cluster)
+    # alignbuddy = rdmcl.generate_msa(rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb),
+    #                                                   "^%s$" % "$|^".join(cluster2)), broker)
+    graph = hf.get_db_graph("441c3610506fda8a6820da5f67fdc470", broker)
+    # graph = rdmcl.create_all_by_all_scores(alignbuddy, psi_pred_ss2_dfs)
+    cluster2 = rdmcl.Cluster(cluster2, graph, parent=parent_cluster)
+    # rdmcl.cluster2database(cluster2, broker, alignbuddy)
     cluster2.set_name()
 
     cluster3 = ['Vpa-PanxαD']  # This should be placed in cluster 2
-    cluster3 = rdmcl.Cluster(cluster3, hf.get_db_graph("ded0bc087974589c24945bb36197d36f", broker),
-                             parent=parent_cluster)
+    # alignbuddy = rdmcl.generate_msa(rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb),
+    #                                                   "^%s$" % "$|^".join(cluster3)), broker)
+    graph = hf.get_db_graph("ded0bc087974589c24945bb36197d36f", broker)
+    # graph = rdmcl.create_all_by_all_scores(alignbuddy, psi_pred_ss2_dfs)
+    cluster3 = rdmcl.Cluster(cluster3, graph, parent=parent_cluster)
+    # rdmcl.cluster2database(cluster3, broker, alignbuddy)
     cluster3.set_name()
 
     cluster4 = ['Hca-PanxαA', 'Lcr-PanxαG']  # This should be placed in cluster 1
-    cluster4 = rdmcl.Cluster(cluster4, hf.get_db_graph("035b3933770942c7e32e27c06e619825", broker),
-                             parent=parent_cluster)
+    # alignbuddy = rdmcl.generate_msa(rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb),
+    #                                                   "^%s$" % "$|^".join(cluster4)), broker)
+    graph = hf.get_db_graph("035b3933770942c7e32e27c06e619825", broker)
+    # graph = rdmcl.create_all_by_all_scores(alignbuddy, psi_pred_ss2_dfs)
+    cluster4 = rdmcl.Cluster(cluster4, graph, parent=parent_cluster)
+    # rdmcl.cluster2database(cluster4, broker, alignbuddy)
     cluster4.set_name()
 
     cluster5 = ['Hvu-PanxβA']  # This should not be placed in a cluster
-    cluster5 = rdmcl.Cluster(cluster5, hf.get_db_graph("c62b6378d326c2479296c98f0f620d0f", broker),
-                             parent=parent_cluster)
+    # alignbuddy = rdmcl.generate_msa(rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb),
+    #                                                   "^%s$" % "$|^".join(cluster5)), broker)
+    graph = hf.get_db_graph("c62b6378d326c2479296c98f0f620d0f", broker)
+    # graph = rdmcl.create_all_by_all_scores(alignbuddy, psi_pred_ss2_dfs)
+    cluster5 = rdmcl.Cluster(cluster5, graph, parent=parent_cluster)
+    # rdmcl.cluster2database(cluster5, broker, alignbuddy)
     cluster5.set_name()
     clusters = [cluster1, cluster2, cluster3, cluster4, cluster5]
 
@@ -758,8 +787,8 @@ def test_instantiate_orphan(hf):
     assert len([seq_id for sub_clust in small_clusters + large_clusters for seq_id in sub_clust]) == 14
     assert type(orphans.tmp_file) == rdmcl.br.TempFile
     all_sim_scores_str = str(orphans.lrg_cluster_sim_scores)
-    assert orphans.lrg_cluster_sim_scores.iloc[0] == 0.96194166128549941
-    assert orphans.lrg_cluster_sim_scores.iloc[-1] == 0.94705822908105275
+    assert round(orphans.lrg_cluster_sim_scores.iloc[0], 12) == 0.961941661285
+    assert round(orphans.lrg_cluster_sim_scores.iloc[-1], 12) == 0.940557899149
     assert len(orphans.lrg_cluster_sim_scores) == 20  # This is for the two large clusters --> Σ(a*(a-1))/2
     broker.close()
 
@@ -821,19 +850,21 @@ def test_place_orphans(hf):
     orphans.mc_check_orphans(cluster4, [tmp_file.path])
     orphans.mc_check_orphans(cluster5, [tmp_file.path])
     assert tmp_file.read() == """\
-group_0_2\tgroup_0_1\t0.0335324691423
-group_0_3\tgroup_0_0\t0.0147698715824
-"""
-    assert hf.string2hash(orphans.tmp_file.read()) == "b7c305b13ec68919ca72599cd33f1b73", print(orphans.tmp_file.read())
+group_0_2\tgroup_0_1\t0.0374077704349
+group_0_3\tgroup_0_0\t0.0192173134297
+""", print(tmp_file.read())
+
+    assert hf.string2hash(orphans.tmp_file.read()) == "e10539a2921508a1c8c8707ee14b4409", print(orphans.tmp_file.read())
     orphans.tmp_file.clear()
 
     # ##### _check_orphan() ##### #
     # Cluster is placed
     orphs = orphans._check_orphan(cluster3)
+
     assert orphs[0] == 'group_0_1'
-    assert round(orphs[1], 12) == 0.033532469142
+    assert round(orphs[1], 12) == 0.037407770435
     assert not orphans._check_orphan(cluster5)  # Insufficient support for largest cluster
-    assert hf.string2hash(orphans.tmp_file.read()) == "0820336645b9080ff1f80b1d8c6fee0c", print(orphans.tmp_file.read())
+    assert hf.string2hash(orphans.tmp_file.read()) == "a9646c7748aacbf3f0553fdae26a23e9", print(orphans.tmp_file.read())
     orphans.tmp_file.clear()
 
     # ##### place_orphans() ##### #
@@ -843,7 +874,7 @@ group_0_3\tgroup_0_0\t0.0147698715824
                                            'Bfr-PanxαA', 'Hca-PanxαA', 'Lcr-PanxαG']
     assert orphans.clusters[2].seq_ids == ['Lla-PanxαA', 'Mle-Panxα11', 'Oma-PanxαD',
                                            'Pba-PanxαB', 'Tin-PanxαF', 'Vpa-PanxαD']
-    assert hf.string2hash(orphans.tmp_file.read()) == "8c1f9952bd9f10e82688fdfde2c78b77", print(orphans.tmp_file.read())
+    assert hf.string2hash(orphans.tmp_file.read()) == "44a16fd327a093de9be87643a89a3a2c", print(orphans.tmp_file.read())
 
     # Multicore doesn't seem to work in py.test, but can at least call it like it does
     orphans = rdmcl.Orphans(parent_sb, clusters, broker, psi_pred_ss2_dfs)
@@ -904,7 +935,7 @@ def test_argparse_init(monkeypatch, hf):
     assert temp_in_args.open_penalty == -5
     assert temp_in_args.extend_penalty == 0
 
-
+'''
 def test_full_run(hf, monkeypatch, capsys):
     # I can't break these up into separate test functions because of collisions with logger
     # First try a RESUME run
@@ -989,12 +1020,12 @@ group_0_17	0.1065	BOL-PanxαD
 
     with open(os.path.join(out_dir.path, "final_clusters.txt"), "r") as ifile:
         content = ifile.read()
-        assert content == '''\
+        assert content == """\
 group_0_0_0	2.0069	BOL-PanxαA	Lcr-PanxαH	Mle-Panxα9	Vpa-PanxαB
 group_0_1	2.0069	BOL-PanxαF	Lcr-PanxαI	Mle-Panxα4	Vpa-PanxαA
 group_0_2	0.8588	BOL-PanxαC	Mle-Panxα12	Vpa-PanxαG
 group_0_0_1	0.1768	Mle-Panxα10A
-''', print(content)
+""", print(content)
 
     out, err = capsys.readouterr()
     assert "Generating initial multiple sequence alignment with MAFFT" in err
@@ -1012,3 +1043,4 @@ group_0_0_1	0.1768	Mle-Panxα10A
 
     #out, err = capsys.readouterr()
     #assert "The 'MAFFT' program is not detected" in err
+'''

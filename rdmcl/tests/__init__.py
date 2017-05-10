@@ -80,9 +80,9 @@ class HelperMethods(object):
         graph = broker.query("SELECT (graph) FROM data_table WHERE hash='%s'" % id_hash)
         if graph and graph[0][0]:
             graph = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
-            graph.columns = ["seq1", "seq2", "score"]
+            graph.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
         else:
-            graph = pd.DataFrame(columns=["seq1", "seq2", "score"])
+            graph = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
         return graph
 
     def get_sim_scores(self, id_subset):

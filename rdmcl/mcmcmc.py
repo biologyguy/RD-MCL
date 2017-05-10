@@ -227,7 +227,7 @@ class MCMCMC:
                  include_lava=False, include_ice=False, outfiles='./chain', burn_in=100, r_seed=None, convergence=1.05,
                  cold_heat=0.3, hot_heat=0.75):
         self.global_variables = variables
-        assert steps >= 100 or steps == 0
+        # assert steps >= 100 or steps == 0
         self.steps = steps
         self.sample_rate = sample_rate
         self.outfile = os.path.abspath(outfiles)
