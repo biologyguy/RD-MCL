@@ -89,6 +89,7 @@ GAP_EXTEND = 0
 BLOSUM62 = helpers.make_full_mat(SeqMat(MatrixInfo.blosum62))
 MCMCMC_CHAINS = 3
 DR_BASE = 0.75
+GELMAN_RUBIN = 1.1
 
 ambiguous_X = {"A": 0, "R": -1, "N": -1, "D": -1, "C": -2, "Q": -1, "E": -1, "G": -1, "H": -1, "I": -1, "L": -1,
                "K": -1, "M": -1, "F": -1, "P": -2, "S": 0, "T": 0, "W": -2, "Y": -1, "V": -1}
@@ -110,7 +111,6 @@ class Cluster(object):
         :type sim_scores: pandas.DataFrame
         :param parent: Parental sequence_ids
         :type parent: Cluster
-        :type clique: bool
         :param collapse: Specify whether reciprocal best hit paralogs should be combined
         :type collapse: bool
         :param r_seed: Set the random generator seed value
@@ -154,6 +154,12 @@ class Cluster(object):
             if collapse:
                 self.collapse()
 
+        self.seq_ids_str = str(", ".join(seq_ids))
+        self.seq_id_hash = helpers.md5_hash(self.seq_ids_str)
+
+    def reset_seq_ids(self, seq_ids):
+        # Note that this does NOT reset sim_scores. This needs to be updated manually
+        self.seq_ids = sorted(seq_ids)
         self.seq_ids_str = str(", ".join(seq_ids))
         self.seq_id_hash = helpers.md5_hash(self.seq_ids_str)
 
@@ -479,9 +485,9 @@ class Cluster(object):
                                                (self.sim_scores.seq2.isin(clique_ids))]
 
                 outer_scores = outer_scores[((outer_scores.seq1.isin(clique_ids))
-                                             & (outer_scores.seq2.isin(clique_ids) == False)) |
+                                             & (outer_scores.seq2.isin(clique_ids) == False)) |  # Note the == must stay
                                             ((outer_scores.seq2.isin(clique_ids))
-                                             & (outer_scores.seq1.isin(clique_ids) == False))]
+                                             & (outer_scores.seq1.isin(clique_ids) == False))]  # Note the == must stay
 
                 # if all sim scores in a group are identical, we can't get a KDE. Fix by perturbing the scores a little.
                 clique_scores = self.perturb(clique_scores)
@@ -612,11 +618,12 @@ psipass2 {0}{3}data{3}weights_p2.dat 1 1.0 1.0 {1}{3}{2}.ss2 {1}{3}{2}.ss > {1}{
 '''.format(psipred_dir, temp_dir.path, seq_rec.id, os.sep)
 
     else:
+        data_weights = "{0}{1}data{1}weights".format(psipred_dir, os.sep)
         command = '''\
     {0}{3}bin{3}seq2mtx sequence.fa > {1}{3}{2}.mtx;
-    {0}{3}bin{3}psipred {1}{3}{2}.mtx {0}{3}data{3}weights.dat {0}{3}data{3}weights.dat2 {0}{3}data{3}weights.dat3 > {1}{3}{2}.ss;
-    {0}{3}bin{3}psipass2 {0}{3}data{3}weights_p2.dat 1 1.0 1.0 {1}{3}{2}.ss2 {1}{3}{2}.ss > {1}{3}{2}.horiz;
-    '''.format(psipred_dir, temp_dir.path, seq_rec.id, os.sep)
+    {0}{3}bin{3}psipred {1}{3}{2}.mtx {4}.dat {4}.dat2 {4}.dat3 > {1}{3}{2}.ss;
+    {0}{3}bin{3}psipass2 {4}_p2.dat 1 1.0 1.0 {1}{3}{2}.ss2 {1}{3}{2}.ss > {1}{3}{2}.horiz;
+    '''.format(psipred_dir, temp_dir.path, seq_rec.id, os.sep, data_weights)
 
     Popen(command, shell=True).wait()
     os.chdir(pwd)
@@ -651,7 +658,7 @@ def compare_psi_pred(psi1_df, psi2_df):
 
 
 def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progress, outdir, psi_pred_ss2_dfs,
-                      steps=1000, chains=3, walkers=2, quiet=True, taxa_separator="-", r_seed=None, convergence=1.05):
+                      steps=1000, chains=3, walkers=2, quiet=True, taxa_separator="-", r_seed=None, convergence=None):
     """
     Run MCMCMC on MCL to find the best orthogroups
     :param master_cluster: The group to be subdivided
@@ -693,6 +700,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     rand_gen = Random(r_seed)
     master_cluster.set_name()
     temp_dir = br.TempDir()
+    convergence = GELMAN_RUBIN if convergence is None else float(convergence)
 
     # If there are no paralogs in the cluster, then it is already at its highest score and MCL is unnecessary
     keep_going = False
@@ -712,9 +720,9 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         mcmcmc_params = ["%s" % temp_dir.path, seqbuddy, master_cluster,
                          taxa_separator, sql_broker, psi_pred_ss2_dfs, progress]
         mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, quiet=quiet,
-                                       num_walkers=walkers, num_chains=chains, r_seed=rand_gen.randint(1, 999999999999999),
+                                       num_walkers=walkers, num_chains=chains, convergence=convergence,
                                        outfiles=os.path.join(temp_dir.path, "mcmcmc_out"), params=mcmcmc_params,
-                                       include_lava=True, include_ice=True, convergence=convergence)
+                                       include_lava=True, include_ice=True, r_seed=rand_gen.randint(1, 999999999999999))
 
     except RuntimeError:  # Happens when mcmcmc fails to find different initial chain parameters
         save_cluster("MCMCMC failed to find parameters")
@@ -751,7 +759,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     for indx in range(len(mcmcmc_factory.chains)):
         mcmcmc_output = pd.read_csv(os.path.join(temp_dir.path, "mcmcmc_out_%s.csv" % (indx+1)), "\t", index_col=False)
         result = mcmcmc_output.loc[mcmcmc_output["result"] == mcmcmc_output["result"].max()]
-        best_score = result if best_score.empty or result["result"].iloc[0] > best_score["result"].iloc[0] else best_score
+        best_score = result if best_score.empty or result["result"].iloc[0] > best_score["result"].iloc[0] \
+            else best_score
 
     if round(best_score["result"].iloc[0], 8) <= round(master_cluster.score(), 8):
         save_cluster("New best score of %s is less than master cluster at %s"
@@ -773,12 +782,12 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     for sub_cluster in mcl_clusters:
         cluster_ids_hash = helpers.md5_hash(", ".join(sorted(sub_cluster)))
         if len(sub_cluster) == 1:
-            sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "score"])
+            sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
         else:
             # All mcl sub clusters are written to database in mcmcmc_mcl(), so no need to check if exists
             graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_ids_hash))[0][0]
             sim_scores = pd.read_csv(StringIO(graph), index_col=False, header=None)
-            sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "score"]
+            sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
 
         sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster,
                               taxa_separator=taxa_separator, r_seed=rand_gen.randint(1, 999999999999999))
@@ -970,7 +979,7 @@ def create_all_by_all_scores(alignment, psi_pred_ss2_dfs, gap_open=GAP_OPEN, gap
     :return:
     """
     if len(alignment.records()) == 1:
-        sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "subsmat", "psi", "score"])
+        sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
         return sim_scores
 
     # Don't want to modify the alignbuddy object in place
@@ -1015,7 +1024,7 @@ def create_all_by_all_scores(alignment, psi_pred_ss2_dfs, gap_open=GAP_OPEN, gap
 
     all_by_all_outdir = br.TempDir()
     if all_by_all:
-        n = ceil(len(all_by_all) / CPUS)
+        n = int(ceil(len(all_by_all) / CPUS))
         all_by_all = [all_by_all[i:i + n] for i in range(0, len(all_by_all), n)] if all_by_all else []
         score_sequences_params = [alignment, psi_pred_ss2_dfs, all_by_all_outdir.path, gap_open, gap_extend]
         br.run_multicore_function(all_by_all, mc_score_sequences, score_sequences_params,
@@ -1028,9 +1037,11 @@ def create_all_by_all_scores(alignment, psi_pred_ss2_dfs, gap_open=GAP_OPEN, gap
             sim_scores_file.write(ifile.read())
     sim_scores = pd.read_csv(sim_scores_file.get_handle("r"), index_col=False)
 
+    # Set raw score, which is used by Orphan placement
+    sim_scores['raw_score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
     # Distribute final scores_components between 0-1.
     sim_scores['psi'] = (sim_scores['psi'] - sim_scores['psi'].min()) / \
-                          (sim_scores['psi'].max() - sim_scores['psi'].min())
+                        (sim_scores['psi'].max() - sim_scores['psi'].min())
 
     sim_scores['subsmat'] = (sim_scores['subsmat'] - sim_scores['subsmat'].min()) / \
                             (sim_scores['subsmat'].max() - sim_scores['subsmat'].min())
@@ -1135,7 +1146,8 @@ class Orphans(object):
         # Create a null model from all within cluster scores from the large clusters; used for placement tests later
         self.lrg_cluster_sim_scores = pd.Series()
         for clust_name, clust in self.large_clusters.items():
-            self.lrg_cluster_sim_scores = self.lrg_cluster_sim_scores.append(clust.sim_scores.score, ignore_index=True)
+            self.lrg_cluster_sim_scores = self.lrg_cluster_sim_scores.append(clust.sim_scores.raw_score,
+                                                                             ignore_index=True)
 
     def _separate_large_small(self):
         for cluster in self.clusters:
@@ -1152,8 +1164,8 @@ class Orphans(object):
         for group_name, large_cluster in self.large_clusters.items():
             log_output += "\t%s\n" % group_name
             log_output += "\t%s\n" % large_cluster.seq_ids
-            log_output += "\tAmong large:\t%s - %s\n" % (round(large_cluster.sim_scores.score.min(), 4),
-                                                         round(large_cluster.sim_scores.score.max(), 4))
+            log_output += "\tAmong large:\t%s - %s\n" % (round(large_cluster.sim_scores.raw_score.min(), 4),
+                                                         round(large_cluster.sim_scores.raw_score.max(), 4))
             # Read or create an alignment containing the sequences in the small and large clusters being checked
             seq_ids = sorted(large_cluster.seq_ids + small_cluster.seq_ids)
             seqbuddy = Sb.make_copy(self.seqbuddy)
@@ -1166,7 +1178,7 @@ class Orphans(object):
                                           "WHERE hash='{0}'".format(helpers.md5_hash(", ".join(seq_ids))))
             if graph and graph[0][0]:
                 sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
-                sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "score"]
+                sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
             else:
                 sim_scores = create_all_by_all_scores(alb_obj, self.psi_pred_ss2_dfs, quiet=True)
                 cluster2database(Cluster(seq_ids, sim_scores, collapse=False), self.sql_broker, alb_obj)
@@ -1176,16 +1188,16 @@ class Orphans(object):
                                                 | (sim_scores['seq2'].isin(small_cluster.seq_ids))]
             lrg2sml_group_data = lrg2sml_group_data.loc[(lrg2sml_group_data['seq1'].isin(large_cluster.seq_ids))
                                                         | (lrg2sml_group_data['seq2'].isin(large_cluster.seq_ids))]
-            log_output += "\tLarge 2 small:\t%s - %s\n\n" % (round(lrg2sml_group_data.score.min(), 4),
-                                                             round(lrg2sml_group_data.score.max(), 4))
+            log_output += "\tLarge 2 small:\t%s - %s\n\n" % (round(lrg2sml_group_data.raw_score.min(), 4),
+                                                             round(lrg2sml_group_data.raw_score.max(), 4))
 
             # Confirm that the orphans are sufficiently similar to large group to warrant consideration by ensuring
             # that at least one similarity score is greater than the lowest score with all large groups.
             # Also, convert group_data to a numpy array so sm.stats can read it
-            if lrg2sml_group_data.score.max() >= self.lrg_cluster_sim_scores.min():
-                data_dict[group_name] = (True, np.array(lrg2sml_group_data.score))
+            if lrg2sml_group_data.raw_score.max() >= self.lrg_cluster_sim_scores.min():
+                data_dict[group_name] = (True, np.array(lrg2sml_group_data.raw_score))
             else:
-                data_dict[group_name] = (False, np.array(lrg2sml_group_data.score))
+                data_dict[group_name] = (False, np.array(lrg2sml_group_data.raw_score))
         # We only need to test the large cluster with the highest average similarity score, so find that cluster.
         averages = pd.Series()
         df = pd.DataFrame(columns=['observations', 'grouplabel'])
@@ -1276,18 +1288,30 @@ class Orphans(object):
             if best_cluster["small_name"]:
                 small_name = best_cluster["small_name"]
                 large_name = best_cluster["large_name"]
-                self.large_clusters[large_name].seq_ids += self.small_clusters[small_name].seq_ids
-                base_cluster = self.large_clusters[large_name].get_base_cluster()
-                subgraph = base_cluster.pull_scores_subgraph(self.large_clusters[large_name].seq_ids)
-                self.large_clusters[large_name].sim_scores = subgraph
+                large_cluster = self.large_clusters[large_name]
+                small_cluster = self.small_clusters[small_name]
+                large_cluster.reset_seq_ids(small_cluster.seq_ids + large_cluster.seq_ids)
 
-                for taxon, seq_ids in self.small_clusters[small_name].taxa.items():
-                    self.large_clusters[large_name].taxa.setdefault(taxon, [])
-                    self.large_clusters[large_name].taxa[taxon] += seq_ids
-                    for seq_id, paralogs in self.small_clusters[small_name].collapsed_genes.items():
-                        self.large_clusters[large_name].collapsed_genes[seq_id] = paralogs
-                fostered_orphans += len(self.small_clusters[small_name].seq_ids)
+                graph = self.sql_broker.query("SELECT (graph) FROM data_table "
+                                              "WHERE hash='{0}'".format(large_cluster.seq_id_hash))
+                if graph and graph[0][0]:
+                    sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
+                    sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+                else:
+                    alb_obj = generate_msa(Sb.pull_recs(Sb.make_copy(self.seqbuddy),
+                                                        "^%s$" % "$|^".join(large_cluster.seq_ids)), self.sql_broker)
+                    sim_scores = create_all_by_all_scores(alb_obj, self.psi_pred_ss2_dfs, quiet=True)
+                    cluster2database(large_cluster, self.sql_broker, alb_obj)
+
+                large_cluster.sim_scores = sim_scores
+                for taxon, seq_ids in small_cluster.taxa.items():
+                    large_cluster.taxa.setdefault(taxon, [])
+                    large_cluster.taxa[taxon] += seq_ids
+                    for seq_id, paralogs in small_cluster.collapsed_genes.items():
+                        large_cluster.collapsed_genes[seq_id] = paralogs
+                fostered_orphans += len(small_cluster.seq_ids)
                 del self.small_clusters[small_name]
+                del small_cluster
                 best_cluster = OrderedDict([("small_name", None), ("large_name", None), ("meandiff", 0)])
             else:
                 break
@@ -1318,8 +1342,9 @@ def argparse_init():
     positional = parser.add_argument_group(title="\033[1mPositional argument\033[m")
 
     positional.add_argument("sequences", help="Location of sequence file (most formats are fine)", action="store")
-    positional.add_argument("outdir", action="store", help="Where should results be written? (optional)", nargs="?",
-                            default=os.path.join(os.getcwd(), "rdmcd-%s" % time.strftime("%d-%m-%Y")))
+    outdir = os.path.join(os.getcwd(), "rdmcd-%s" % time.strftime("%d-%m-%Y"))
+    positional.add_argument("outdir", action="store", help="Where should results be written? (default=%s)" % outdir,
+                            nargs="?", default=outdir)
 
     # Optional commands
     parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
@@ -1329,7 +1354,7 @@ def argparse_init():
                               help="If PSI-Pred files are pre-calculated, tell us where.")
     parser_flags.add_argument("-mcs", "--mcmcmc_steps", default=0, type=int,
                               help="Specify how deeply to sample MCL parameters")
-    parser_flags.add_argument("-ch", "--chains", default=3, type=int,
+    parser_flags.add_argument("-ch", "--chains", default=MCMCMC_CHAINS, type=int,
                               help="Specify how many MCMCMC chains to run (default=3)")
     parser_flags.add_argument("-wlk", "--walkers", default=3, type=int,
                               help="Specify how many Metropolis-Hastings walkers are in each chain (default=2)")
@@ -1352,8 +1377,8 @@ def argparse_init():
     dev_flags = parser.add_argument_group(title="\033[1mDeveloper commands (caution!)\033[m")
     dev_flags.add_argument("-spc", "--suppress_paralog_collapse", action="store_true",
                            help="Do not merge best hit paralogs")
-    # parser.add_argument("-sr", "--suppress_recursion", action="store_true",
-    #                    help="Stop after a single round of MCL. For testing.")
+    dev_flags.add_argument("-sr", "--suppress_recursion", action="store_true",
+                           help="Stop after a single round of MCL. For testing.")
     dev_flags.add_argument("-scc", "--suppress_clique_check", action="store_true",
                            help="Do not check for or break up cliques")
     dev_flags.add_argument("-ssf", "--suppress_singlet_folding", action="store_true",
@@ -1529,7 +1554,7 @@ Please do so now:
     if graph_data and graph_data[0][0]:
         logging.warning("RESUME: Initial all-by-all similarity graph found")
         scores_data = pd.read_csv(StringIO(graph_data[0][0]), index_col=False, header=None)
-        scores_data.columns = ["seq1", "seq2", "subsmat", "psi", "score"]
+        scores_data.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
 
     else:
         num_comparisons = ((len(alignbuddy.alignments[0]) ** 2) - len(alignbuddy.alignments[0])) / 2
@@ -1543,7 +1568,7 @@ Please do so now:
     if in_args.dr_base:
         global DR_BASE
         DR_BASE = in_args.dr_base
-        logging.info("Setting diminishing base to %s" % DR_BASE)
+    logging.warning("Diminishing returns scoring base: %s" % DR_BASE)
 
     # First push the really raw first alignment in the database, without any collapsing.
     uncollapsed_group_0 = Cluster([rec.id for rec in sequences.records], scores_data,
@@ -1564,6 +1589,7 @@ Please do so now:
 
     # Ortholog caller
     logging.warning("\n** Recursive MCL **")
+    global GELMAN_RUBIN
     if in_args.mcmcmc_steps >= 100:
         logging.warning("User specified maximum MCMCMC steps: %s" % in_args.mcmcmc_steps)
     elif in_args.mcmcmc_steps == 0:
@@ -1573,6 +1599,10 @@ Please do so now:
                         "Switching to auto-detect" % in_args.mcmcmc_steps)
         in_args.mcmcmc_steps = 0
 
+    if in_args.mcmcmc_steps < 100:
+        GELMAN_RUBIN = in_args.converge if in_args.converge else GELMAN_RUBIN
+        logging.warning("Gelman-Rubin convergence breakpoint: %s" % GELMAN_RUBIN)
+
     if in_args.chains >= 2:
         logging.warning("Number of MCMC chains: %s" % in_args.chains)
     else:
@@ -1580,15 +1610,15 @@ Please do so now:
                         "Switching to 3" % in_args.chains)
         in_args.chains = 3
 
+    global MCMCMC_CHAINS
+    MCMCMC_CHAINS = in_args.chains
+
     if in_args.walkers >= 2:
         logging.warning("Number of Metropolis-Hastings walkers per chain: %s" % in_args.walkers)
     else:
         logging.warning("User specified value of %s Metropolis-Hastings walkers per chain is too low. "
                         "Switching to 2" % in_args.walkers)
         in_args.walkers = 2
-
-    converge = in_args.converge if in_args.converge else 1.05
-    logging.warning("Gelman-Rubin convergence breakpoint: %s" % converge)
 
     final_clusters = []
     progress_tracker = Progress(in_args.outdir, group_0_cluster)
@@ -1599,8 +1629,8 @@ Please do so now:
     final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences, sql_broker=broker,
                                        progress=progress_tracker, outdir=in_args.outdir, steps=in_args.mcmcmc_steps,
                                        quiet=True, taxa_separator=in_args.taxa_separator, r_seed=in_args.r_seed,
-                                       psi_pred_ss2_dfs=psi_pred_files, chains=in_args.chains, walkers=in_args.walkers,
-                                       convergence=converge)
+                                       psi_pred_ss2_dfs=psi_pred_files, chains=MCMCMC_CHAINS, walkers=in_args.walkers,
+                                       convergence=GELMAN_RUBIN)
     final_clusters = [cluster for cluster in final_clusters if cluster.subgroup_counter == 0]
     run_time.end()
 
@@ -1846,7 +1876,7 @@ if __name__ == '__main__':
     cteno_panxs = Sb.SeqBuddy("tests/unit_test_resources/Cteno_pannexins.fa")
     ids = [rec.id for rec in cteno_panxs.records]
     sim_scores = pd.read_csv("tests/unit_test_resources/Cteno_pannexins_sim.scores", "\t", index_col=False, header=None)
-    sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "score"]
+    sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
 
     cluster = Cluster(ids, sim_scores)
     cluster.score()
