@@ -30,18 +30,18 @@ def test_cluster_instantiate_group_0(hf):
     cluster = rdmcl.Cluster(*hf.base_cluster_args())
     assert [taxa for taxa in cluster.taxa] == ['BOL', 'Bab', 'Bch', 'Bfo', 'Bfr', 'Cfu', 'Dgl', 'Edu', 'Hca', 'Hru',
                                                'Hvu', 'Lcr', 'Lla', 'Mle', 'Oma', 'Pba', 'Tin', 'Vpa']
-    assert hf.string2hash(cluster.sim_scores.to_csv()) == "984c4424c2b8529694696d715c4108a5"
+    assert hf.string2hash(cluster.sim_scores.to_csv()) == "ae11f765826e65eeefb52c3d04776d9b"
     assert cluster.taxa_separator == "-"
     assert cluster.parent is None
     assert cluster.subgroup_counter == 0
     assert cluster.cluster_score is None
-    assert cluster.collapsed_genes == OrderedDict([('Cfu-PanxαA', ['Cfu-PanxαF']),
-                                                   ('Hvu-PanxβM', ['Hvu-PanxβI', 'Hvu-PanxβG', 'Hvu-PanxβH',
-                                                                   'Hvu-PanxβD', 'Hvu-PanxβK', 'Hvu-PanxβE',
-                                                                   'Hvu-PanxβF', 'Hvu-PanxβA', 'Hvu-PanxβC',
-                                                                   'Hvu-PanxβB', 'Hvu-PanxβJ', 'Hvu-PanxβL',
-                                                                   'Hvu-PanxβO']), ('Lcr-PanxαA', ['Lcr-PanxαL']),
-                                                   ('Mle-Panxα10A', ['Mle-Panxα9'])])
+    assert cluster.collapsed_genes == OrderedDict([('Lcr-PanxαA', ['Lcr-PanxαL']),
+                                                   ('Mle-Panxα10A', ['Mle-Panxα9']),
+                                                   ('Hvu-PanxβL', ['Hvu-PanxβO', 'Hvu-PanxβA', 'Hvu-PanxβC',
+                                                                   'Hvu-PanxβB', 'Hvu-PanxβJ', 'Hvu-PanxβM',
+                                                                   'Hvu-PanxβI', 'Hvu-PanxβF', 'Hvu-PanxβH',
+                                                                   'Hvu-PanxβD', 'Hvu-PanxβG', 'Hvu-PanxβE',
+                                                                   'Hvu-PanxβK'])])
     assert cluster._name == "group_0"
     assert cluster.seq_ids == ['BOL-PanxαA', 'BOL-PanxαB', 'BOL-PanxαC', 'BOL-PanxαD', 'BOL-PanxαE', 'BOL-PanxαF',
                                'BOL-PanxαG', 'BOL-PanxαH', 'Bab-PanxαA', 'Bab-PanxαB', 'Bab-PanxαC', 'Bab-PanxαD',
@@ -49,27 +49,27 @@ def test_cluster_instantiate_group_0(hf):
                                'Bfo-PanxαA', 'Bfo-PanxαB', 'Bfo-PanxαC', 'Bfo-PanxαD', 'Bfo-PanxαE', 'Bfo-PanxαF',
                                'Bfo-PanxαG', 'Bfo-PanxαH', 'Bfo-PanxαI', 'Bfo-PanxαJ', 'Bfr-PanxαA', 'Bfr-PanxαB',
                                'Bfr-PanxαC', 'Bfr-PanxαD', 'Cfu-PanxαA', 'Cfu-PanxαB', 'Cfu-PanxαC', 'Cfu-PanxαD',
-                               'Cfu-PanxαE', 'Dgl-PanxαA', 'Dgl-PanxαB', 'Dgl-PanxαC', 'Dgl-PanxαD', 'Dgl-PanxαE',
-                               'Dgl-PanxαF', 'Dgl-PanxαG', 'Dgl-PanxαH', 'Dgl-PanxαI', 'Edu-PanxαA', 'Edu-PanxαB',
-                               'Edu-PanxαC', 'Edu-PanxαD', 'Edu-PanxαE', 'Edu-PanxαF', 'Edu-PanxαG', 'Edu-PanxαH',
-                               'Edu-PanxαI', 'Hca-PanxαA', 'Hca-PanxαB', 'Hca-PanxαC', 'Hca-PanxαD', 'Hca-PanxαE',
-                               'Hca-PanxαF', 'Hca-PanxαG', 'Hca-PanxαH', 'Hru-PanxαA', 'Hru-PanxαB', 'Hru-PanxαC',
-                               'Hru-PanxαD', 'Hru-PanxαE', 'Hvu-PanxβM', 'Lcr-PanxαA', 'Lcr-PanxαB', 'Lcr-PanxαC',
-                               'Lcr-PanxαD', 'Lcr-PanxαE', 'Lcr-PanxαF', 'Lcr-PanxαG', 'Lcr-PanxαH', 'Lcr-PanxαI',
-                               'Lcr-PanxαJ', 'Lcr-PanxαK', 'Lla-PanxαA', 'Lla-PanxαB', 'Lla-PanxαC', 'Mle-Panxα1',
-                               'Mle-Panxα10A', 'Mle-Panxα11', 'Mle-Panxα12', 'Mle-Panxα2', 'Mle-Panxα3', 'Mle-Panxα4',
-                               'Mle-Panxα5', 'Mle-Panxα6', 'Mle-Panxα7A', 'Mle-Panxα8', 'Oma-PanxαA', 'Oma-PanxαB',
-                               'Oma-PanxαC', 'Oma-PanxαD', 'Pba-PanxαA', 'Pba-PanxαB', 'Pba-PanxαC', 'Pba-PanxαD',
-                               'Pba-PanxαE', 'Pba-PanxαF', 'Pba-PanxαG', 'Tin-PanxαA', 'Tin-PanxαB', 'Tin-PanxαC',
-                               'Tin-PanxαD', 'Tin-PanxαE', 'Tin-PanxαF', 'Vpa-PanxαA', 'Vpa-PanxαB', 'Vpa-PanxαC',
-                               'Vpa-PanxαD', 'Vpa-PanxαE', 'Vpa-PanxαF', 'Vpa-PanxαG']
-    assert cluster.seq_id_hash == "b7636e7de3a0a96e2631db0ba01c0ffc"
+                               'Cfu-PanxαE', 'Cfu-PanxαF', 'Dgl-PanxαA', 'Dgl-PanxαB', 'Dgl-PanxαC', 'Dgl-PanxαD',
+                               'Dgl-PanxαE', 'Dgl-PanxαF', 'Dgl-PanxαG', 'Dgl-PanxαH', 'Dgl-PanxαI', 'Edu-PanxαA',
+                               'Edu-PanxαB', 'Edu-PanxαC', 'Edu-PanxαD', 'Edu-PanxαE', 'Edu-PanxαF', 'Edu-PanxαG',
+                               'Edu-PanxαH', 'Edu-PanxαI', 'Hca-PanxαA', 'Hca-PanxαB', 'Hca-PanxαC', 'Hca-PanxαD',
+                               'Hca-PanxαE', 'Hca-PanxαF', 'Hca-PanxαG', 'Hca-PanxαH', 'Hru-PanxαA', 'Hru-PanxαB',
+                               'Hru-PanxαC', 'Hru-PanxαD', 'Hru-PanxαE', 'Hvu-PanxβL', 'Lcr-PanxαA', 'Lcr-PanxαB',
+                               'Lcr-PanxαC', 'Lcr-PanxαD', 'Lcr-PanxαE', 'Lcr-PanxαF', 'Lcr-PanxαG', 'Lcr-PanxαH',
+                               'Lcr-PanxαI', 'Lcr-PanxαJ', 'Lcr-PanxαK', 'Lla-PanxαA', 'Lla-PanxαB', 'Lla-PanxαC',
+                               'Mle-Panxα1', 'Mle-Panxα10A', 'Mle-Panxα11', 'Mle-Panxα12', 'Mle-Panxα2', 'Mle-Panxα3',
+                               'Mle-Panxα4', 'Mle-Panxα5', 'Mle-Panxα6', 'Mle-Panxα7A', 'Mle-Panxα8', 'Oma-PanxαA',
+                               'Oma-PanxαB', 'Oma-PanxαC', 'Oma-PanxαD', 'Pba-PanxαA', 'Pba-PanxαB', 'Pba-PanxαC',
+                               'Pba-PanxαD', 'Pba-PanxαE', 'Pba-PanxαF', 'Pba-PanxαG', 'Tin-PanxαA', 'Tin-PanxαB',
+                               'Tin-PanxαC', 'Tin-PanxαD', 'Tin-PanxαE', 'Tin-PanxαF', 'Vpa-PanxαA', 'Vpa-PanxαB',
+                               'Vpa-PanxαC', 'Vpa-PanxαD', 'Vpa-PanxαE', 'Vpa-PanxαF', 'Vpa-PanxαG']
+    assert cluster.seq_id_hash == "0eb00400b766199af2040597b963f4da"
 
     with pytest.raises(ValueError) as err:
         sim_scores = hf.get_data("cteno_sim_scores")
         sim_scores = sim_scores.ix[1:, :]
         rdmcl.Cluster(cluster.seq_ids, sim_scores)
-    assert "The number of incoming sequence ids (118) does not match the expected graph size of 6903" in str(err)
+    assert "The number of incoming sequence ids (119) does not match the expected graph size of 7021" in str(err)
 
 
 def test_cluster_instantiate_child(hf):
@@ -148,22 +148,22 @@ def test_cluster_recursive_best_hits(hf):
     global_best_hits = pd.DataFrame(columns=["seq1", "seq2", "score"])
     best_hits = cluster.recursive_best_hits('Bab-PanxαB', global_best_hits, ['Bab-PanxαB'])
     assert best_hits.to_csv() == """\
-,seq1,seq2,score
-0,Bab-PanxαB,Vpa-PanxαB,0.9715263513449742
-1,Lcr-PanxαH,Vpa-PanxαB,0.979692672624647
-2,Lcr-PanxαH,Vpa-PanxαB,0.979692672624647
-"""
+,psi,raw_score,score,seq1,seq2,subsmat
+0,0.9841450231425388,0.9710485816574068,0.9776353490763704,Bab-PanxαB,Vpa-PanxαB,0.9748454887622982
+1,0.9832934130111736,0.98033753188254,0.9867858512031742,Lcr-PanxαH,Vpa-PanxαB,0.9882826104283174
+2,0.9832934130111736,0.98033753188254,0.9867858512031742,Lcr-PanxαH,Vpa-PanxαB,0.9882826104283174
+""", print(best_hits.to_csv())
 
 
 def test_cluster_perterb(hf):
     cluster = rdmcl.Cluster(*hf.base_cluster_args())
     global_best_hits = pd.DataFrame(columns=["seq1", "seq2", "score"])
     best_hits = cluster.recursive_best_hits('Lcr-PanxαH', global_best_hits, ['Lcr-PanxαH'])
-    assert best_hits.iloc[0].score == 0.979692672624647
+    assert best_hits.iloc[0].score == 0.9867858512031742
 
     best_hits = cluster.perturb(best_hits)
-    assert best_hits.iloc[0].score != 0.979692672624647
-    assert round(best_hits.iloc[0].score, 5) == 0.97969
+    assert best_hits.iloc[0].score != 0.9867858512031742
+    assert round(best_hits.iloc[0].score, 5) == 0.98679
 
 
 def test_cluster_get_base_cluster(hf):
@@ -200,16 +200,17 @@ def test_cluster_get_base_cluster(hf):
 
     # Edge case where child is full size of parent
     child = rdmcl.Cluster(parent.seq_ids, parent.sim_scores, parent=parent)
-    assert child.score() == 266.22361814582393
+    assert child.score() == 264.57969700077973
 
 
 def test_cluster_pull_scores_subgraph(hf):
     clust = rdmcl.Cluster(*hf.base_cluster_args())
-    assert str(clust.pull_scores_subgraph(['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC'])) == """\
-            seq1        seq2     score
-132   Hru-PanxαA  Lcr-PanxαH  0.966569
-165   Hru-PanxαA  Tin-PanxαC  0.958389
-6851  Lcr-PanxαH  Tin-PanxαC  0.974295"""
+    output = str(clust.pull_scores_subgraph(['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC']))
+    assert output == """\
+            seq1        seq2   subsmat       psi  raw_score     score
+132   Hru-PanxαA  Lcr-PanxαH  0.974896  0.952851   0.965774  0.968282
+165   Hru-PanxαA  Tin-PanxαC  0.968037  0.937704   0.958389  0.958937
+6851  Lcr-PanxαH  Tin-PanxαC  0.984287  0.968946   0.975098  0.979684""", print(output)
 
 
 def test_rbhc_less_than_6(hf):
@@ -229,15 +230,33 @@ def test_rbhc_less_than_6(hf):
 def test_rbhc_all_seqs_in_clique(hf):
     # If clique brings in entire cluster, return self
     parent = rdmcl.Cluster(*hf.base_cluster_args())
+    seq_ids = ['Mle-Panxα10A', 'Mle-Panxα9', 'Vpa-PanxαB', 'BOL-PanxαA', 'Dgl-PanxαE', 'Lcr-PanxαH']
+    sim_scores = hf.get_sim_scores(seq_ids)
+
+    # Modify the scores to create a complete clique
+    indx = sim_scores[(sim_scores.seq2 == 'Mle-Panxα10A') & (sim_scores.seq1 == 'Mle-Panxα9')]
+    sim_scores.set_value(indx.index[0], "raw_score", 0.7)
+
+    indx = sim_scores[(sim_scores.seq1 == 'Mle-Panxα10A') & (sim_scores.seq2 == 'Vpa-PanxαB')]
+    sim_scores.set_value(indx.index[0], "raw_score", 0.8)
+
+    indx = sim_scores[(sim_scores.seq2 == 'Vpa-PanxαB') & (sim_scores.seq1 == 'BOL-PanxαA')]
+    sim_scores.set_value(indx.index[0], "raw_score", 0.99)
+
+    indx = sim_scores[(sim_scores.seq2 == 'Mle-Panxα9') & (sim_scores.seq1 == 'BOL-PanxαA')]
+    sim_scores.set_value(indx.index[0], "raw_score", 0.99)
+
+    indx = sim_scores[(sim_scores.seq1 == 'Mle-Panxα9') & (sim_scores.seq2 == 'Vpa-PanxαB')]
+    sim_scores.set_value(indx.index[0], "raw_score", 0.97)
+
     log_file = br.TempFile()
-    seq_ids = ['Bab-PanxαC', 'Bfo-PanxαC', 'BOL-PanxαF', 'Vpa-PanxαD', 'BOL-PanxαE', 'Mle-Panxα11']
-    cluster = rdmcl.Cluster(seq_ids, hf.get_sim_scores(seq_ids), parent=parent)
+    cluster = rdmcl.Cluster(seq_ids, sim_scores, parent=parent)
     cluster.set_name()
     assert cluster.create_rbh_cliques(log_file)[0] == cluster
     assert log_file.read().strip() == """\
 # ####### Testing group_0_0 ####### #
-['BOL-PanxαE', 'BOL-PanxαF', 'Bab-PanxαC', 'Bfo-PanxαC', 'Mle-Panxα11', 'Vpa-PanxαD']
-\tTERMINATED: Entire cluster pulled into clique on BOL."""
+['BOL-PanxαA', 'Dgl-PanxαE', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Mle-Panxα9', 'Vpa-PanxαB']
+\tTERMINATED: Entire cluster pulled into clique on Mle.""", print(log_file.read().strip())
 
 
 def test_rbhc_no_paraogs(hf):
@@ -285,7 +304,7 @@ def test_rbhc_creates_orphan(hf):
     cluster = rdmcl.Cluster(seq_ids, hf.get_sim_scores(seq_ids), parent=parent)
     cluster.set_name()
     assert cluster.create_rbh_cliques(log_file)[0] == cluster
-    assert "TERMINATED: Spinning off cliques would orphan Bch-PanxαB." in log_file.read()
+    assert "TERMINATED: Spinning off cliques would orphan Bch-PanxαB and Lcr-PanxαI" in log_file.read()
 
 
 def test_rbhc_fail_integration(hf):
@@ -298,9 +317,9 @@ def test_rbhc_fail_integration(hf):
     cliques = cluster.create_rbh_cliques(log_file)
     assert cliques[0] == cluster
     assert """Test for KDE separation:
-\t\t\t['BOL-PanxαF', 'Lcr-PanxαL', 'Mle-Panxα11', 'Mle-Panxα4', 'Vpa-PanxαA']
-\t\t\tOuter KDE: {'shape': (1, 5), 'covariance': 0.0307843014212, 'inv_cov': 32.4840894168, '_norm_factor': 2.19899676206}
-\t\t\tClique KDE: {'shape': (1, 10), 'covariance': 0.0192841359414, 'inv_cov': 51.8560957586,  '_norm_factor': 3.48088781217}""" in log_file.read()
+\t\t\t['BOL-PanxαF', 'Lcr-PanxαI', 'Lcr-PanxαL', 'Mle-Panxα11', 'Mle-Panxα4']
+\t\t\tOuter KDE: {'shape': (1, 5), 'covariance': 0.0320703176923, 'inv_cov': 31.1814809443, '_norm_factor': 2.2444584476}
+\t\t\tClique KDE: {'shape': (1, 10), 'covariance': 0.0196599709781, 'inv_cov': 50.8647749845,  '_norm_factor': 3.51464423219}""" in log_file.read()
     assert "FAIL" in log_file.read()
 
 
@@ -317,9 +336,9 @@ def test_rbhc_multi_clique_pass(hf):
 
     assert """Test for KDE separation:
 \t\t\t['BOL-PanxαF', 'Lcr-PanxαI', 'Mle-Panxα4']
-\t\t\tOuter KDE: {'shape': (1, 9), 'covariance': 0.0239203439486, 'inv_cov': 41.8054189416, '_norm_factor': 3.48912198768}
-\t\t\tClique KDE: {'shape': (1, 3), 'covariance': 3.8492365407e-05, 'inv_cov': 25979.177674,  '_norm_factor': 0.0466550316994}
-""" in log_file.read()
+\t\t\tOuter KDE: {'shape': (1, 9), 'covariance': 0.0247415314604, 'inv_cov': 40.4178699123, '_norm_factor': 3.54850754302}
+\t\t\tClique KDE: {'shape': (1, 3), 'covariance': 9.93711384681e-05, 'inv_cov': 10063.2841227,  '_norm_factor': 0.0749620270178}
+""" in log_file.read(), print(log_file.read())
 
     assert """Cliques identified and spun off:
 \t\t['BOL-PanxαF', 'Lcr-PanxαI', 'Mle-Panxα4']
@@ -385,11 +404,11 @@ def test_cluster2database(hf):
     cursor.execute("SELECT * FROM data_table")
     response = cursor.fetchall()
     assert len(response) == 1
-    assert response[0][0] == "b7636e7de3a0a96e2631db0ba01c0ffc"                 # hash
+    assert response[0][0] == "0eb00400b766199af2040597b963f4da"                 # hash
     assert 'BOL-PanxαA, BOL-PanxαB, BOL-PanxαC, BOL-PanxαD' in response[0][1]   # seq_ids
     assert response[0][2] == '>Seq1\nMPQQCS-SS\n>Seq2\nMPQICMAAS'               # alignment
-    assert 'Hca-PanxαG,Lla-PanxαC,0.42864589074736\n' in response[0][3]         # graph
-    assert response[0][4] == '266.22361814582393'                               # score
+    assert 'Hca-PanxαG,Lla-PanxαC,0.291912106162889' in response[0][3]          # graph
+    assert response[0][4] == '264.57969700077973'                               # score
     connect.close()
 
 
@@ -472,17 +491,18 @@ def test_orthogroup_caller(hf):
     orthogroups = rdmcl.orthogroup_caller(cluster, cluster_list, seqbuddy, broker, progress, outdir.path,
                                           psi_pred_ss2_dfs, steps=steps, r_seed=r_seed)
 
-    expected = [['BOL-PanxαC', 'BOL-PanxαH', 'Lcr-PanxαE', 'Mle-Panxα12', 'Mle-Panxα6', 'Mle-Panxα8', 'Vpa-PanxαG'],
-                ['BOL-PanxαC', 'Lcr-PanxαE', 'Mle-Panxα12', 'Mle-Panxα6', 'Vpa-PanxαG'],
-                ['BOL-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Vpa-PanxαB'],
+    expected = [['BOL-PanxαC', 'Lcr-PanxαE', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Mle-Panxα6'],
                 ['BOL-PanxαF', 'Lcr-PanxαI', 'Mle-Panxα4', 'Vpa-PanxαA'],
                 ['Lcr-PanxαA', 'Mle-Panxα5', 'Vpa-PanxαF'],
+                ['BOL-PanxαC', 'Lcr-PanxαH', 'Mle-Panxα10A'],
                 ['BOL-PanxαD', 'Lcr-PanxαD', 'Mle-Panxα2'],
                 ['Lcr-PanxαK', 'Mle-Panxα7A'],
                 ['Lcr-PanxαB', 'Mle-Panxα1'],
-                ['BOL-PanxαG', 'Lcr-PanxαF'],
                 ['BOL-PanxαH', 'Mle-Panxα8'],
-                ['Vpa-PanxαC']]
+                ['BOL-PanxαG', 'Lcr-PanxαF'],
+                ['Vpa-PanxαC'],
+                ['Mle-Panxα6'],
+                ['Lcr-PanxαE']]
 
     orthogroup_seqs = [clust.seq_ids for clust in orthogroups]
     assert cluster.seq_ids in orthogroup_seqs
@@ -499,20 +519,20 @@ def test_progress(hf):
     assert os.path.isfile("{0}{1}.progress".format(tmpdir.path, hf.sep))
     with open("{0}{1}.progress".format(tmpdir.path, hf.sep), "r") as ifile:
         # The dictionary is not static, so just sort the string:
-        # {"placed": 0, "mcl_runs": 0, "total": 118}
-        assert "".join(sorted(ifile.read())) == '     """""",,00118:::_aaccdelllmnoprsttu{}'
+        # {"placed": 0, "mcl_runs": 0, "total": 119}
+        assert "".join(sorted(ifile.read())) == '     """""",,00119:::_aaccdelllmnoprsttu{}'
 
     progress.update("mcl_runs", 2)
     with open("{0}{1}.progress".format(tmpdir.path, hf.sep), "r") as ifile:
-        # {"placed": 0, "mcl_runs": 2, "total": 118}
-        assert "".join(sorted(ifile.read())) == '     """""",,01128:::_aaccdelllmnoprsttu{}'
+        # {"placed": 0, "mcl_runs": 2, "total": 119}
+        assert "".join(sorted(ifile.read())) == '     """""",,01129:::_aaccdelllmnoprsttu{}'
 
     json = progress.read()
     assert json["mcl_runs"] == 2
     assert json["placed"] == 0
-    assert json["total"] == 118
+    assert json["total"] == 119
 
-    assert str(progress) == "MCL runs processed: 2. Sequences placed: 0/118. Run time: "
+    assert str(progress) == "MCL runs processed: 2. Sequences placed: 0/119. Run time: "
 
 
 def test_check_sequences(hf, monkeypatch, capsys):
@@ -639,7 +659,7 @@ def test_mcmcmc_mcl(hf):
     cluster_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Hca-PanxαB',
                    'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Tin-PanxαC',
                    'Vpa-PanxαB', 'Oma-PanxαC', 'Edu-PanxαA', 'Bch-PanxαC']
-    seqbuddy = rdmcl.Sb.SeqBuddy(hf._cteno_panxs)
+    seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
     seqbuddy = rdmcl.Sb.pull_recs(seqbuddy, "^%s$" % "$|^".join(cluster_ids))
     taxa_separator = "-"
     sql_broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
@@ -908,6 +928,8 @@ parser.add_argument("-ssf", "--suppress_singlet_folding", action="store_true",
                     help="Do not check for or merge singlets. For testing.")
 parser.add_argument("-sit", "--suppress_iteration", action="store_true",
                     help="Only check for cliques and orphans once")
+parser.add_argument("-spc", "--suppress_paralog_collapse", action="store_true",
+                    help="Do not merge best hit paralogs")
 parser.add_argument("-nt", "--no_msa_trim", action="store_true",
                     help="Don't apply the gappyout algorithm to MSAs before scoring")
 parser.add_argument("-op", "--open_penalty", help="Penalty for opening a gap in pairwise alignment scoring",
@@ -916,7 +938,17 @@ parser.add_argument("-ep", "--extend_penalty", help="Penalty for extending a gap
                     type=float, default=rdmcl.GAP_EXTEND)
 parser.add_argument("-ts", "--taxa_separator", action="store", default="-",
                     help="Specify a string that separates taxa ids from gene names")
+parser.add_argument("-cpu", "--max_cpus", type=int, action="store", default=rdmcl.CPUS,
+                    help="Specify the maximum number of cores RD-MCL can use.")
+parser.add_argument("-drb", "--dr_base", help="Set the base for diminishing returns function", type=float)
+parser.add_argument("-cnv", "--converge", type=float,
+                    help="Set minimum Gelman-Rubin PSRF value for convergence")
 parser.add_argument("-rs", "--r_seed", help="Specify a random seed for repeating a specific run", type=int)
+parser.add_argument("-ch", "--chains", default=rdmcl.MCMCMC_CHAINS, type=int,
+                    help="Specify how many MCMCMC chains to run (default=3)")
+parser.add_argument("-wlk", "--walkers", default=3, type=int,
+                    help="Specify how many Metropolis-Hastings walkers are in each chain (default=2)")
+
 parser.add_argument("-f", "--force", action="store_true",
                     help="Overwrite previous run")
 parser.add_argument("-q", "--quiet", action="store_true",
@@ -935,7 +967,7 @@ def test_argparse_init(monkeypatch, hf):
     assert temp_in_args.open_penalty == -5
     assert temp_in_args.extend_penalty == 0
 
-'''
+
 def test_full_run(hf, monkeypatch, capsys):
     # I can't break these up into separate test functions because of collisions with logger
     # First try a RESUME run
@@ -958,24 +990,14 @@ def test_full_run(hf, monkeypatch, capsys):
     with open(os.path.join(out_dir.path, "final_clusters.txt"), "r") as ifile:
         content = ifile.read()
         assert content == """\
-group_0_0	0.3782	BOL-PanxαA	Lcr-PanxαH	Mle-Panxα10A	Mle-Panxα9	Vpa-PanxαB
-group_0_1	0.3633	BOL-PanxαF	Lcr-PanxαI	Mle-Panxα4	Vpa-PanxαA
-group_0_2	0.2746	BOL-PanxαC	Mle-Panxα12	Vpa-PanxαG
-group_0_3	0.1735	Mle-Panxα5	Vpa-PanxαF
-group_0_4	0.1464	BOL-PanxαH	Mle-Panxα8
-group_0_12	0.0962	Lcr-PanxαE	Lcr-PanxαJ
-group_0_15	0.0962	Lcr-PanxαA	Lcr-PanxαL
-group_0_5	0.1337	Vpa-PanxαC
-group_0_6	0.0642	Mle-Panxα7A
-group_0_7	0.0642	Mle-Panxα6
-group_0_8	0.0642	Mle-Panxα2
-group_0_9	0.0642	Mle-Panxα1
-group_0_10	0.0743	Lcr-PanxαK
-group_0_11	0.0743	Lcr-PanxαF
-group_0_13	0.0743	Lcr-PanxαD
-group_0_14	0.0743	Lcr-PanxαB
-group_0_16	0.1065	BOL-PanxαG
-group_0_17	0.1065	BOL-PanxαD
+group_0_0_0\t22.5308\tBOL-PanxαA\tBOL-PanxαC\tLcr-PanxαE\tLcr-PanxαH\tLcr-PanxαJ\tMle-Panxα10A\tMle-Panxα12\tMle-Panxα6\tMle-Panxα9\tVpa-PanxαB\tVpa-PanxαC\tVpa-PanxαG
+group_0_1\t15.6667\tBOL-PanxαF\tLcr-PanxαI\tMle-Panxα4\tVpa-PanxαA
+group_0_2\t11.0069\tLcr-PanxαA\tLcr-PanxαL\tMle-Panxα5\tVpa-PanxαF
+group_0_3\t7.875\tBOL-PanxαD\tLcr-PanxαD\tMle-Panxα2
+group_0_4\t3.75\tLcr-PanxαB\tMle-Panxα1
+group_0_5\t4.875\tBOL-PanxαH\tMle-Panxα8
+group_0_6\t4.875\tBOL-PanxαG\tLcr-PanxαF
+group_0_0_1\t3.75\tLcr-PanxαK\tMle-Panxα7A
 """, print(content)
 
     out, err = capsys.readouterr()
@@ -1021,10 +1043,9 @@ group_0_17	0.1065	BOL-PanxαD
     with open(os.path.join(out_dir.path, "final_clusters.txt"), "r") as ifile:
         content = ifile.read()
         assert content == """\
-group_0_0_0	2.0069	BOL-PanxαA	Lcr-PanxαH	Mle-Panxα9	Vpa-PanxαB
-group_0_1	2.0069	BOL-PanxαF	Lcr-PanxαI	Mle-Panxα4	Vpa-PanxαA
-group_0_2	0.8588	BOL-PanxαC	Mle-Panxα12	Vpa-PanxαG
-group_0_0_1	0.1768	Mle-Panxα10A
+group_0_0\t12.2708\tBOL-PanxαA\tLcr-PanxαH\tMle-Panxα10A\tMle-Panxα9\tVpa-PanxαB
+group_0_1\t12.0\tBOL-PanxαF\tLcr-PanxαI\tMle-Panxα4\tVpa-PanxαA
+group_0_2\t7.0\tBOL-PanxαC\tMle-Panxα12\tVpa-PanxαG
 """, print(content)
 
     out, err = capsys.readouterr()
@@ -1043,4 +1064,3 @@ group_0_0_1	0.1768	Mle-Panxα10A
 
     #out, err = capsys.readouterr()
     #assert "The 'MAFFT' program is not detected" in err
-'''

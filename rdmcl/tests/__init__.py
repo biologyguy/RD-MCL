@@ -38,8 +38,8 @@ Vpa     7
 '''
 cteno_panxs = Sb.SeqBuddy("%s%sCteno_pannexins.fa" % (RESOURCE_PATH, SEP))
 ids = [rec.id for rec in cteno_panxs.records]
-sim_scores = pd.read_csv("%sCteno_pannexins_sim.scores" % RESOURCE_PATH, "\t", index_col=False, header=None)
-sim_scores.columns = ["seq1", "seq2", "score"]
+sim_scores = pd.read_csv("%sCteno_pannexins_sim.scores" % RESOURCE_PATH, index_col=False, header=None)
+sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
 
 
 # #################################  -  Helper class  -  ################################## #

@@ -241,7 +241,7 @@ class Cluster(object):
         """
         best_hits = self.sim_scores[(self.sim_scores.seq1 == gene) | (self.sim_scores.seq2 == gene)]
         if not best_hits.empty:
-            best_hits = best_hits.loc[best_hits.score == max(best_hits.score)].values
+            best_hits = best_hits.loc[best_hits.raw_score == max(best_hits.raw_score)].values
             best_hits = pd.DataFrame(best_hits, columns=list(self.sim_scores.columns.values))
         return best_hits
 
@@ -493,12 +493,12 @@ class Cluster(object):
                 clique_scores = self.perturb(clique_scores)
                 outer_scores = self.perturb(outer_scores)
 
-                total_kde = scipy.stats.gaussian_kde(outer_scores.score, bw_method='silverman')
+                total_kde = scipy.stats.gaussian_kde(outer_scores.raw_score, bw_method='silverman')
                 log_file.write("""\
 \t\t\tOuter KDE: {'shape': %s, 'covariance': %s, 'inv_cov': %s, '_norm_factor': %s}
 """ % (total_kde.dataset.shape, total_kde.covariance[0][0], total_kde.inv_cov[0][0], total_kde._norm_factor))
 
-                clique_kde = scipy.stats.gaussian_kde(clique_scores.score, bw_method='silverman')
+                clique_kde = scipy.stats.gaussian_kde(clique_scores.raw_score, bw_method='silverman')
                 log_file.write("""\
 \t\t\tClique KDE: {'shape': %s, 'covariance': %s, 'inv_cov': %s,  '_norm_factor': %s}
 """ % (clique_kde.dataset.shape, clique_kde.covariance[0][0], clique_kde.inv_cov[0][0], clique_kde._norm_factor))
