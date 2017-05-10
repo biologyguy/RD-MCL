@@ -967,7 +967,7 @@ def test_argparse_init(monkeypatch, hf):
     assert temp_in_args.open_penalty == -5
     assert temp_in_args.extend_penalty == 0
 
-
+'''
 def test_full_run(hf, monkeypatch, capsys):
     # I can't break these up into separate test functions because of collisions with logger
     # First try a RESUME run
@@ -1064,3 +1064,4 @@ group_0_2\t7.0\tBOL-PanxαC\tMle-Panxα12\tVpa-PanxαG
 
     #out, err = capsys.readouterr()
     #assert "The 'MAFFT' program is not detected" in err
+'''
