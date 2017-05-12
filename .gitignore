@@ -40,3 +40,9 @@ experiments/*
 
 # Release builds
 dist/
+
+# PSIPRED files
+rdmcl/psipred/*
+
+# System specific config file
+config.ini
