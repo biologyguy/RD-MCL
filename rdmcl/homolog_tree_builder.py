@@ -5,7 +5,7 @@
 """
 Convert the output from orthogroup_caller into an SVG tree of polytomies
 """
-import sys
+from compare_homolog_groups import prepare_clusters
 
 
 class Nexus(object):
@@ -91,7 +91,7 @@ def support_color(_support):
 
     else:
         _support = float(_support)
-        if 1 < _support < 0:
+        if 1. < _support < 0:
             raise ValueError("Leaf support values must be between 0 and 1")
 
         red = hex_string(175 - (175 * _support)) if _support <= 0.5 else hex_string(0)
@@ -133,6 +133,10 @@ class CtenoColors(object):
         panxβ = ["Hvu-PanxβA", "Hvu-PanxβB", "Hvu-PanxβC", "Hvu-PanxβD", "Hvu-PanxβE", "Hvu-PanxβF", "Hvu-PanxβG",
                  "Hvu-PanxβH", "Hvu-PanxβI", "Hvu-PanxβJ", "Hvu-PanxβK", "Hvu-PanxβL", "Hvu-PanxβM", "Hvu-PanxβN",
                  "Hvu-PanxβO"]
+        orphans = ["Vpa-PanxαC", "Edu-PanxαI", "BOL-PanxαG", "Lcr-PanxαF"]
+
+        self.genes = [panx1, panx2, panx3, panx4, panx5, panx6, panx7, panx8, panx9, panx10, panx11, panx12,
+                      panxβ, orphans]
 
         color_map = {"panx1": (247, 116, 2), "panx2": (0, 0, 0), "panx3": (13, 73, 43), "panx4": (153, 102, 51),
                      "panx5": (103, 47, 143), "panx6": (57, 180, 74), "panx7": (8, 114, 185), "panx8": (236, 28, 36),
@@ -140,8 +144,7 @@ class CtenoColors(object):
                      "panx12": (20, 115, 153)}
 
         self.reverse_map = {}
-        for indx, group in enumerate([panx1, panx2, panx3, panx4, panx5, panx6, panx7,
-                                      panx8, panx9, panx10, panx11, panx12]):
+        for indx, group in enumerate(self.genes[:-2]):
             for gene in group:
                 self.reverse_map[gene] = color_map["panx%s" % (indx + 1)]
 
@@ -163,27 +166,28 @@ if __name__ == '__main__':
     parser.add_argument("-panx", "--ctenos_panxs", action="store_true", help="Add color to Ctenophore pannexins.")
 
     in_args = parser.parse_args()
-
-    if in_args.ctenos_panxs:
-        ctenos = CtenoColors()
-
-    with open(in_args.support, "r") as ifile:
-        support_file = ifile.read().strip().split("group_")[1:]
+    ctenos = CtenoColors()
+    support_file = prepare_clusters(in_args.support, hierarchy=True)
 
     nodes = []
-
-    for node in support_file:
-        node = node.strip().split("\t")
-        support = node[1]
+    for rank, node in support_file.items():
         leaves = []
-        for leaf in node[2:]:
+        for leaf in node:
             if in_args.ctenos_panxs:
                 leaves.append(Leaf(leaf, 1.0, ctenos.get_color(leaf)))
             else:
                 leaves.append(Leaf(leaf, 1.0))
 
-        nodes.append(Node(leaves, rank=node[0], ave_support=0,
+        nodes.append(Node(leaves, rank=rank, ave_support=0,
                           std_support=0))
+
+    if in_args.ctenos_panxs:
+        for node in nodes:
+            temp_leaf_list = []
+            for panx in ctenos.genes:
+                temp_leaf_list += sorted([next_leaf for next_leaf in node.leaf_list if next_leaf.label in panx],
+                                         key=lambda next_leaf: next_leaf.label)
+            node.leaf_list = temp_leaf_list
 
     nexus = Nexus(nodes)
     print(nexus.print())
