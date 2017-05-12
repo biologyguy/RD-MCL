@@ -284,7 +284,8 @@ def test_rbhc_all_disqualified(hf):
     assert cluster.create_rbh_cliques(log_file)[0] == cluster
     assert log_file.read().strip() == """\
 # ####### Testing group_0_0 ####### #
-['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Edu-PanxαA', 'Hca-PanxαB', 'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Mle-Panxα9', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
+['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Edu-PanxαA', 'Hca-PanxαB', 'Hru-PanxαA',\
+ 'Lcr-PanxαH', 'Mle-Panxα10A', 'Mle-Panxα9', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
 \tChecking taxa for overlapping cliques:
 \t\t# #### Mle #### #
 \t\tDisqualified cliques:
@@ -300,7 +301,8 @@ def test_rbhc_creates_orphan(hf):
     # When spinning off an otherwise valid clique would orphan one or more sequences, return self
     parent = rdmcl.Cluster(*hf.base_cluster_args())
     log_file = br.TempFile()
-    seq_ids = ['Vpa-PanxαA', 'Mle-Panxα4', 'BOL-PanxαF', 'Lcr-PanxαI', 'Bch-PanxαB',  'Lcr-PanxαL', 'Mle-Panxα5', 'Vpa-PanxαF']
+    seq_ids = ['Vpa-PanxαA', 'Mle-Panxα4', 'BOL-PanxαF', 'Lcr-PanxαI',
+               'Bch-PanxαB',  'Lcr-PanxαL', 'Mle-Panxα5', 'Vpa-PanxαF']
     cluster = rdmcl.Cluster(seq_ids, hf.get_sim_scores(seq_ids), parent=parent)
     cluster.set_name()
     assert cluster.create_rbh_cliques(log_file)[0] == cluster
@@ -318,8 +320,10 @@ def test_rbhc_fail_integration(hf):
     assert cliques[0] == cluster
     assert """Test for KDE separation:
 \t\t\t['BOL-PanxαF', 'Lcr-PanxαI', 'Lcr-PanxαL', 'Mle-Panxα11', 'Mle-Panxα4']
-\t\t\tOuter KDE: {'shape': (1, 5), 'covariance': 0.0320703176923, 'inv_cov': 31.1814809443, '_norm_factor': 2.2444584476}
-\t\t\tClique KDE: {'shape': (1, 10), 'covariance': 0.0196599709781, 'inv_cov': 50.8647749845,  '_norm_factor': 3.51464423219}""" in log_file.read()
+\t\t\tOuter KDE: {'shape': (1, 5), 'covariance': 0.0320703176923, 'inv_cov': 31.1814809443,\
+ '_norm_factor': 2.2444584476}
+\t\t\tClique KDE: {'shape': (1, 10), 'covariance': 0.0196599709781, 'inv_cov': 50.8647749845,\
+  '_norm_factor': 3.51464423219}""" in log_file.read()
     assert "FAIL" in log_file.read()
 
 
@@ -336,8 +340,10 @@ def test_rbhc_multi_clique_pass(hf):
 
     assert """Test for KDE separation:
 \t\t\t['BOL-PanxαF', 'Lcr-PanxαI', 'Mle-Panxα4']
-\t\t\tOuter KDE: {'shape': (1, 9), 'covariance': 0.0247415314604, 'inv_cov': 40.4178699123, '_norm_factor': 3.54850754302}
-\t\t\tClique KDE: {'shape': (1, 3), 'covariance': 9.93711384681e-05, 'inv_cov': 10063.2841227,  '_norm_factor': 0.0749620270178}
+\t\t\tOuter KDE: {'shape': (1, 9), 'covariance': 0.0247415314604, 'inv_cov': 40.4178699123,\
+ '_norm_factor': 3.54850754302}
+\t\t\tClique KDE: {'shape': (1, 3), 'covariance': 9.93711384681e-05, 'inv_cov': 10063.2841227,\
+  '_norm_factor': 0.0749620270178}
 """ in log_file.read(), print(log_file.read())
 
     assert """Cliques identified and spun off:
@@ -967,12 +973,14 @@ def test_argparse_init(monkeypatch, hf):
     assert temp_in_args.open_penalty == -5
     assert temp_in_args.extend_penalty == 0
 
-'''
-def test_full_run(hf, monkeypatch, capsys):
+
+def test_full_run(hf, capsys):
     # I can't break these up into separate test functions because of collisions with logger
+    out_dir = br.TempDir()
+
+    '''
     # First try a RESUME run
     test_in_args = deepcopy(in_args)
-    out_dir = br.TempDir()
     test_in_args.sequences = os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa")
     test_in_args.outdir = out_dir.path
     test_in_args.sqlite_db = os.path.join(hf.resource_path, "db.sqlite")
@@ -990,7 +998,8 @@ def test_full_run(hf, monkeypatch, capsys):
     with open(os.path.join(out_dir.path, "final_clusters.txt"), "r") as ifile:
         content = ifile.read()
         assert content == """\
-group_0_0_0\t22.5308\tBOL-PanxαA\tBOL-PanxαC\tLcr-PanxαE\tLcr-PanxαH\tLcr-PanxαJ\tMle-Panxα10A\tMle-Panxα12\tMle-Panxα6\tMle-Panxα9\tVpa-PanxαB\tVpa-PanxαC\tVpa-PanxαG
+group_0_0_0\t22.5308\tBOL-PanxαA\tBOL-PanxαC\tLcr-PanxαE\tLcr-PanxαH\tLcr-PanxαJ\tMle-Panxα10A\tMle-Panxα12\t\
+Mle-Panxα6\tMle-Panxα9\tVpa-PanxαB\tVpa-PanxαC\tVpa-PanxαG
 group_0_1\t15.6667\tBOL-PanxαF\tLcr-PanxαI\tMle-Panxα4\tVpa-PanxαA
 group_0_2\t11.0069\tLcr-PanxαA\tLcr-PanxαL\tMle-Panxα5\tVpa-PanxαF
 group_0_3\t7.875\tBOL-PanxαD\tLcr-PanxαD\tMle-Panxα2
@@ -1005,7 +1014,7 @@ group_0_0_1\t3.75\tLcr-PanxαK\tMle-Panxα7A
     assert "RESUME: Initial multiple sequence alignment found" in err
     assert "RESUME: Initial all-by-all similarity graph found" in err
     assert "Iterative placement of orphans and paralog RBHC removal" in err
-
+    '''
     # Now a full run from scratch (on smaller set), with non-existant psi-pred dir
     open(os.path.join(out_dir.path, "rdmcl.log"), "w").close()
     shutil.move(os.path.join(out_dir.path, "rdmcl.log"), "rdmcl.log")
@@ -1053,15 +1062,14 @@ group_0_2\t7.0\tBOL-PanxαC\tMle-Panxα12\tVpa-PanxαG
     assert "Generating initial all-by-all similarity graph (66 comparisons)" in err
 
     # No supplied seed, make outdir, and no mafft
-    open(os.path.join(out_dir.path, "rdmcl.log"), "w").close()
-    shutil.move(os.path.join(out_dir.path, "rdmcl.log"), "rdmcl.log")
-    test_in_args = deepcopy(in_args)
-    test_in_args.sequences = os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa")
-    test_in_args.outdir = os.path.join(out_dir.path, "inner_out_dir")
-    #monkeypatch.setattr(shutil, "which", lambda *_: False)
-    #with pytest.raises(SystemExit):
+    # open(os.path.join(out_dir.path, "rdmcl.log"), "w").close()
+    # shutil.move(os.path.join(out_dir.path, "rdmcl.log"), "rdmcl.log")
+    # test_in_args = deepcopy(in_args)
+    # test_in_args.sequences = os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa")
+    # test_in_args.outdir = os.path.join(out_dir.path, "inner_out_dir")
+    # monkeypatch.setattr(shutil, "which", lambda *_: False)
+    # with pytest.raises(SystemExit):
     #    rdmcl.full_run(test_in_args)
 
-    #out, err = capsys.readouterr()
-    #assert "The 'MAFFT' program is not detected" in err
-'''
+    # out, err = capsys.readouterr()
+    # assert "The 'MAFFT' program is not detected" in err
