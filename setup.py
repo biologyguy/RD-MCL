@@ -56,7 +56,7 @@ ENTRY_POINTS = {
 }
 
 setup(name='rdmcl',
-      version='1.0.2',
+      version='1.0.3',
       description='RDMCL recursively clusters groups of homologous sequences into orthogroups.',
       long_description=open(os.path.join(os.path.dirname(__file__), 'README.rst'), encoding="utf-8").read(),
       author='Stephen Bond',

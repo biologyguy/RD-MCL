@@ -66,9 +66,9 @@ try:
     git_commit = check_output(['git', '--git-dir={0}{1}..{1}.git'.format(SCRIPT_PATH, os.sep), 'rev-parse',
                                '--short', 'HEAD'], stderr=PIPE).decode().strip()
     git_commit = " (git %s)" % git_commit if git_commit else ""
-    VERSION = "1.0.2%s" % git_commit
+    VERSION = "1.0.3%s" % git_commit
 except CalledProcessError:
-    VERSION = "1.0.2"
+    VERSION = "1.0.3"
 
 MAFFT = shutil.which("mafft") if shutil.which("mafft") \
         else os.path.join(SCRIPT_PATH, "mafft", "bin", "mafft")
