@@ -26,14 +26,36 @@ except ImportError:
 
 import os
 import re
-import sys
 from collections import OrderedDict
+
+
+def prepare_clusters(ifile, hierarchy=False):
+    with open(ifile, "r") as ifile:
+        output = ifile.readlines()
+    if output[-1] == "\n":
+        del output[-1]
+
+    if hierarchy:
+        for indx, line in enumerate(output):
+            regex = re.search("group_(.*)?\t", line).group(0)
+            line = re.sub("group_.*?\t", "", line)
+            line = re.sub("^-*[0-9]+\.[0-9]*\t", "", line)
+            line = line.split()
+            output[indx] = (regex, line)
+        output = OrderedDict(output)
+    else:
+        for indx, line in enumerate(output):
+            line = re.sub("group_.*?\t", "", line)
+            line = re.sub("^-*[0-9]+\.[0-9]*\t", "", line)
+            line = line.split()
+            output[indx] = line
+    return output
 
 
 class Comparison(object):
     def __init__(self, true_clusters, query_clusters):
-        self.true_clusters = self.prepare_clusters(true_clusters)
-        self.query_clusters = self.prepare_clusters(query_clusters)
+        self.true_clusters = prepare_clusters(true_clusters)
+        self.query_clusters = prepare_clusters(query_clusters)
 
         self.total_size = len([seq_id for cluster in self.true_clusters for seq_id in cluster])
 
@@ -47,20 +69,6 @@ class Comparison(object):
 
         self.pretty_out = ""
         self._prepare_difference()
-
-    @staticmethod
-    def prepare_clusters(ifile):
-        with open(ifile, "r") as ifile:
-            output = ifile.readlines()
-        if output[-1] == "\n":
-            del output[-1]
-
-        for indx, line in enumerate(output):
-            line = re.sub("group_.*?\t", "", line)
-            line = re.sub("^-*[0-9]+\.[0-9]*\t", "", line)
-            line = line.split()
-            output[indx] = line
-        return output
 
     def _prepare_difference(self):
         # For each query cluster, find the true cluster with the most overlap
