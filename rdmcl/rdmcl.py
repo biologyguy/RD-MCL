@@ -1759,14 +1759,29 @@ Continue? y/[n] """ % len(sequences)
     broker.close()
 
 
+def check_mafft_version():
+    mafft_version = Popen("%s --version" % MAFFT, stdout=PIPE, stderr=PIPE, shell=True).communicate()
+    mafft_version = mafft_version[1].decode()
+    mafft_version = float(re.search("v([0-9]+\.[0-9]+)", mafft_version).group(1))
+    return mafft_version
+
+
 def setup():
+    global MAFFT
     sys.stdout.write("\033[1mWelcome to RD-MCL!\033[m\nConfirming installation...\n\n")
 
     sys.stdout.write("\033[1mChecking for MAFFT:\033[m ")
+    try_install = False
     if os.path.isfile(MAFFT):
-        sys.stdout.write("\033[92mFound\033[39m\n")
+        ver = check_mafft_version()
+        if ver < 7.245:
+            sys.stdout.write("\033[91mVersion out of date (%s)\033[39m\n\n" % ver)
+            try_install = True
     else:
         sys.stdout.write("\033[91mMissing\033[39m\n\n")
+        try_install = True
+
+    if try_install:
         if br.ask("Would you like the setup script to try and install MAFFT? [y]/n:"):
             if shutil.which("conda"):
                 sys.stdout.write("\033[1mCalling conda...\033[m\n")
@@ -1798,10 +1813,15 @@ def setup():
                 Popen("make clean; make; make install", shell=True).wait()
                 os.chdir(cwd)
 
-            else:
-                sys.stdout.write("\033[91mFailed to install MAFFT.\033[39m\nPlease install the software yourself from "
-                                 "http://mafft.cbrc.jp/alignment/software/\n\n")
-                return
+        MAFFT = shutil.which("mafft") if shutil.which("mafft") \
+            else os.path.join(SCRIPT_PATH, "mafft", "bin", "mafft")
+
+        if not os.path.isfile(MAFFT) or check_mafft_version() < 7.245:
+            sys.stdout.write("\033[91mFailed to install MAFFT.\033[39m\nPlease install the software yourself from "
+                             "http://mafft.cbrc.jp/alignment/software/\n\n")
+            return
+    else:
+        sys.stdout.write("\033[92mFound\033[39m\n")
 
     sys.stdout.write("\033[1mChecking for PSIPRED:\033[m ")
     path_install = []
