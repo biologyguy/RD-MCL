@@ -1370,8 +1370,10 @@ def argparse_init():
                               help="Set minimum Gelman-Rubin PSRF value for convergence")
     parser_flags.add_argument("-cpu", "--max_cpus", type=int, action="store", default=CPUS,
                               help="Specify the maximum number of cores RD-MCL can use.")
+    parser_flags.add_argument("-f", "--force", action="store_true",
+                              help="Try to run no matter what.")
     parser_flags.add_argument("-q", "--quiet", action="store_true",
-                              help="Suppress all output during run (only final output is returned)")
+                              help="Suppress output during run (only final output is returned)")
 
     # Developer testing
     dev_flags = parser.add_argument_group(title="\033[1mDeveloper commands (caution!)\033[m")
@@ -1449,6 +1451,8 @@ Please do so now:
 
     mafft = Popen("%s --version" % MAFFT, stderr=PIPE, shell=True).communicate()[1].decode()
     logging.info("\nMAFFT version: %s" % mafft.strip())
+    logging.info("SeqBuddy version: %s.%s" % (Sb.VERSION.major, Sb.VERSION.minor))
+    logging.info("AlignBuddy version: %s.%s" % (Alb.VERSION.major, Sb.VERSION.minor))
 
     logging.warning("\nLaunching SQLite Daemon")
 
@@ -1459,6 +1463,23 @@ Please do so now:
                                        "graph TEXT", "cluster_score TEXT"])
     broker.start_broker()
     sequences = Sb.SeqBuddy(in_args.sequences)
+
+    # Do a check for large data sets and confirm run
+    if len(sequences) > 1000 and not in_args.force:
+        msg = """\
+WARNING: You are attempting to run RD-MCL on %s sequences. This will take a long time!
+Be aware that RD-MCL is NOT intended to identify orthogroups from among non-homologous
+sequences. If this is your goal, you should use other software like OrthoMCL or ProteinOrtho.
+RD-MCL is specifically for fine grained classification of individual protein families.
+Continue? y/[n] """ % len(sequences)
+        logging.info("\n%s\n" % msg)
+
+        if not br.ask(msg, default="no", timeout=120):
+            logging.warning("\nRun terminated. If you really do want to run this large job, use the -f flag.")
+            sys.exit()
+        else:
+            logging.warning("Proceeding with large run.\n")
+
     sequences = Sb.delete_metadata(sequences)
     check_sequences(sequences, in_args.taxa_separator)
     seq_ids_str = ", ".join(sorted([rec.id for rec in sequences.records]))
