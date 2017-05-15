@@ -87,7 +87,7 @@ TIMER = helpers.Timer()
 GAP_OPEN = -5
 GAP_EXTEND = 0
 BLOSUM62 = helpers.make_full_mat(SeqMat(MatrixInfo.blosum62))
-MCMCMC_CHAINS = 3
+MCMC_CHAINS = 3
 DR_BASE = 0.75
 GELMAN_RUBIN = 1.1
 
@@ -100,7 +100,7 @@ for aa in ambiguous_X:
 
 
 class Cluster(object):
-    def __init__(self, seq_ids, sim_scores, taxa_separator="-", parent=None, collapse=True, r_seed=None):
+    def __init__(self, seq_ids, sim_scores, taxa_sep="-", parent=None, collapse=True, r_seed=None):
         """
         - Note that reciprocal best hits between paralogs are collapsed when instantiating group_0, so
           no problem strongly penalizing all paralogs in the scoring algorithm
@@ -122,7 +122,7 @@ class Cluster(object):
                              " rows (observed %s rows)." % (len(seq_ids), expected_num_edges, len(sim_scores.index)))
 
         self.sim_scores = sim_scores
-        self.taxa_separator = taxa_separator
+        self.taxa_sep = taxa_sep
         self.parent = parent
 
         self.subgroup_counter = 0
@@ -134,7 +134,7 @@ class Cluster(object):
         self.taxa = OrderedDict()  # key = taxa id. value = list of genes coming fom that taxa.
         seq_ids = sorted(seq_ids)
         for next_seq_id in seq_ids:
-            taxa = next_seq_id.split(taxa_separator)[0]
+            taxa = next_seq_id.split(taxa_sep)[0]
             self.taxa.setdefault(taxa, [])
             self.taxa[taxa].append(next_seq_id)
 
@@ -168,11 +168,11 @@ class Cluster(object):
         while not breakout:
             breakout = True
             for seq1_id in self.seq_ids:
-                seq1_taxa = seq1_id.split(self.taxa_separator)[0]
+                seq1_taxa = seq1_id.split(self.taxa_sep)[0]
                 paralog_best_hits = []
                 for hit in self.get_best_hits(seq1_id).itertuples():
                     seq2_id = hit.seq1 if hit.seq1 != seq1_id else hit.seq2
-                    if seq2_id.split(self.taxa_separator)[0] != seq1_taxa:
+                    if seq2_id.split(self.taxa_sep)[0] != seq1_taxa:
                         paralog_best_hits = []
                         break
                     paralog_best_hits.append(seq2_id)
@@ -322,7 +322,7 @@ class Cluster(object):
         items_not_in_parent = set(self.seq_ids) - set(base_cluster.seq_ids)
         for orphan in items_not_in_parent:
             base_cluster.seq_ids.append(orphan)
-            orphan_taxa = orphan.split(self.taxa_separator)[0]
+            orphan_taxa = orphan.split(self.taxa_sep)[0]
             base_cluster.taxa.setdefault(orphan_taxa, [])
             base_cluster.taxa[orphan_taxa].append(orphan)
 
@@ -365,7 +365,7 @@ class Cluster(object):
         items_not_in_parent = set(self.seq_ids) - set(base_cluster.seq_ids)
         for orphan in items_not_in_parent:
             base_cluster.seq_ids.append(orphan)
-            orphan_taxa = orphan.split(self.taxa_separator)[0]
+            orphan_taxa = orphan.split(self.taxa_sep)[0]
             base_cluster.taxa.setdefault(orphan_taxa, [])
             base_cluster.taxa[orphan_taxa].append(orphan)
 
@@ -553,7 +553,7 @@ class Cluster(object):
 
         for indx, result in enumerate(combined):
             cluster_ids, cluster_sim_scores = result
-            cluster = Cluster(cluster_ids, sim_scores=cluster_sim_scores, taxa_separator=self.taxa_separator,
+            cluster = Cluster(cluster_ids, sim_scores=cluster_sim_scores, taxa_sep=self.taxa_sep,
                               parent=self)
             cluster.set_name()
             results.append(cluster)
@@ -562,7 +562,7 @@ class Cluster(object):
             sim_scores = self.pull_scores_subgraph(remaining_seqs)
 
             remaining_cluster = Cluster(remaining_seqs, sim_scores=sim_scores, parent=self,
-                                        taxa_separator=self.taxa_separator)
+                                        taxa_sep=self.taxa_sep)
             remaining_cluster.set_name()
             results.append(remaining_cluster)
         log_file.write("\tCliques identified and spun off:\n\t\t%s\n\n" %
@@ -658,7 +658,7 @@ def compare_psi_pred(psi1_df, psi2_df):
 
 
 def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progress, outdir, psi_pred_ss2_dfs,
-                      steps=1000, chains=3, walkers=2, quiet=True, taxa_separator="-", r_seed=None, convergence=None):
+                      steps=1000, chains=3, walkers=2, quiet=True, taxa_sep="-", r_seed=None, convergence=None):
     """
     Run MCMCMC on MCL to find the best orthogroups
     :param master_cluster: The group to be subdivided
@@ -673,7 +673,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     :param chains: Number of MCMCMC chains to spin off
     :param walkers: Number of Metropolis-Hastings walkers per chain
     :param quiet: Suppress StdErr
-    :param taxa_separator: The string that separates taxon names from gene names
+    :param taxa_sep: The string that separates taxon names from gene names
     :param r_seed: Set the random generator seed value
     :param convergence: Set minimum Gelman-Rubin PSRF value for convergence
     :return: list of sequence_ids objects
@@ -718,7 +718,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     try:
         open(os.path.join(temp_dir.path, "max.txt"), "w").close()
         mcmcmc_params = ["%s" % temp_dir.path, seqbuddy, master_cluster,
-                         taxa_separator, sql_broker, psi_pred_ss2_dfs, progress]
+                         taxa_sep, sql_broker, psi_pred_ss2_dfs, progress]
         mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, quiet=quiet,
                                        num_walkers=walkers, num_chains=chains, convergence=convergence,
                                        outfiles=os.path.join(temp_dir.path, "mcmcmc_out"), params=mcmcmc_params,
@@ -753,7 +753,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
             walker.score_history += [worst_score, best_score]
 
     mcmcmc_factory.reset_params(["%s" % temp_dir.path, seqbuddy, master_cluster,
-                                 taxa_separator, sql_broker, psi_pred_ss2_dfs, progress])
+                                 taxa_sep, sql_broker, psi_pred_ss2_dfs, progress])
     mcmcmc_factory.run()
     best_score = pd.DataFrame()
     for indx in range(len(mcmcmc_factory.chains)):
@@ -790,7 +790,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
             sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
 
         sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster,
-                              taxa_separator=taxa_separator, r_seed=rand_gen.randint(1, 999999999999999))
+                              taxa_sep=taxa_sep, r_seed=rand_gen.randint(1, 999999999999999))
         if sub_cluster.seq_id_hash == master_cluster.seq_id_hash:  # This shouldn't ever happen
             raise ArithmeticError("The sub_cluster and master_cluster are the same, but are returning different "
                                   "scores\nsub-cluster score: %s, master score: %s\n%s"
@@ -811,7 +811,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         # Recursion... Reassign cluster_list, as all clusters are returned at the end of a call to orthogroup_caller
         cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, sql_broker=sql_broker,
                                          progress=progress, outdir=outdir, steps=steps, quiet=quiet, chains=chains,
-                                         walkers=walkers, taxa_separator=taxa_separator, convergence=convergence,
+                                         walkers=walkers, taxa_sep=taxa_sep, convergence=convergence,
                                          r_seed=rand_gen.randint(1, 999999999999999), psi_pred_ss2_dfs=psi_pred_ss2_dfs)
 
     save_cluster("Sub clusters returned")
@@ -853,7 +853,7 @@ def mcmcmc_mcl(args, params):
     :return:
     """
     inflation, gq, r_seed = args
-    exter_tmp_dir, seqbuddy, parent_cluster, taxa_separator, sql_broker, psi_pred_ss2_dfs, progress = params
+    exter_tmp_dir, seqbuddy, parent_cluster, taxa_sep, sql_broker, psi_pred_ss2_dfs, progress = params
     rand_gen = Random(r_seed)
     mcl_obj = helpers.MarkovClustering(parent_cluster.sim_scores, inflation=inflation, edge_sim_threshold=gq)
     mcl_obj.run()
@@ -867,14 +867,14 @@ def mcmcmc_mcl(args, params):
         if graph and graph[0][0]:
             sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
             score += float()
-            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator,
+            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
                               r_seed=rand_gen.randint(1, 999999999999999))
         else:
             sb_copy = Sb.make_copy(seqbuddy)
             sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster_ids]))
             alb_obj = generate_msa(sb_copy, sql_broker)
             sim_scores = create_all_by_all_scores(alb_obj, psi_pred_ss2_dfs, quiet=True)
-            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator,
+            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
                               r_seed=rand_gen.randint(1, 999999999999999))
             cluster2database(cluster, sql_broker, alb_obj)
 
@@ -891,7 +891,7 @@ def mcmcmc_mcl(args, params):
         with open(os.path.join(exter_tmp_dir, "max.txt"), "w") as ofile:
             ofile.write("\n".join(results))
 
-        if len(results) == MCMCMC_CHAINS:
+        if len(results) == MCMC_CHAINS:
             best_score = None
             best_clusters = []  # Hopefully just find a single best set of cluster, but could be more
             for clusters in results:
@@ -903,7 +903,7 @@ def mcmcmc_mcl(args, params):
                     cluster_ids.append(sql_query[0][0])
                     if len(seq_ids) > 1:  # Prevent crash if pulling a cluster with a single sequence
                         sim_scores = pd.read_csv(StringIO(sql_query[0][1]), index_col=False, header=None)
-                        cluster = Cluster(seq_ids, sim_scores, parent=parent_cluster, taxa_separator=taxa_separator,
+                        cluster = Cluster(seq_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
                                           r_seed=rand_gen.randint(1, 999999999999))
                         score_sum += cluster.score()
 
@@ -934,16 +934,16 @@ def write_mcl_clusters(clusters, path):
     return
 
 
-def check_sequences(seqbuddy, taxa_separator):
-    logging.warning("Checking that the format of all sequence ids matches 'taxa%sgene'" % taxa_separator)
+def check_sequences(seqbuddy, taxa_sep):
+    logging.warning("Checking that the format of all sequence ids matches 'taxa%sgene'" % taxa_sep)
     failures = []
     for rec in seqbuddy.records:
-        rec_id = rec.id.split(taxa_separator)
+        rec_id = rec.id.split(taxa_sep)
         if len(rec_id) != 2:
             failures.append(rec.id)
     if failures:
         logging.error("Malformed sequence id(s): '%s'\nThe taxa separator character is currently set to '%s',\n"
-                      " which can be changed with the '-ts' flag" % (", ".join(failures), taxa_separator))
+                      " which can be changed with the '-ts' flag" % (", ".join(failures), taxa_sep))
         sys.exit()
     else:
         logging.warning("    %s sequences PASSED" % len(seqbuddy))
@@ -1330,10 +1330,18 @@ def argparse_init():
     parser = argparse.ArgumentParser(prog="rdmcl", formatter_class=fmt, add_help=False, usage=argparse.SUPPRESS,
                                      description='''\
 \033[1mRD-MCL\033[m
-  Identifying hierarchical orthogroups among homologous sequences
-
+  Got orthogroups?
+  
+  Recursive Dynamic Markov Clustering identifies MCL parameters that
+  maximize  one-to-one  placement  of  sequences  into  orthogroups.
+  Differences in evolutionary rates between orthogroups is accounted
+  for  by  recursively  decomposing  large clusters  where possible.
+   
+  \033[1m\033[91mAll  sequences  must  be  homologous! RD-MCL  is \033[4mNOT\033[24m  intended for
+  identifying  orthogroups  from  whole  genome/transcriptome  data.\033[m
+  
 \033[1mUsage\033[m:
-  rdmcl.py "/path/to/sequence_file" [-options]
+  rdmcl.py "/path/to/sequence_file" [outdir] [-options]
 ''')
 
     parser.register('action', 'setup', _SetupAction)
@@ -1349,38 +1357,43 @@ def argparse_init():
     # Optional commands
     parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
 
-    parser_flags.add_argument("-sql", "--sqlite_db", action="store", help="Specify a SQLite database location.")
-    parser_flags.add_argument("-psi", "--psi_pred_dir", action="store",
-                              help="If PSI-Pred files are pre-calculated, tell us where.")
-    parser_flags.add_argument("-mcs", "--mcmcmc_steps", default=0, type=int,
-                              help="Specify how deeply to sample MCL parameters")
-    parser_flags.add_argument("-ch", "--chains", default=MCMCMC_CHAINS, type=int,
-                              help="Specify how many MCMCMC chains to run (default=3)")
-    parser_flags.add_argument("-wlk", "--walkers", default=3, type=int,
-                              help="Specify how many Metropolis-Hastings walkers are in each chain (default=2)")
-    parser_flags.add_argument("-op", "--open_penalty", help="Penalty for opening a gap in pairwise alignment scoring",
-                              type=float, default=GAP_OPEN)
-    parser_flags.add_argument("-ep", "--extend_penalty", type=float, default=GAP_EXTEND,
-                              help="Penalty for extending a gap in pairwise alignment scoring")
-    parser_flags.add_argument("-ts", "--taxa_separator", action="store", default="-",
-                              help="Specify a string that separates taxa ids from gene names")
-    parser_flags.add_argument("-rs", "--r_seed", help="Specify a random seed for repeating a specific run", type=int)
-    parser_flags.add_argument("-drb", "--dr_base", help="Set the base for diminishing returns function", type=float)
-    parser_flags.add_argument("-cnv", "--converge", type=float,
-                              help="Set minimum Gelman-Rubin PSRF value for convergence")
-    parser_flags.add_argument("-cpu", "--max_cpus", type=int, action="store", default=CPUS,
-                              help="Specify the maximum number of cores RD-MCL can use.")
+    parser_flags.add_argument("-rs", "--r_seed", type=int, metavar="",
+                              help="Specify a random seed for repeating a specific run")
+    parser_flags.add_argument("-sql", "--sqlite_db", action="store", metavar="",
+                              help="If RD-MCL has already created a SQLite database, reusing it can speed things up")
+    parser_flags.add_argument("-psi", "--psipred_dir", action="store", metavar="",
+                              help="If RD-MCL has already calculated PSI-Pred files, point to the directory")
+    parser_flags.add_argument("-ts", "--taxa_sep", action="store", default="-", metavar="",
+                              help="Specify the string that separates taxa ids from gene names (default='-')")
+    parser_flags.add_argument("-ch", "--chains", default=MCMC_CHAINS, type=int, metavar="",
+                              help="Specify how many MCMC chains to run (default=3)")
+    parser_flags.add_argument("-wlk", "--walkers", default=3, type=int, metavar="",
+                              help="Specify how many Metropolis-Hastings walkers are in each chain (default=3)")
+    parser_flags.add_argument("-drb", "--dr_base", type=float, metavar="",
+                              help="Set the base for the diminishing-returns "
+                                   "orthogroup scoring function (default=%s)" % DR_BASE)
+    parser_flags.add_argument("-cnv", "--converge", type=float, metavar="",
+                              help="Set minimum Gelman-Rubin PSRF value for convergence (default=%s)" % GELMAN_RUBIN)
+    parser_flags.add_argument("-cpu", "--max_cpus", type=int, action="store", default=CPUS, metavar="",
+                              help="Specify the maximum number of cores RD-MCL can use (default=%s)" % CPUS)
+
+    parser_flags.add_argument("-mcs", "--mcmc_steps", default=0, type=int, metavar="",
+                              help="Specify a max number of MCMC steps (default=auto-detect)")
+    parser_flags.add_argument("-op", "--open_penalty", type=float, default=GAP_OPEN, metavar="",
+                              help="Penalty for opening a gap in pairwise alignment scoring (default=%s)" % GAP_OPEN)
+    parser_flags.add_argument("-ep", "--ext_penalty", type=float, default=GAP_EXTEND, metavar="",
+                              help="Penalty to extend a gap in pairwise alignment scoring (default=%s)" % GAP_EXTEND)
     parser_flags.add_argument("-f", "--force", action="store_true",
                               help="Try to run no matter what.")
     parser_flags.add_argument("-q", "--quiet", action="store_true",
                               help="Suppress output during run (only final output is returned)")
 
     # Developer testing
-    dev_flags = parser.add_argument_group(title="\033[1mDeveloper commands (caution!)\033[m")
+    dev_flags = parser.add_argument_group(title="\033[1mDeveloper commands (Caution!)\033[m")
     dev_flags.add_argument("-spc", "--suppress_paralog_collapse", action="store_true",
                            help="Do not merge best hit paralogs")
     dev_flags.add_argument("-sr", "--suppress_recursion", action="store_true",
-                           help="Stop after a single round of MCL. For testing.")
+                           help="Stop after a single round of MCL")
     dev_flags.add_argument("-scc", "--suppress_clique_check", action="store_true",
                            help="Do not check for or break up cliques")
     dev_flags.add_argument("-ssf", "--suppress_singlet_folding", action="store_true",
@@ -1481,7 +1494,7 @@ Continue? y/[n] """ % len(sequences)
             logging.warning("Proceeding with large run.\n")
 
     sequences = Sb.delete_metadata(sequences)
-    check_sequences(sequences, in_args.taxa_separator)
+    check_sequences(sequences, in_args.taxa_sep)
     seq_ids_str = ", ".join(sorted([rec.id for rec in sequences.records]))
     seq_ids_hash = helpers.md5_hash(seq_ids_str)
 
@@ -1527,16 +1540,16 @@ Continue? y/[n] """ % len(sequences)
     logging.warning("\n** PSI-Pred **")
     records_missing_ss_files = []
     records_with_ss_files = []
-    if in_args.psi_pred_dir and not os.path.isdir(in_args.psi_pred_dir):
+    if in_args.psipred_dir and not os.path.isdir(in_args.psipred_dir):
         logging.warning("PSI-Pred directory indicated below does not exits:\n%s \tUsing default location instead."
-                        % in_args.psi_pred_dir)
-        in_args.psi_pred_dir = False
+                        % in_args.psipred_dir)
+        in_args.psipred_dir = False
 
-    in_args.psi_pred_dir = "{0}{1}psi_pred".format(in_args.outdir, os.sep) if not in_args.psi_pred_dir \
-        else in_args.psi_pred_dir
+    in_args.psipred_dir = "{0}{1}psi_pred".format(in_args.outdir, os.sep) if not in_args.psipred_dir \
+        else in_args.psipred_dir
 
     for record in sequences.records:
-        if os.path.isfile(os.path.join(in_args.psi_pred_dir, "%s.ss2" % record.id)):
+        if os.path.isfile(os.path.join(in_args.psipred_dir, "%s.ss2" % record.id)):
             records_with_ss_files.append(record.id)
         else:
             records_missing_ss_files.append(record)
@@ -1545,21 +1558,21 @@ Continue? y/[n] """ % len(sequences)
 
     if records_missing_ss_files:
         logging.warning("Executing PSI-Pred on %s sequences" % len(records_missing_ss_files))
-        br.run_multicore_function(records_missing_ss_files, mc_psi_pred, [in_args.psi_pred_dir], max_processes=CPUS)
+        br.run_multicore_function(records_missing_ss_files, mc_psi_pred, [in_args.psipred_dir], max_processes=CPUS)
         logging.info("\t-- finished in %s --" % TIMER.split())
-        logging.info("\tfiles saved to {0}{1}".format(in_args.psi_pred_dir, os.sep))
+        logging.info("\tfiles saved to {0}{1}".format(in_args.psipred_dir, os.sep))
     else:
         logging.warning("RESUME: All PSI-Pred .ss2 files found")
 
     psi_pred_files = []
     for record in sequences.records:
-        psi_pred_files.append((record.id, read_ss2_file(os.path.join(in_args.psi_pred_dir, "%s.ss2" % record.id))))
+        psi_pred_files.append((record.id, read_ss2_file(os.path.join(in_args.psipred_dir, "%s.ss2" % record.id))))
 
     psi_pred_files = OrderedDict(psi_pred_files)
 
     # Initial alignment
     logging.warning("\n** All-by-all graph **")
-    logging.info("gap open penalty: %s\ngap extend penalty: %s" % (in_args.open_penalty, in_args.extend_penalty))
+    logging.info("gap open penalty: %s\ngap extend penalty: %s" % (in_args.open_penalty, in_args.ext_penalty))
 
     align_data = broker.query("SELECT (alignment) FROM data_table WHERE hash='{0}'".format(seq_ids_hash))
     if align_data and align_data[0][0]:
@@ -1593,13 +1606,13 @@ Continue? y/[n] """ % len(sequences)
 
     # First push the really raw first alignment in the database, without any collapsing.
     uncollapsed_group_0 = Cluster([rec.id for rec in sequences.records], scores_data,
-                                  taxa_separator=in_args.taxa_separator, collapse=False, r_seed=in_args.r_seed)
+                                  taxa_sep=in_args.taxa_sep, collapse=False, r_seed=in_args.r_seed)
     cluster2database(uncollapsed_group_0, broker, alignbuddy)
 
     # Then prepare the 'real' group_0 cluster
     if not in_args.suppress_paralog_collapse:
         group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data,
-                                  taxa_separator=in_args.taxa_separator, r_seed=in_args.r_seed)
+                                  taxa_sep=in_args.taxa_sep, r_seed=in_args.r_seed)
     else:
         group_0_cluster = uncollapsed_group_0
     cluster2database(group_0_cluster, broker, alignbuddy)
@@ -1611,16 +1624,16 @@ Continue? y/[n] """ % len(sequences)
     # Ortholog caller
     logging.warning("\n** Recursive MCL **")
     global GELMAN_RUBIN
-    if in_args.mcmcmc_steps >= 100:
-        logging.warning("User specified maximum MCMCMC steps: %s" % in_args.mcmcmc_steps)
-    elif in_args.mcmcmc_steps == 0:
+    if in_args.mcmc_steps >= 100:
+        logging.warning("User specified maximum MCMCMC steps: %s" % in_args.mcmc_steps)
+    elif in_args.mcmc_steps == 0:
         logging.warning("Auto detect MCMCMC convergence")
     else:
         logging.warning("User specified maximum MCMCMC steps of %s is too low (min=100). "
-                        "Switching to auto-detect" % in_args.mcmcmc_steps)
-        in_args.mcmcmc_steps = 0
+                        "Switching to auto-detect" % in_args.mcmc_steps)
+        in_args.mcmc_steps = 0
 
-    if in_args.mcmcmc_steps < 100:
+    if in_args.mcmc_steps < 100:
         GELMAN_RUBIN = in_args.converge if in_args.converge else GELMAN_RUBIN
         logging.warning("Gelman-Rubin convergence breakpoint: %s" % GELMAN_RUBIN)
 
@@ -1631,8 +1644,8 @@ Continue? y/[n] """ % len(sequences)
                         "Switching to 3" % in_args.chains)
         in_args.chains = 3
 
-    global MCMCMC_CHAINS
-    MCMCMC_CHAINS = in_args.chains
+    global MCMC_CHAINS
+    MCMC_CHAINS = in_args.chains
 
     if in_args.walkers >= 2:
         logging.warning("Number of Metropolis-Hastings walkers per chain: %s" % in_args.walkers)
@@ -1648,9 +1661,9 @@ Continue? y/[n] """ % len(sequences)
     if not in_args.quiet:
         run_time.start()
     final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences, sql_broker=broker,
-                                       progress=progress_tracker, outdir=in_args.outdir, steps=in_args.mcmcmc_steps,
-                                       quiet=True, taxa_separator=in_args.taxa_separator, r_seed=in_args.r_seed,
-                                       psi_pred_ss2_dfs=psi_pred_files, chains=MCMCMC_CHAINS, walkers=in_args.walkers,
+                                       progress=progress_tracker, outdir=in_args.outdir, steps=in_args.mcmc_steps,
+                                       quiet=True, taxa_sep=in_args.taxa_sep, r_seed=in_args.r_seed,
+                                       psi_pred_ss2_dfs=psi_pred_files, chains=MCMC_CHAINS, walkers=in_args.walkers,
                                        convergence=GELMAN_RUBIN)
     final_clusters = [cluster for cluster in final_clusters if cluster.subgroup_counter == 0]
     run_time.end()
@@ -1711,7 +1724,7 @@ Continue? y/[n] """ % len(sequences)
                 outfile.write("\n\n")
             for gene_id, paralog_list in clust.collapsed_genes.items():
                 clust.seq_ids += paralog_list
-                clust.taxa[gene_id.split(in_args.taxa_separator)[0]].append(gene_id)
+                clust.taxa[gene_id.split(in_args.taxa_sep)[0]].append(gene_id)
         clust.score(force=True)
 
     logging.warning("Preparing final_clusters.txt")

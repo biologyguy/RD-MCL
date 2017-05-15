@@ -31,7 +31,7 @@ def test_cluster_instantiate_group_0(hf):
     assert [taxa for taxa in cluster.taxa] == ['BOL', 'Bab', 'Bch', 'Bfo', 'Bfr', 'Cfu', 'Dgl', 'Edu', 'Hca', 'Hru',
                                                'Hvu', 'Lcr', 'Lla', 'Mle', 'Oma', 'Pba', 'Tin', 'Vpa']
     assert hf.string2hash(cluster.sim_scores.to_csv()) == "ae11f765826e65eeefb52c3d04776d9b"
-    assert cluster.taxa_separator == "-"
+    assert cluster.taxa_sep == "-"
     assert cluster.parent is None
     assert cluster.subgroup_counter == 0
     assert cluster.cluster_score is None
@@ -82,7 +82,7 @@ def test_cluster_instantiate_child(hf):
     assert [taxa for taxa in cluster.taxa] == ['BOL', 'Bab', 'Bch', 'Bfo', 'Dgl', 'Edu', 'Hca',
                                                'Hru', 'Lcr', 'Mle', 'Oma', 'Tin', 'Vpa']
     assert hf.string2hash(cluster.sim_scores.to_csv()) == "eb1ef296e9f4e74cd6deea490a447326"
-    assert cluster.taxa_separator == "-"
+    assert cluster.taxa_sep == "-"
     assert cluster.parent._name == "group_0"
     assert cluster.subgroup_counter == 0
     assert cluster.cluster_score is None
@@ -667,7 +667,7 @@ def test_mcmcmc_mcl(hf):
                    'Vpa-PanxαB', 'Oma-PanxαC', 'Edu-PanxαA', 'Bch-PanxαC']
     seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
     seqbuddy = rdmcl.Sb.pull_recs(seqbuddy, "^%s$" % "$|^".join(cluster_ids))
-    taxa_separator = "-"
+    taxa_sep = "-"
     sql_broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
     sql_broker.start_broker()
     
@@ -679,7 +679,7 @@ def test_mcmcmc_mcl(hf):
     progress = rdmcl.Progress(os.path.join(ext_tmp_dir.path, "progress"), cluster)
 
     args = (6.372011782427792, 0.901221218627, 1)  # inflation, gq, r_seed
-    params = [ext_tmp_dir.path, seqbuddy, cluster, taxa_separator, sql_broker, psi_pred_ss2_dfs, progress]
+    params = [ext_tmp_dir.path, seqbuddy, cluster, taxa_sep, sql_broker, psi_pred_ss2_dfs, progress]
 
     assert rdmcl.mcmcmc_mcl(args, params) == 18.307692307692307
     with open(os.path.join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
@@ -922,9 +922,9 @@ parser.add_argument("sequences", help="Location of sequence file", action="store
 parser.add_argument("outdir", action="store", default=os.path.join(os.getcwd(), "rd-mcd"), nargs="*",
                     help="Where should results be written?")
 parser.add_argument("-sql", "--sqlite_db", action="store", help="Specify a SQLite database location.")
-parser.add_argument("-psi", "--psi_pred_dir", action="store",
+parser.add_argument("-psi", "--psipred_dir", action="store",
                     help="If PSI-Pred files are pre-calculated, tell us where.")
-parser.add_argument("-mcs", "--mcmcmc_steps", default=1000, type=int,
+parser.add_argument("-mcs", "--mcmc_steps", default=1000, type=int,
                     help="Specify how deeply to sample MCL parameters")
 parser.add_argument("-sr", "--suppress_recursion", action="store_true",
                     help="Stop after a single round of MCL. For testing.")
@@ -940,9 +940,9 @@ parser.add_argument("-nt", "--no_msa_trim", action="store_true",
                     help="Don't apply the gappyout algorithm to MSAs before scoring")
 parser.add_argument("-op", "--open_penalty", help="Penalty for opening a gap in pairwise alignment scoring",
                     type=float, default=rdmcl.GAP_OPEN)
-parser.add_argument("-ep", "--extend_penalty", help="Penalty for extending a gap in pairwise alignment scoring",
+parser.add_argument("-ep", "--ext_penalty", help="Penalty for extending a gap in pairwise alignment scoring",
                     type=float, default=rdmcl.GAP_EXTEND)
-parser.add_argument("-ts", "--taxa_separator", action="store", default="-",
+parser.add_argument("-ts", "--taxa_sep", action="store", default="-",
                     help="Specify a string that separates taxa ids from gene names")
 parser.add_argument("-cpu", "--max_cpus", type=int, action="store", default=rdmcl.CPUS,
                     help="Specify the maximum number of cores RD-MCL can use.")
@@ -950,7 +950,7 @@ parser.add_argument("-drb", "--dr_base", help="Set the base for diminishing retu
 parser.add_argument("-cnv", "--converge", type=float,
                     help="Set minimum Gelman-Rubin PSRF value for convergence")
 parser.add_argument("-rs", "--r_seed", help="Specify a random seed for repeating a specific run", type=int)
-parser.add_argument("-ch", "--chains", default=rdmcl.MCMCMC_CHAINS, type=int,
+parser.add_argument("-ch", "--chains", default=rdmcl.MCMC_CHAINS, type=int,
                     help="Specify how many MCMCMC chains to run (default=3)")
 parser.add_argument("-wlk", "--walkers", default=3, type=int,
                     help="Specify how many Metropolis-Hastings walkers are in each chain (default=2)")
@@ -969,9 +969,9 @@ def test_argparse_init(monkeypatch, hf):
     argv = ['rdmcl.py', os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa"), out_dir.path]
     monkeypatch.setattr(rdmcl.sys, "argv", argv)
     temp_in_args = rdmcl.argparse_init()
-    assert temp_in_args.mcmcmc_steps == 0
+    assert temp_in_args.mcmc_steps == 0
     assert temp_in_args.open_penalty == -5
-    assert temp_in_args.extend_penalty == 0
+    assert temp_in_args.ext_penalty == 0
 
 
 def test_full_run(hf, capsys):
@@ -984,8 +984,8 @@ def test_full_run(hf, capsys):
     test_in_args.sequences = os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa")
     test_in_args.outdir = out_dir.path
     test_in_args.sqlite_db = os.path.join(hf.resource_path, "db.sqlite")
-    test_in_args.psi_pred_dir = os.path.join(hf.resource_path, "psi_pred")
-    test_in_args.mcmcmc_steps = 10
+    test_in_args.psipred_dir = os.path.join(hf.resource_path, "psi_pred")
+    test_in_args.mcmc_steps = 10
     test_in_args.r_seed = 1
     rdmcl.full_run(test_in_args)
 
@@ -1037,8 +1037,8 @@ group_0_0_1\t3.75\tLcr-PanxαK\tMle-Panxα7A
     seqbuddy.write(os.path.join(out_dir.path, "seqbuddy"))
     test_in_args.sequences = os.path.join(out_dir.path, "seqbuddy")
     test_in_args.outdir = out_dir.path
-    test_in_args.psi_pred_dir = "foo-bared_psi_pred"  # This doesn't exist
-    test_in_args.mcmcmc_steps = 10
+    test_in_args.psipred_dir = "foo-bared_psi_pred"  # This doesn't exist
+    test_in_args.mcmc_steps = 10
     test_in_args.r_seed = 1
     rdmcl.full_run(test_in_args)
 
