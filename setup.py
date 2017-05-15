@@ -35,7 +35,7 @@ DEPENDENCIES = [
     'scipy',
     'statsmodels',
     'biopython',
-    'buddysuite',
+    'buddysuite>=1.2.6',
     'pyvolve',
 ]
 
