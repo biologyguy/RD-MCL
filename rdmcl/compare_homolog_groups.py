@@ -149,23 +149,52 @@ class Cluster(rdmcl.Cluster):
             self.max_genes_in_a_taxa = max([len(self.taxa[taxa]) for taxa in self.taxa])
 
 
-if __name__ == '__main__':
+def main():
     import argparse
+    from buddysuite import buddy_resources as br
 
-    parser = argparse.ArgumentParser(prog="compare_homolog_groups", description="",
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("true_clusters", help="Input file 1", action="store")
-    parser.add_argument("query_clusters", help="Input file 2", action="store")
-    parser.add_argument("--score", "-s", action="store_true")
-    parser.add_argument("--group_split", "-gs", action="store", default="\n",
-                        help="specify the delimiting string between groups")
-    parser.add_argument("--taxa_split", "-ts", action="store", default=" ",
-                        help="specify the delimiting string between taxa")
-    parser.add_argument("--output_file", "-o", help="Specify a location to send an output file.", action="store")
+    def fmt(prog):
+        return br.CustomHelpFormatter(prog)
+
+    parser = argparse.ArgumentParser(prog="compare_homolog_groups", formatter_class=fmt, add_help=False,
+                                     usage=argparse.SUPPRESS, description='''\
+\033[1mCompare homolog groups\033[m
+  An RD-MCL output visualization tool
+     
+  Pass in a file containing the 'true' orthogroups and a file 
+  containing inferred orthogroups. A colorful comparison will
+  be created!
+  
+\033[1mUsage\033[m:
+  compare_homolog_groups "/path/to/true" "/path/to/inferred" [-options]
+''')
+
+    parser.register('action', 'setup', rdmcl._SetupAction)
+
+    # Positional
+    positional = parser.add_argument_group(title="\033[1mPositional argument\033[m")
+
+    positional.add_argument("true_clusters", help="Input file 1", action="store")
+    positional.add_argument("query_clusters", help="Input file 2", action="store")
+
+    # Optional commands
+    parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
+
+    parser_flags.add_argument("--score", "-s", action="store_true",
+                              help="Output a table of similarity instead of sequence ids")
+    # parser.add_argument("--group_split", "-gs", action="store", default="\n",
+    #                    help="specify the delimiting string between groups")
+    # parser.add_argument("--taxa_split", "-ts", action="store", default=" ",
+    #                    help="specify the delimiting string between taxa")
+    # parser.add_argument("--output_file", "-o", help="Specify a location to send an output file.", action="store")
+
+    # Misc
+    misc = parser.add_argument_group(title="\033[1mMisc options\033[m")
+    misc.add_argument('-h', '--help', action="help", help="Show this help message and exit")
 
     in_args = parser.parse_args()
 
-    ofile = None if not in_args.output_file else os.path.abspath(in_args.output_file)
+    # ofile = None if not in_args.output_file else os.path.abspath(in_args.output_file)
 
     comparison = Comparison(in_args.true_clusters, in_args.query_clusters)
 
@@ -178,3 +207,6 @@ if __name__ == '__main__':
         print("True score:   %s\n" % round(comparison.true_score, 2))
     else:
         print(comparison.pretty_out)
+
+if __name__ == '__main__':
+    main()

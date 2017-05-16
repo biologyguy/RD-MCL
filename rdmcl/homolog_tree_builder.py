@@ -157,20 +157,45 @@ class CtenoColors(object):
         except KeyError:
             return tuple([0, 0, 0])
 
-if __name__ == '__main__':
-    import argparse
 
-    parser = argparse.ArgumentParser(prog="homolog_tree_builder", description="",
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("support", help="", action="store")
-    parser.add_argument("-panx", "--ctenos_panxs", action="store_true", help="Add color to Ctenophore pannexins.")
+def main():
+    import argparse
+    from buddysuite import buddy_resources as br
+
+    def fmt(prog):
+        return br.CustomHelpFormatter(prog)
+
+    parser = argparse.ArgumentParser(prog="homolog_tree_builder", formatter_class=fmt, add_help=False,
+                                     usage=argparse.SUPPRESS, description='''\
+\033[1mHomolog Tree Builder\033[m
+  An RD-MCL output visualization tool
+     
+  Pass in a file containing orthogroups and it will be converted
+  into an hierarchical tree!
+  
+\033[1mUsage\033[m:
+  homolog_tree_builder "/path/to/clusters" [-options]
+''')
+
+    # Positional
+    positional = parser.add_argument_group(title="\033[1mPositional argument\033[m")
+
+    positional.add_argument("cluster_file", help="Specify a cluster file (like 'final_clusters.txt' following RD-MCL)")
+
+    # Developer testing
+    dev_flags = parser.add_argument_group(title="\033[1mDeveloper commands\033[m")
+    dev_flags.add_argument("-panx", "--ctenos_panxs", action="store_true", help="Add color to Ctenophore pannexins.")
+
+    # Misc
+    misc = parser.add_argument_group(title="\033[1mMisc options\033[m")
+    misc.add_argument('-h', '--help', action="help", help="Show this help message and exit")
 
     in_args = parser.parse_args()
     ctenos = CtenoColors()
-    support_file = prepare_clusters(in_args.support, hierarchy=True)
+    cluster_file = prepare_clusters(in_args.cluster_file, hierarchy=True)
 
     nodes = []
-    for rank, node in support_file.items():
+    for rank, node in cluster_file.items():
         leaves = []
         for leaf in node:
             if in_args.ctenos_panxs:
@@ -191,3 +216,7 @@ if __name__ == '__main__':
 
     nexus = Nexus(nodes)
     print(nexus.print())
+
+
+if __name__ == '__main__':
+    main()

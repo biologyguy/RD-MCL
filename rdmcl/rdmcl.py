@@ -1341,7 +1341,7 @@ def argparse_init():
   identifying  orthogroups  from  whole  genome/transcriptome  data.\033[m
   
 \033[1mUsage\033[m:
-  rdmcl.py "/path/to/sequence_file" [outdir] [-options]
+  rdmcl "/path/to/sequence_file" [outdir] [-options]
 ''')
 
     parser.register('action', 'setup', _SetupAction)
@@ -1403,7 +1403,7 @@ def argparse_init():
 
     # Misc
     misc = parser.add_argument_group(title="\033[1mMisc options\033[m")
-    misc.add_argument('-h', '--help', action="help", help="show this help message and exit")
+    misc.add_argument('-h', '--help', action="help", help="Show this help message and exit")
     misc.add_argument('-v', '--version', action='version', version="RD-MCL version %s\n\n%s" % (VERSION, NOTICE))
     misc.add_argument("-setup", action="setup", dest=argparse.SUPPRESS, default=argparse.SUPPRESS)
 
