@@ -5,7 +5,10 @@
 """
 Convert the output from orthogroup_caller into an SVG tree of polytomies
 """
-from compare_homolog_groups import prepare_clusters
+try:
+    from rdmcl.compare_homolog_groups import prepare_clusters
+except ImportError:
+    from compare_homolog_groups import prepare_clusters
 
 
 class Nexus(object):
