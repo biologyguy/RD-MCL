@@ -194,13 +194,13 @@ def test_cluster_get_base_cluster(hf):
     child_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC']
     sim_scores = hf.get_sim_scores(child_ids)
     child = rdmcl.Cluster(child_ids, sim_scores, parent=parent)
-    assert child.score() == 8.575000000000003
+    assert round(child.score(), 3) == 8.575
     child.seq_ids.append("Foo-Bar3")
-    assert child.score(force=True) == 8.510526315789475
+    assert round(child.score(force=True), 12) == 8.510526315789
 
     # Edge case where child is full size of parent
     child = rdmcl.Cluster(parent.seq_ids, parent.sim_scores, parent=parent)
-    assert child.score() == 264.57969700077973
+    assert round(child.score(), 12) == 264.57969700078
 
 
 def test_cluster_pull_scores_subgraph(hf):
