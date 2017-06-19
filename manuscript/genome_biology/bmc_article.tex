@@ -89,7 +89,7 @@
 \begin{frontmatter}
 
 \begin{fmbox}
-\dochead{Method}
+\dochead{Software}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                          %%
@@ -244,11 +244,82 @@ Blahh
 %% Background %%
 %%
 \section*{Background and rationale}
-When a gene evolves an important physiological role, purifying selection tends to maintain that function through evolutionary time \cite{Altenhoff:2012ea, Rogozin:2014fp, KryuchkovaMostacci:2016iw}. As a result, orthology (i.e., homology via speciation) has become a widely used predictor of shared gene product function among species, with considerable effort made to develop computational methods for identifying orthologs. The algorithms currently in popular use fall into two distinct categories: Tree-based and graph-based clustering methods. Ortholog prediction methods have been recently reviewed by Fredj Tekaia \cite{Tekaia:2016ga}; although, breifly, tree-based approaches (e.g., Ensembl Compara \cite{Vilella:2009ju}, LOFT \cite{vanderHeijden:2007bo}, and SYNERGY \cite{Wapinski:2007fa}) broadly rely on estimating a phylogenetic tree for a target gene family, and then reconciling the gene tree with a `known' species tree to identify orthologous clades. While tree-based methods are very accurate under ideal conditions, estimating the species trees they rely on creates a considerable source of uncertainty \cite{Xu:2016ek}. Alternatively, pairwise similarity graph clustering methods leverage graph theory to rapidly identify groups of related sequences from genome scale datasets. Due to the non-transitive nature of orthology (i.e., paralogs in one species can be orthologous to a single gene in another species), groupings of pure orthologs may not be possible. Instead, the term `orthogroup' has come to represent a cluster of genes desended from a common ancestor of the clade in question, which may include paralogs \cite{Wapinski:2007fa}. InParanoid \cite{OBrien:2005cy}, EggNOG \cite{Jensen:2007cc}, and OMA \cite{Roth:2009iu} are popular tools for assigning sequences to orthogroups using a `best-hit clique' approach, where closed best-hit sub-graphs are identified in the dataset. While accurate within each sub-graph, these methods tend to be overly strict in their assignment; this causes an under-representation of actual orthologous relationships among many species. Alternatively, Markov clustering (MCL) is very efficient at isolating more inclusive sub-graphs. OrthoMCL is one of the most popular MCL-based ortholog prediction methods \cite{Li:2003en}, but it is prone to placing too many in-paralogs into orthogroups (i.e., it is less precise). In the current study we have increased the overall resolving power of de novo MCL-based orthogroup assignment with a number of novel enhancements, including refinement of the pairwise similarity metrics, using a supervised heuristic to dynamically select MCL parameters, recursively subdividing orthogroups, and testing putative orthogroups for best-hit cliques to maximize resolution.
+When a gene evolves an important physiological function, purifying selection tends to maintain that function through evolutionary time \cite{Altenhoff:2012ea, Rogozin:2014fp, KryuchkovaMostacci:2016iw}. As a result, orthology (i.e., homology via speciation) has become a widely used predictor of shared gene product function among species, with considerable effort made to develop computational methods for identifying orthologs. The algorithms currently in popular use fall into two broad categories: Tree-based and graph-based clustering methods (recently reviewed by Fredj Tekaia \cite{Tekaia:2016ga}). Breifly, tree-based approaches (e.g., Ensembl Compara \cite{Vilella:2009ju}, LOFT \cite{vanderHeijden:2007bo}, and SYNERGY \cite{Wapinski:2007fa}) identify orthologous clades by estimating phylogenetic trees for a target gene family, and then attempt to reconcile those gene trees against a `known' species tree. While tree-based methods are very accurate under ideal conditions, they are very sensitive to the accuracy of the species trees they rely on, which can become a considerable source of uncertainty or error \cite{Xu:2016ek}. Alternatively, pairwise similarity graph clustering methods leverage graph theory to rapidly identify groups of related sequences from genome scale datasets. Due to the non-transitive nature of orthology (i.e., paralogs in one species can be orthologous to a single gene in another species), groupings of pure orthologs may not be possible. Instead, the term `orthogroup' has come to represent a cluster of genes desended from a common ancestor of the clade in question, which may include paralogs \cite{Wapinski:2007fa}. InParanoid \cite{OBrien:2005cy}, EggNOG \cite{Jensen:2007cc}, and OMA \cite{Roth:2009iu} are popular tools for assigning sequences to orthogroups using a `best-hit clique' approach, where closed best-hit sub-graphs are identified in the dataset. While accurate within each sub-graph, these methods tend to be overly strict in their assignment; this causes an under-representation of actual orthologous relationships among many species. Alternatively, Markov clustering (MCL) is very efficient at isolating more inclusive sub-graphs. OrthoMCL is one of the most popular MCL-based ortholog prediction methods \cite{Li:2003en}, but it is prone to placing too many in-paralogs into orthogroups (i.e., it is less precise).
+
+For coarse-grained, genome-wide analysis, many of the tools mentioned above perform very well.
+
+In the current study we have increased the overall resolving power of MCL-based orthogroup assignment with a number of novel enhancements, including refinement of the pairwise similarity metrics, using an optimization algorithm to dynamically select MCL parameters, recursively subdividing orthogroups, and testing putative orthogroups for best-hit cliques to maximize resolution.
 
 
+\section*{Results}
+The imputus for developing RD-MCL was to predict high-quality fine-grained orthogroups among sequences from a defined gene family.
+
+\subsection*{Description of the RD-MCL algorithm and software}
+Spill some ink regarding in/out paralogs \cite{Sonnhammer:2002vm,Tekaia:2016ga}.
+
+BLAST scores (bit or e-value) have a strong length bias when calculating orthogroups \cite{Emms:2015ig}. OrthoFinder also uses a static inflation/edge similarity threashold \cite{Emms:2015ig}
+
+\subsection*{Simulation data across the dynamic range of RD-MCL}
+\subsubsection*{Branch lengths}
+Ipsum lorum
+
+\subsubsection*{Number of sequences}
+Ipsum lorum
+
+\subsubsection*{Missing data}
+Ipsum lorum
+
+\subsubsection*{Gene duplications}
+Ipsum lorum
+
+\subsubsection*{Hybrid sequences (weird domain structures)}
+Ipsum lorum
+
+\subsection*{RD-MCL classification of known gene families}
+Ipsum lorum
+
+\subsubsection*{Gene family 1}
+Ipsum lorum
+
+\subsubsection*{Gene family 2}
+Ipsum lorum
+
+\subsection*{RD-MCL classification of new gene families}
+Ipsum lorum
+
+\subsubsection*{Gene family 1}
+Ipsum lorum
+
+\subsubsection*{Gene family 2}
+Ipsum lorum
+
+\section*{Conclusions}
+Can't wait to share my conclusions.
 
 \section*{Methods}
+\subsubsection*{RD-MCL fitness function}
+Putative orthogroups were assigned a score based on the size and composition of the cluster, as well as the entire population of sequences available.
+
+Let each sequence $s$ be an element of a set $T$ where all sequences come from the same taxa $j$.
+
+\[ T_j = \{s:s \in j\} \]
+
+All sequences are assigned a base score $S$, and the minimum score is set to 1. This minimum score is applied to all sequences belonging to the largest set of sequences $T^*$.
+
+\[ T^* = T_j:|T_j| = max(|T|) \]
+
+\[S_{T^*} = 1 \]
+
+All remaining squences are assigned a value greater than 1, proportional to the size of the set it belongs to relative to $T^*$.
+
+\[ S_{T_j} = \frac{|T^*|}{|T_j|} \]
+
+
+To penalize the inclusion of multiple sequences from a single taxa in a given putative orthogroup $O$, a diminishing returns function was implemented; whereby the sequences in the cluster were sorted into the fewest number of subsets of largest possible size where each taxa is represented only once. The sum score for each subset is determined, and then in diminishing order of subset size,
+
+\subsubsection*{Markov chain convergence}
+
+
 - I used MAFFT \cite{Katoh:2013hm}, because it's awesome.
 
 - The COG, KOG, arCOG databases may all be rich sources of data for validation. COGs are `clusters of orthologous genes', which can includes many individual orthogroups.
@@ -265,7 +336,7 @@ When a gene evolves an important physiological role, purifying selection tends t
 
 - Try OrthoFinder length-normalized bit scores as similarity metric between sequences \cite{Emms:2015ig}.
 
-- Use precision and recall as measures of accuracy of simulated data 
+- Use precision and recall as measures of accuracy of simulated data
 
 (https://en.wikipedia.org/wiki/Precision\_and\_recall and \cite{Emms:2015ig})
 
@@ -275,24 +346,14 @@ $Recall = \frac{TP}{TP + FN}$
 
 $F-Score = 2 * \frac{precision * recall}{precision + recall}$
 
-Where TP is True Positive, FP is False Positives, and FN is False Negatives. 
+Where TP is True Positive, FP is False Positives, and FN is False Negatives.
 
-- Create raw clusters using MMseqs2.0 
+- Create raw clusters using MMseqs2.0
 
 (https://github.com/soedinglab/MMseqs2).
 
 - Output orthogroups in plain text and the \textit{Quest for Orthologs} community standard OrthoXML \cite{Dessimoz:2012dj}
 
-
-\section*{Results and Discussion}
-\subsection*{This is a subsection header}
-Spill some ink regarding in/out paralogs \cite{Sonnhammer:2002vm,Tekaia:2016ga}.
-
-BLAST scores (bit or e-value) have a strong length bias when calculating orthogroups \cite{Emms:2015ig}. OrthoFinder also uses a static inflation/edge similarity threashold \cite{Emms:2015ig}
-
-
-\section*{Conclusions}
-Can't wait to share my conclusions.
 
 % \subsection*{Sub-heading for section}
 % Text for this sub-heading \ldots
