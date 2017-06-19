@@ -22,7 +22,7 @@ class SQLiteBroker(object):
     def __init__(self, db_file="sqlite_db.sqlite"):
         self.db_file = db_file
         self.connection = sqlite3.connect(self.db_file)
-        self.cursor = self.connection.cursor()
+        self.broker_cursor = self.connection.cursor()
         self.broker_queue = SimpleQueue()
         self.broker = None
 
@@ -37,7 +37,7 @@ class SQLiteBroker(object):
         """
         fields = ", ".join(fields)
         try:
-            self.cursor.execute("CREATE TABLE %s (%s)" % (table_name, fields))
+            self.broker_cursor.execute("CREATE TABLE %s (%s)" % (table_name, fields))
         except sqlite3.OperationalError:
             pass
         return
@@ -49,16 +49,16 @@ class SQLiteBroker(object):
                 if query['mode'] == 'sql':
                     pipe = query['pipe']
                     try:
-                        self.cursor.execute(query['sql'])
+                        self.broker_cursor.execute(query['sql'], query['values'])
                     except sqlite3.OperationalError as err:
                         if "database is locked" in str(err):
                             # Wait a few seconds and try one more time, it might get through.
                             sleep(5)
-                            self.cursor.execute(query['sql'])
+                            self.broker_cursor.execute(query['sql'], query['values'])
                         else:
                             print("Failed query: %s" % query['sql'])
                             raise err
-                    response = self.cursor.fetchall()
+                    response = self.broker_cursor.fetchall()
                     pipe.send(json.dumps(response))
                 elif query['mode'] == 'stop':
                     break
@@ -79,14 +79,35 @@ class SQLiteBroker(object):
             pass  # Don't move on until the broker is all done doing whatever it might be doing
         return
 
-    def query(self, sql):
+    def query(self, sql, values=None, errors=True):
+        """
+        :param sql: SQL string
+        :param values: If question marks are used in SQL command, pass in replacement values as tuple
+        :param errors: Suppress raised errors by passing in False
+        :return: 
+        """
         if not self.broker:
             raise RuntimeError("Broker not running. Use the 'start_broker()' method before calling query().")
 
+        values = () if not values else values
         recvpipe, sendpipe = Pipe(False)
-        self.broker_queue.put({'mode': 'sql', 'sql': sql, 'pipe': sendpipe})
+        try:
+            self.broker_queue.put({'mode': 'sql', 'sql': sql, 'values': values, 'pipe': sendpipe})
+        except (sqlite3.Error, sqlite3.OperationalError, sqlite3.IntegrityError, sqlite3.DatabaseError) as err:
+            if errors:
+                raise err
         response = json.loads(recvpipe.recv())
         return response
+
+    def iterator(self, sql):  # Note that this does not run through the broker
+        temp_cursor = self.connection.cursor()
+        query_result = temp_cursor.execute(sql)
+        while True:
+            fetched = query_result.fetchone()
+            if not fetched:
+                break
+            else:
+                yield fetched
 
     def close(self):
         self.stop_broker()

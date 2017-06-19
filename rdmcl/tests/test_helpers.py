@@ -22,7 +22,7 @@ def test_sqlitebroker_init(hf):
     broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
     assert broker.db_file == "%s%sdb.sqlite" % (tmpdir.path, hf.sep)
     assert type(broker.connection) == sqlite3.Connection
-    assert type(broker.cursor) == sqlite3.Cursor
+    assert type(broker.broker_cursor) == sqlite3.Cursor
     assert type(broker.broker_queue) == SimpleQueue
     assert broker.broker is None
 
@@ -48,7 +48,7 @@ def test_sqlitebroker_broker_loop(hf, monkeypatch, capsys):
 
         def _get(self, modes, sql):
             for _mode in modes:
-                yield {'mode': _mode, 'sql': sql, 'pipe': self.sendpipe}
+                yield {'mode': _mode, 'sql': sql, 'pipe': self.sendpipe, "values": ()}
 
         def get(self):
             return next(self.mode)
