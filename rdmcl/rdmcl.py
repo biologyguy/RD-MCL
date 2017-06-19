@@ -326,6 +326,9 @@ class Cluster(object):
             base_cluster.taxa.setdefault(orphan_taxa, [])
             base_cluster.taxa[orphan_taxa].append(orphan)
 
+        # Split cluster up into subclusters containing no more than one gene from each taxa
+        # eg. ["Mle1", "Baf1", "Lla1", "Mle2", "Pdb1", "Lla2", "Mle3"] would become:
+        #     [["Mle1", "Baf1", "Lla1", "Pdb1"], ["Mle2", "Lla2"], ["Mle3"]]
         subclusters = [[]]
         for taxon, genes in self.taxa.items():
             for indx, gene in enumerate(genes):
@@ -341,10 +344,10 @@ class Cluster(object):
             # largest number of genes. All other genes are pegged to this value, and increase in value if included in
             # a cluster proportionally to how many genes are in the taxa.
             for taxon in subcluster:
-                subscore += (1 / len(base_cluster.taxa[taxon])) / (1 / self.max_genes_in_a_taxa)
+                subscore += self.max_genes_in_a_taxa / len(base_cluster.taxa[taxon])
 
             # Multiply subscore by 1-2, based on how many taxa contained (perfect score if all possible taxa present)
-            subscore *= (len(subcluster) / len(base_cluster.taxa) + 1)
+            subscore *= len(subcluster) / len(base_cluster.taxa) + 1
 
             # Reduce subscores as we encounter replicate taxa
             subscore *= DR_BASE ** indx
