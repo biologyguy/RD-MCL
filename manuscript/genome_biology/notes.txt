@@ -1,0 +1,39 @@
+- I used MAFFT \cite{Katoh:2013hm}, because it's awesome.
+
+- The COG, KOG, arCOG databases may all be rich sources of data for validation. COGs are `clusters of orthologous genes', which can includes many individual orthogroups.
+
+- KEGG OCs may work in place of KOGs \cite{Nakaya:2013gg}
+
+- Construct species trees with *BEAST (Heled and Drummond 2010) and BPP (Yang and Rannala 2014; Rannala and Yang 2016) to do a tree based comparison against RD-MCL.
+
+- Possible sample data: CYP proteins \cite{Pan:2016jg}
+
+- Might want to compare results agains Ortholog-Finder if appropriate \cite{Horiike:2016dq}
+
+- Construction of an ortholog ontology \cite{Chiba:2015ed}?
+
+- Try OrthoFinder length-normalized bit scores as similarity metric between sequences \cite{Emms:2015ig}.
+
+- Use precision and recall as measures of accuracy of simulated data
+
+(https://en.wikipedia.org/wiki/Precision\_and\_recall and \cite{Emms:2015ig})
+
+$$
+Precision = \frac{TP}{TP + FP}
+$$
+
+$$
+Recall = \frac{TP}{TP + FN}
+$$
+
+$$
+F Score = 2 * \frac{precision * recall}{precision + recall}
+$$
+
+Where TP is True Positive, FP is False Positives, and FN is False Negatives.
+
+- Create raw clusters using MMseqs2.0
+
+(https://github.com/soedinglab/MMseqs2).
+
+- Output orthogroups in plain text and the \textit{Quest for Orthologs} community standard OrthoXML \cite{Dessimoz:2012dj}
