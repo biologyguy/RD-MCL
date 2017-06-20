@@ -54,7 +54,8 @@
 \usepackage[utf8]{inputenc} %unicode support
 %\usepackage[applemac]{inputenc} %applemac support if unicode package fails
 %\usepackage[latin1]{inputenc} %UNIX support if unicode package fails
-
+\usepackage{graphicx}
+\usepackage{lipsum}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                             %%
@@ -72,8 +73,8 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
-\def\includegraphic{}
-\def\includegraphics{}
+%\def\includegraphic{}
+%\def\includegraphics{}
 
 
 
@@ -125,7 +126,7 @@
 ]{\inits{KE}\fnm{Karl E} \snm{Keat}}
 \author[
    addressref={aff1},
-   email={andy@mail.nih.gov}   
+   email={andy@mail.nih.gov}
 ]{\inits{AD}\fnm{Andreas D} \snm{Baxevanis}}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                          %%
@@ -260,38 +261,39 @@ Spill some ink regarding in/out paralogs \cite{Sonnhammer:2002vm,Tekaia:2016ga}.
 BLAST scores (bit or e-value) have a strong length bias when calculating orthogroups \cite{Emms:2015ig}. OrthoFinder also uses a static inflation/edge similarity threashold \cite{Emms:2015ig}
 
 \subsection*{Simulation data across the dynamic range of RD-MCL}
+
 \subsubsection*{Branch lengths}
-Ipsum lorum
+\lipsum[1]
 
 \subsubsection*{Number of sequences}
-Ipsum lorum
+\lipsum[2]
 
 \subsubsection*{Missing data}
-Ipsum lorum
+\lipsum[1]
 
 \subsubsection*{Gene duplications}
-Ipsum lorum
+\lipsum[1]
 
 \subsubsection*{Hybrid sequences (weird domain structures)}
-Ipsum lorum
+\lipsum[1]
 
 \subsection*{RD-MCL classification of known gene families}
-Ipsum lorum
+\lipsum[1]
 
 \subsubsection*{Gene family 1}
-Ipsum lorum
+\lipsum[2]
 
 \subsubsection*{Gene family 2}
-Ipsum lorum
+\lipsum[1]
 
 \subsection*{RD-MCL classification of new gene families}
-Ipsum lorum
+\lipsum[1]
 
 \subsubsection*{Gene family 1}
-Ipsum lorum
+\lipsum[2]
 
 \subsubsection*{Gene family 2}
-Ipsum lorum
+\lipsum[1]
 
 \section*{Conclusions}
 Can't wait to share my conclusions.
@@ -302,20 +304,26 @@ Putative orthogroups were assigned a score based on the size and composition of 
 
 Let each sequence $s$ be an element of a set $T$ where all sequences come from the same taxa $j$.
 
-\[ T_j = \{s:s \text{ is a gene in } j\} \]
+$$
+T_j = \{s:s \text{ is a gene in } j\}
+$$
 
 All sequences are assigned a score $S$, which is scaled against the largest set of sequences, $T^*$, to bound the minimum score at 1.
 
-\[ T^* = T_j:|T_j| = max(|T|) \]
+$$
+T^* = T_j:|T_j| = max(|T|)
+$$
 
-\[ S_j = \frac{|T^*|}{|T_j|} \]
+$$
+S_j = \frac{|T^*|}{|T_j|}
+$$
 
 Doing so gives greater weight to those species which have not experienced additional gene expansion, thus allowing greater inclusion of paralogs from those species where gene expansion has been more common.
 
 To penalize the inclusion of paralogs in a putative orthogroup $O$, a diminishing returns algorithm was implemented. Sequences in the cluster are first sorted into the fewest number of subsets, of largest possible size, where each taxa is represented only once. This can be expressed as a matrix of size $X \times Y$, where $X$ is the total number of unique taxa and $Y$ is the largest number of sequences derived from a single taxon in the given set. Each column therefore represents a taxon and is filled from the top down with $S_j$ for each gene it contains, followed by zeros. For example:
 
 
-\[
+$$
 O \equiv
 \begin{bmatrix}
     S_{j_1} & S_{j_2} & S_{j_3} & S_{j_4} & S_{j_5} & 0 & S_{j_7}\\
@@ -323,63 +331,38 @@ O \equiv
     0 & S_{j_2} & 0 & S_{j_4} & 0 & 0 & 0 \\
     0 & S_{j_2} & 0 & 0 & 0 & 0 & 0 \\
 \end{bmatrix}
-\]
+$$
 
 Each row $Y$ is summed and modified by cofactors $\psi$ and $\gamma$. $\psi$ is proportional to the number of taxa in $Y$ relative to the total number of taxa present globaly (i.e., the length of $X$ in the above matrix), and $\gamma$ imposes exponentially diminishing returns on the score for each successive index of $Y$.
 
-\[ \psi = \frac{|\{Y:Y \neq 0\}|}{|j|} + 1 \]
+$$
+\psi = \frac{|\{Y:Y \neq 0\}|}{|j|} + 1
+$$
 
-\[ \gamma = DRB^{Y_{index}} \]
+$$
+\gamma = DRB^{Y_{index}}
+$$
 
-\[ S_Y = \gamma\psi\sum_{j} S_j \]
+$$
+S_Y = \gamma\psi\sum_{j} S_j
+$$
 
 Where:
 
-\[ DRB = \text{Diminishing returns base}; 0 \leq DRB \leq 1 \]
+$$
+DRB = \text{Diminishing returns base}; 0 \leq DRB \leq 1
+$$
 
-The effects of altering $DRB$ are summarized in Supplemental Figure \ref{supfig:dim_rets}, and we have emperically chosen to use a value of 0.7 for all other experiments in this manuscript.
+The effects of altering $DRB$ are summarized in Supplemental Figure \ref{supfig:dim_rets}, and we have emperically chosen to use a value of 0.75 for all other experiments in this manuscript.
 
 The final fitness score assigned to a putative orthogroup is thus the sum of each row score:
 
-\[ S_O = \sum_{Y} S_Y \]
-
+$$
+S_O = \sum_{Y} S_Y
+$$
 
 \subsubsection*{Markov chain convergence}
-
-
-- I used MAFFT \cite{Katoh:2013hm}, because it's awesome.
-
-- The COG, KOG, arCOG databases may all be rich sources of data for validation. COGs are `clusters of orthologous genes', which can includes many individual orthogroups.
-
-- KEGG OCs may work in place of KOGs \cite{Nakaya:2013gg}
-
-- Construct species trees with *BEAST (Heled and Drummond 2010) and BPP (Yang and Rannala 2014; Rannala and Yang 2016) to do a tree based comparison against RD-MCL.
-
-- Possible sample data: CYP proteins \cite{Pan:2016jg}
-
-- Might want to compare results agains Ortholog-Finder if appropriate \cite{Horiike:2016dq}
-
-- Construction of an ortholog ontology \cite{Chiba:2015ed}?
-
-- Try OrthoFinder length-normalized bit scores as similarity metric between sequences \cite{Emms:2015ig}.
-
-- Use precision and recall as measures of accuracy of simulated data
-
-(https://en.wikipedia.org/wiki/Precision\_and\_recall and \cite{Emms:2015ig})
-
-\[ Precision = \frac{TP}{TP + FP} \]
-
-\[ Recall = \frac{TP}{TP + FN} \]
-
-\[ F-Score = 2 * \frac{precision * recall}{precision + recall} \]
-
-Where TP is True Positive, FP is False Positives, and FN is False Negatives.
-
-- Create raw clusters using MMseqs2.0
-
-(https://github.com/soedinglab/MMseqs2).
-
-- Output orthogroups in plain text and the \textit{Quest for Orthologs} community standard OrthoXML \cite{Dessimoz:2012dj}
+\lipsum[3]
 
 
 % \subsection*{Sub-heading for section}
@@ -407,7 +390,7 @@ Where TP is True Positive, FP is False Positives, and FN is False Negatives.
 
 \section*{Acknowledgements}
   This research was supported by the Intramural Research Program of the National Human Genome Research Institute, National Institutes of Health.
-  
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                  The Bibliography                       %%
@@ -453,16 +436,16 @@ Where TP is True Positive, FP is False Positives, and FN is False Negatives.
 %% Do not use \listoffigures as most will included as separate files
 
 \section*{Figures}
-  \begin{figure}[h!]
-  \caption{\csentence{Sample figure title.}
-      A short description of the figure content
-      should go here.}
-      \end{figure}
 
-\begin{figure}[h!]
-  \caption{\csentence{Sample figure title.}
-      Figure legend text.}
-      \end{figure}
+  % NOTE: to get the figure to stretch across both columns, use {figure*}
+  \begin{figure}[t]
+    \begin{center}
+    \includegraphics[height=0.22\textheight]{../figures/dim_ret_precision_line.eps}
+  \end{center}
+  \caption{Effect of diminishing returns base on precision: Doing some stuff with the DRB across sim data (branch length set).}
+  \label{supfig:dim_rets}
+  \end{figure}
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                               %%
@@ -474,56 +457,27 @@ Where TP is True Positive, FP is False Positives, and FN is False Negatives.
 %%
 \section*{Tables}
 
-\begin{table}[h!]
+\begin{table}[ht!]
 \caption{List of optional third party software that BuddySuite programs can interact with. BuddySuite performs all necessary format conversion to call any of these tools and, where appropriate, returns the result in the same format as the input. This is particularly useful when creating multiple sequence alignments from annotated sequences in GenBank or EMBL format.}
       \begin{tabular}{lll}
         \hline \\
 	   BuddySuite program	& Third-party program					& Reference  \\ \\
         \hline
-        SeqBuddy			& BLAST 								& \cite{Camacho2009} \\
+        SeqBuddy			& BLAST 								& \cite{Chiba:2015ed} \\
         \hline
-        AlignBuddy			& Clustal Omega 						& \cite{Sievers:2011fn} \\
-        					& ClustalW2 							& \cite{Larkin:2007hz} \\
-							& MAFFT 								& \cite{Katoh:2013hm} \\
-							& MUSCLE 								& \cite{Edgar:2004bo} \\
-							& PAGAN 								& \cite{Loytynoja:2012fy} \\
-        					& PRANK 								& \cite{Loytynoja:2005cb} \\				
+        AlignBuddy			& Clustal Omega 						& \cite{Chiba:2015ed} \\
+        					& ClustalW2 							& \cite{Chiba:2015ed} \\
+							& MAFFT 								& \cite{Chiba:2015ed} \\
+							& MUSCLE 								& \cite{Chiba:2015ed} \\
+							& PAGAN 								& \cite{Chiba:2015ed} \\
+        					& PRANK 								& \cite{Chiba:2015ed} \\
         \hline
-        PhyloBuddy			& FastTree 								& \cite{Price:2010eg} \\
-        					& RAxML 								& \cite{Stamatakis:2006de} \\
-        					& PhyML 								& \cite{Guindon:2010gf} \\
+        PhyloBuddy			& FastTree 								& \cite{Chiba:2015ed} \\
+        					& RAxML 								& \cite{Chiba:2015ed} \\
+        					& PhyML 								& \cite{Chiba:2015ed} \\
         \hline
       \end{tabular}
 \label{table:software}
-\end{table}
-
-\begin{table}[h!]
-\caption{File format support for reading (R) and writing (W) provided by each BuddySuite module.}
-      \begin{tabular}{llll}
-        \hline \\
-        Format							& SeqBuddy  					& AlignBuddy   					& PhyloBuddy\\ 
-        \\
-        \hline
-        Clustal 						& R \& W\textsuperscript{\dag} 	& R \& W						& None \\ 
-        EMBL\textsuperscript{\ddag} 	& R \& W						& R\textsuperscript{\dag}/ W	& None \\
-        FASTA 							& R \& W						& R\textsuperscript{\dag}/ W	& None \\
-        GenBank\textsuperscript{\ddag} 	& R \& W						& R\textsuperscript{\dag}/ W 	& None \\
-        Nexus 							& R \& W\textsuperscript{\dag}	& R \& W						& R \& W \\ 
-        Newick 							& None							& None							& R \& W \\ 
-        NeXML							& None							& None							& R \& W \\
-        PHYLIP (interleaved)			& R \& W\textsuperscript{\dag} 	& R \& W						& None \\
-        PHYLIP (sequential)				& R \& W\textsuperscript{\dag} 	& R \& W						& None \\	
-        SeqXML							& R \& W						& None							& None \\ 
-        Stockholm						& R \& W\textsuperscript{\dag} 	& R \& W						& None \\ 
-        Swissprot\textsuperscript{\ddag}& R only						& None							& None \\
-        \hline
-      \end{tabular}
-      \begin{tabular}{l}
-      \textsuperscript{\dag}All sequences must be the same length \\
-      \textsuperscript{\ddag}Supports rich sequence annotation \\
-      \hline
-       \end{tabular}
-\label{table:formats}
 \end{table}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
