@@ -47,7 +47,7 @@
 %\documentclass{bmcart}
 
 %%% Load packages
-%\usepackage{amsthm,amsmath}
+\usepackage{amsthm,amsmath}
 %\RequirePackage{natbib}
 %\RequirePackage[authoryear]{natbib}% uncomment this for author-year bibliography
 %\RequirePackage{hyperref}
@@ -302,20 +302,47 @@ Putative orthogroups were assigned a score based on the size and composition of 
 
 Let each sequence $s$ be an element of a set $T$ where all sequences come from the same taxa $j$.
 
-\[ T_j = \{s:s \in j\} \]
+\[ T_j = \{s:s \text{ is a gene in } j\} \]
 
-All sequences are assigned a base score $S$, and the minimum score is set to 1. This minimum score is applied to all sequences belonging to the largest set of sequences $T^*$.
+All sequences are assigned a score $S$, which is scaled against the largest set of sequences, $T^*$, to bound the minimum score at 1.
 
 \[ T^* = T_j:|T_j| = max(|T|) \]
 
-\[S_{T^*} = 1 \]
+\[ S_j = \frac{|T^*|}{|T_j|} \]
 
-All remaining squences are assigned a value greater than 1, proportional to the size of the set it belongs to relative to $T^*$.
+Doing so gives greater weight to those species which have not experienced additional gene expansion, thus allowing greater inclusion of paralogs from those species where gene expansion has been more common.
 
-\[ S_{T_j} = \frac{|T^*|}{|T_j|} \]
+To penalize the inclusion of paralogs in a putative orthogroup $O$, a diminishing returns algorithm was implemented. Sequences in the cluster are first sorted into the fewest number of subsets, of largest possible size, where each taxa is represented only once. This can be expressed as a matrix of size $X \times Y$, where $X$ is the total number of unique taxa and $Y$ is the largest number of sequences derived from a single taxon in the given set. Each column therefore represents a taxon and is filled from the top down with $S_j$ for each gene it contains, followed by zeros. For example:
 
 
-To penalize the inclusion of multiple sequences from a single taxa in a given putative orthogroup $O$, a diminishing returns function was implemented; whereby the sequences in the cluster were sorted into the fewest number of subsets of largest possible size where each taxa is represented only once. The sum score for each subset is determined, and then in diminishing order of subset size,
+\[
+O \equiv
+\begin{bmatrix}
+    S_{j_1} & S_{j_2} & S_{j_3} & S_{j_4} & S_{j_5} & 0 & S_{j_7}\\
+    0 & S_{j_2} & 0 & S_{j_4} & 0 & 0 & S_{j_7} \\
+    0 & S_{j_2} & 0 & S_{j_4} & 0 & 0 & 0 \\
+    0 & S_{j_2} & 0 & 0 & 0 & 0 & 0 \\
+\end{bmatrix}
+\]
+
+Each row $Y$ is summed and modified by cofactors $\psi$ and $\gamma$. $\psi$ is proportional to the number of taxa in $Y$ relative to the total number of taxa present globaly (i.e., the length of $X$ in the above matrix), and $\gamma$ imposes exponentially diminishing returns on the score for each successive index of $Y$.
+
+\[ \psi = \frac{|\{Y:Y \neq 0\}|}{|j|} + 1 \]
+
+\[ \gamma = DRB^{Y_{index}} \]
+
+\[ S_Y = \gamma\psi\sum_{j} S_j \]
+
+Where:
+
+\[ DRB = \text{Diminishing returns base}; 0 \leq DRB \leq 1 \]
+
+The effects of altering $DRB$ are summarized in Supplemental Figure \ref{supfig:dim_rets}, and we have emperically chosen to use a value of 0.7 for all other experiments in this manuscript.
+
+The final fitness score assigned to a putative orthogroup is thus the sum of each row score:
+
+\[ S_O = \sum_{Y} S_Y \]
+
 
 \subsubsection*{Markov chain convergence}
 
@@ -340,11 +367,11 @@ To penalize the inclusion of multiple sequences from a single taxa in a given pu
 
 (https://en.wikipedia.org/wiki/Precision\_and\_recall and \cite{Emms:2015ig})
 
-$Precision = \frac{TP}{TP + FP}$
+\[ Precision = \frac{TP}{TP + FP} \]
 
-$Recall = \frac{TP}{TP + FN}$
+\[ Recall = \frac{TP}{TP + FN} \]
 
-$F-Score = 2 * \frac{precision * recall}{precision + recall}$
+\[ F-Score = 2 * \frac{precision * recall}{precision + recall} \]
 
 Where TP is True Positive, FP is False Positives, and FN is False Negatives.
 
