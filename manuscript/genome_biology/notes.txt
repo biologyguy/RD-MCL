@@ -14,23 +14,6 @@
 
 - Try OrthoFinder length-normalized bit scores as similarity metric between sequences \cite{Emms:2015ig}.
 
-- Use precision and recall as measures of accuracy of simulated data
-
-(https://en.wikipedia.org/wiki/Precision\_and\_recall and \cite{Emms:2015ig})
-
-$$
-Precision = \frac{TP}{TP + FP}
-$$
-
-$$
-Recall = \frac{TP}{TP + FN}
-$$
-
-$$
-F Score = 2 * \frac{precision * recall}{precision + recall}
-$$
-
-Where TP is True Positive, FP is False Positives, and FN is False Negatives.
 
 - Create raw clusters using MMseqs2.0
 

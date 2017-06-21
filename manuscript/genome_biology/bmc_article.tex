@@ -258,15 +258,41 @@ In the current study we have increased the overall resolving power of MCL-based 
 
 \section{Results}
 \subsection{Description of the RD-MCL algorithm and software}
-The imputus for developing RD-MCL was to predict high-quality fine-grained orthogroups among any collection of homologous protein sequence.
+The impetus for developing RD-MCL was to predict high-quality fine-grained orthogroups among any collection of homologous protein sequence.
 
 \lipsum[3]
 
 \subsection{Simulation data across the dynamic range of RD-MCL}
-To test the performance of RD-MCL compared to other available ortholog prediction tools, we simulated sets of homologs using the Pyvolve module \cite{Spielman:2015kv}. These simulations varied in the number of sequences, branch length (substitutions per site), degree of gene loss or duplication, and domain architecture. The initial seed sequence for all simulations was a polypeptide 398 amino acids long containing four transmembrane domains.
+To test the performance of RD-MCL compared to other available ortholog prediction tools, we simulated sets of homologs using the Pyvolve module \cite{Spielman:2015kv}. These simulations varied in the number of sequences, branch length (substitutions per site), degree of gene loss or duplication, and domain architecture. The initial seed sequence for all simulations was a polypeptide 398 amino acids long containing four transmembrane domains. More extensive descriptions of the following simulations can be found in the Methods section.
 
 \subsubsection{Branch lengths}
 Given an idealized set of homologous sequences, where there has been no gene loss and all gene duplications occured prior to the last common ancestor of the taxa included in the set, the phylogenetic relationship within each orthogroup should closely approximate the underlying species tree. Fruthermore, the phylogenetic relationship among the orthogroups will approximate the original gene tree of all paralogs present in the last common ancestor. As such, two distinct axes of divergence must be accounted for when assessing the effect of branch length (i.e., substitutions per site), which we will refer to as the 'species tree length' and 'gene tree length', respectively.
+
+A total of 625 datasets were simulated, with each containing eight taxa and seven orthologs (for 56 sequences per dataset). Branch lengths were varied from 0.05 to 1.55 substitutions per site with standard deviations between 0.05 and 1.05 to prevent perfectly symetrical trees. As illustrated in Figure \ref{fig:branch_len_3d}, RD-MCL was either equivilent to, or out performed, OrthoFinder, OrthoMCL, and ProteinOrtho across the entire dynamic range assessed. All of the methods tested were more sensitive to changes in species tree branch lengths than they were to gene tree branch lengths (i.e., branches within an orthogroup, as opposed to between orthogroups), although both RD-MCL and OrthoMCL performed marginally better on short species trees with the gene trees are longer.
+
+% May_3_2017_orthofinder_branch_lengths/orthofinder_BL.ipynb
+% May_3_2017_OrthoMCL_branch_lengths/orthomcl_BL.ipynb
+% May_3_2017_proteinortho_branch_lengths/proteinortho_bl.ipynb
+% May_3_2017_rdmcl_branch_len/rdmcl_BL.ipynb
+\begin{figure}[t]
+  \begin{center}
+  \includegraphics[height=0.25\textheight]{../figures/branch_len_3D_scatter.eps}
+\end{center}
+\caption{Effect of branch length on precision of orthogroup prediction.}
+\label{fig:branch_len_3d}
+\end{figure}
+
+Figure \ref{fig:branch_len_std} illustrates the case-by-case performance of RD-MCL compared to the other methods by standardizing the relative precision achieved on each dataset against the precision of RD-MCL.
+
+% May_03_2017_branch_lengths.ipynb
+\begin{figure}[t]
+  \begin{center}
+  \includegraphics[height=0.22\textheight]{../figures/branch_len_bargraph.eps}
+\end{center}
+\caption{Effect of branch length on precision of orthogroup prediction.}
+\label{fig:branch_len_std}
+\end{figure}
+
 
 \subsubsection{Number of sequences}
 \lipsum[2]
@@ -376,7 +402,7 @@ $$
 DRB = \text{Diminishing returns base}; 0 \leq DRB \leq 1
 $$
 
-The effects of altering $DRB$ are summarized in Supplemental Figure \ref{supfig:dim_rets}, and we have emperically chosen to use a value of 0.75 for all other experiments in this manuscript.
+The effects of altering $DRB$ are summarized in Figure \ref{fig:dim_rets}, and we have emperically determined that values between 0.75 and 0.85 generally perform the best.
 
 The final fitness score assigned to a putative orthogroup is thus the sum of each row score:
 
@@ -384,7 +410,17 @@ $$
 S_O = \sum_{Y} S_Y
 $$
 
-\subsection*{Markov chain convergence}
+% Apr_19_17_diminishing_returns/dim_returns3D.ipynb
+\begin{figure}[t]
+  \begin{center}
+  \includegraphics[height=0.22\textheight]{../figures/dim_ret_precision_line.eps}
+\end{center}
+\caption{Effect of diminishing returns base on precision: Doing some stuff with the DRB across sim data (branch length set).}
+\label{fig:dim_rets}
+\end{figure}
+
+
+\subsection{Markov chain convergence}
 \lipsum[3]
 
 
@@ -459,16 +495,7 @@ $$
 %% Do not use \listoffigures as most will included as separate files
 
 \section*{Figures}
-
-  % NOTE: to get the figure to stretch across both columns, use {figure*}
-  \begin{figure}[t]
-    \begin{center}
-    \includegraphics[height=0.22\textheight]{../figures/dim_ret_precision_line.eps}
-  \end{center}
-  \caption{Effect of diminishing returns base on precision: Doing some stuff with the DRB across sim data (branch length set).}
-  \label{supfig:dim_rets}
-  \end{figure}
-
+% NOTE: to get the figure to stretch across both columns, use {figure*}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                               %%
@@ -480,28 +507,28 @@ $$
 %%
 \section*{Tables}
 
-\begin{table}[ht!]
-\caption{List of optional third party software that BuddySuite programs can interact with. BuddySuite performs all necessary format conversion to call any of these tools and, where appropriate, returns the result in the same format as the input. This is particularly useful when creating multiple sequence alignments from annotated sequences in GenBank or EMBL format.}
-      \begin{tabular}{lll}
-        \hline \\
-	   BuddySuite program	& Third-party program					& Reference  \\ \\
-        \hline
-        SeqBuddy			& BLAST 								& \cite{Chiba:2015ed} \\
-        \hline
-        AlignBuddy			& Clustal Omega 						& \cite{Chiba:2015ed} \\
-        					& ClustalW2 							& \cite{Chiba:2015ed} \\
-							& MAFFT 								& \cite{Chiba:2015ed} \\
-							& MUSCLE 								& \cite{Chiba:2015ed} \\
-							& PAGAN 								& \cite{Chiba:2015ed} \\
-        					& PRANK 								& \cite{Chiba:2015ed} \\
-        \hline
-        PhyloBuddy			& FastTree 								& \cite{Chiba:2015ed} \\
-        					& RAxML 								& \cite{Chiba:2015ed} \\
-        					& PhyML 								& \cite{Chiba:2015ed} \\
-        \hline
-      \end{tabular}
-\label{table:software}
-\end{table}
+%\begin{table}[ht!]
+%\caption{List of optional third party software that BuddySuite programs can interact with. BuddySuite performs all necessary format conversion to call any of these tools and, where appropriate, returns the result in the same format as the input. This is particularly useful when creating multiple sequence alignments from annotated sequences in GenBank or EMBL format.}
+%      \begin{tabular}{lll}
+%        \hline \\
+%	   BuddySuite program	& Third-party program					& Reference  \\ \\
+%        \hline
+%        SeqBuddy			& BLAST 								& \cite{Chiba:2015ed} \\
+%        \hline
+%        AlignBuddy			& Clustal Omega 						& \cite{Chiba:2015ed} \\
+%        					& ClustalW2 							& \cite{Chiba:2015ed} \\
+%							& MAFFT 								& \cite{Chiba:2015ed} \\
+%							& MUSCLE 								& \cite{Chiba:2015ed} \\
+%							& PAGAN 								& \cite{Chiba:2015ed} \\
+%        					& PRANK 								& \cite{Chiba:2015ed} \\
+%        \hline
+%        PhyloBuddy			& FastTree 								& \cite{Chiba:2015ed} \\
+%        					& RAxML 								& \cite{Chiba:2015ed} \\
+%        					& PhyML 								& \cite{Chiba:2015ed} \\
+%        \hline
+%      \end{tabular}
+%\label{table:software}
+%\end{table}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                               %%
@@ -510,13 +537,13 @@ $$
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \section*{Additional Files}
-  \subsection*{Additional file 1 --- Sample additional file title}
-    Additional file descriptions text (including details of how to
-    view the file, if it is in a non-standard format or the file extension).  This might
-    refer to a multi-page table or a figure.
+%  \subsection*{Additional file 1 --- Sample additional file title}
+%    Additional file descriptions text (including details of how to
+%    view the file, if it is in a non-standard format or the file extension).  This might
+%    refer to a multi-page table or a figure.
 
-  \subsection*{Additional file 2 --- Sample additional file title}
-    Additional file descriptions text.
+%  \subsection*{Additional file 2 --- Sample additional file title}
+%    Additional file descriptions text.
 
 
 \end{backmatter}
