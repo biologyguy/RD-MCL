@@ -244,62 +244,85 @@ Blahh
 %%%%%%%%%%%%%%%%
 %% Background %%
 %%
-\section*{Background and rationale}
+\section{Background and rationale}
 When a gene evolves an important physiological function, purifying selection tends to maintain that function through evolutionary time \cite{Altenhoff:2012ea, Rogozin:2014fp, KryuchkovaMostacci:2016iw}. As a result, orthology (i.e., homology via speciation) has become a widely used predictor of shared gene product function among species, with considerable effort made to develop computational methods for identifying orthologs. The algorithms currently in popular use fall into two broad categories: Tree-based and graph-based clustering methods (recently reviewed by Fredj Tekaia \cite{Tekaia:2016ga}). Breifly, tree-based approaches (e.g., Ensembl Compara \cite{Vilella:2009ju}, LOFT \cite{vanderHeijden:2007bo}, and SYNERGY \cite{Wapinski:2007fa}) identify orthologous clades by estimating phylogenetic trees for a target gene family, and then attempt to reconcile those gene trees against a `known' species tree. While tree-based methods are very accurate under ideal conditions, they are very sensitive to the accuracy of the species trees they rely on, which can become a considerable source of uncertainty or error \cite{Xu:2016ek}. Alternatively, pairwise similarity graph clustering methods leverage graph theory to rapidly identify groups of related sequences from genome scale datasets. Due to the non-transitive nature of orthology (i.e., paralogs in one species can be orthologous to a single gene in another species), groupings of pure orthologs may not be possible. Instead, the term `orthogroup' has come to represent a cluster of genes desended from a common ancestor of the clade in question, which may include paralogs \cite{Wapinski:2007fa}. InParanoid \cite{OBrien:2005cy}, EggNOG \cite{Jensen:2007cc}, and OMA \cite{Roth:2009iu} are popular tools for assigning sequences to orthogroups using a `best-hit clique' approach, where closed best-hit sub-graphs are identified in the dataset. While accurate within each sub-graph, these methods tend to be overly strict in their assignment; this causes an under-representation of actual orthologous relationships among many species. Alternatively, Markov clustering (MCL) is very efficient at isolating more inclusive sub-graphs. OrthoMCL is one of the most popular MCL-based ortholog prediction methods \cite{Li:2003en}, but it is prone to placing too many in-paralogs into orthogroups (i.e., it is less precise).
 
 For coarse-grained, genome-wide analysis, many of the tools mentioned above perform very well.
 
-In the current study we have increased the overall resolving power of MCL-based orthogroup assignment with a number of novel enhancements, including refinement of the pairwise similarity metrics, using an optimization algorithm to dynamically select MCL parameters, recursively subdividing orthogroups, and testing putative orthogroups for best-hit cliques to maximize resolution.
-
-
-\section*{Results}
-The imputus for developing RD-MCL was to predict high-quality fine-grained orthogroups among sequences from a defined gene family.
-
-\subsection*{Description of the RD-MCL algorithm and software}
 Spill some ink regarding in/out paralogs \cite{Sonnhammer:2002vm,Tekaia:2016ga}.
 
 BLAST scores (bit or e-value) have a strong length bias when calculating orthogroups \cite{Emms:2015ig}. OrthoFinder also uses a static inflation/edge similarity threashold \cite{Emms:2015ig}
 
-\subsection*{Simulation data across the dynamic range of RD-MCL}
+In the current study we have increased the overall resolving power of MCL-based orthogroup assignment with a number of novel enhancements, including refinement of the pairwise similarity metrics, using an optimization algorithm to dynamically select MCL parameters, recursively subdividing orthogroups, and testing putative orthogroups for best-hit cliques to maximize resolution.
 
-\subsubsection*{Branch lengths}
-\lipsum[1]
 
-\subsubsection*{Number of sequences}
+\section{Results}
+\subsection{Description of the RD-MCL algorithm and software}
+The imputus for developing RD-MCL was to predict high-quality fine-grained orthogroups among any collection of homologous protein sequence.
+
+\lipsum[3]
+
+\subsection{Simulation data across the dynamic range of RD-MCL}
+To test the performance of RD-MCL compared to other available ortholog prediction tools, we simulated sets of homologs using the Pyvolve module \cite{Spielman:2015kv}. These simulations varied in the number of sequences, branch length (substitutions per site), degree of gene loss or duplication, and domain architecture. The initial seed sequence for all simulations was a polypeptide 398 amino acids long containing four transmembrane domains.
+
+\subsubsection{Branch lengths}
+Given an idealized set of homologous sequences, where there has been no gene loss and all gene duplications occured prior to the last common ancestor of the taxa included in the set, the phylogenetic relationship within each orthogroup should closely approximate the underlying species tree. Fruthermore, the phylogenetic relationship among the orthogroups will approximate the original gene tree of all paralogs present in the last common ancestor. As such, two distinct axes of divergence must be accounted for when assessing the effect of branch length (i.e., substitutions per site), which we will refer to as the 'species tree length' and 'gene tree length', respectively.
+
+\subsubsection{Number of sequences}
 \lipsum[2]
 
-\subsubsection*{Missing data}
-\lipsum[1]
-
-\subsubsection*{Gene duplications}
-\lipsum[1]
-
-\subsubsection*{Hybrid sequences (weird domain structures)}
-\lipsum[1]
-
-\subsection*{RD-MCL classification of known gene families}
-\lipsum[1]
-
-\subsubsection*{Gene family 1}
+\subsubsection{Differing seed sequences (maybe not though...)}
 \lipsum[2]
 
-\subsubsection*{Gene family 2}
+\subsubsection{Missing data}
 \lipsum[1]
 
-\subsection*{RD-MCL classification of new gene families}
+\subsubsection{Gene duplications}
 \lipsum[1]
 
-\subsubsection*{Gene family 1}
+\subsubsection{Hybrid sequences (weird domain structures)}
+\lipsum[1]
+
+\subsection{RD-MCL classification of known gene families}
+\lipsum[1]
+
+\subsubsection{Gene family 1}
 \lipsum[2]
 
-\subsubsection*{Gene family 2}
+\subsubsection{Gene family 2}
 \lipsum[1]
 
-\section*{Conclusions}
+\subsection{RD-MCL classification of new gene families}
+\lipsum[1]
+
+\subsubsection{Gene family 1}
+\lipsum[2]
+
+\subsubsection{Gene family 2}
+\lipsum[1]
+
+\section{Conclusions}
 Can't wait to share my conclusions.
 
-\section*{Methods}
-\subsubsection*{RD-MCL fitness function}
+\section{Methods}
+\subsection{Simulation data}
+The performance of each tool was assessed by calculating the precision and recall of the result on simulated data \cite{Emms:2015ig}.
+
+$$
+Precision = \frac{TP}{TP + FP}
+$$
+
+$$
+Recall = \frac{TP}{TP + FN}
+$$
+
+$$
+F Score = 2 * \frac{precision * recall}{precision + recall}
+$$
+
+Where TP is True Positive, FP is False Positives, and FN is False Negatives.
+
+\subsection{RD-MCL fitness function}
 Putative orthogroups were assigned a score based on the size and composition of the cluster, as well as the entire population of sequences available.
 
 Let each sequence $s$ be an element of a set $T$ where all sequences come from the same taxa $j$.
@@ -361,7 +384,7 @@ $$
 S_O = \sum_{Y} S_Y
 $$
 
-\subsubsection*{Markov chain convergence}
+\subsection*{Markov chain convergence}
 \lipsum[3]
 
 
