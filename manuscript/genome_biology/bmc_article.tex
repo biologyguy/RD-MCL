@@ -268,7 +268,9 @@ To test the performance of RD-MCL compared to other available ortholog predictio
 \subsubsection{Branch lengths}
 Given an idealized set of homologous sequences, where there has been no gene loss and all gene duplications occured prior to the last common ancestor of the taxa included in the set, the phylogenetic relationship within each orthogroup should closely approximate the underlying species tree. Fruthermore, the phylogenetic relationship among the orthogroups will approximate the original gene tree of all paralogs present in the last common ancestor. As such, two distinct axes of divergence must be accounted for when assessing the effect of branch length (i.e., substitutions per site), which we will refer to as the 'species tree length' and 'gene tree length', respectively.
 
-A total of 625 datasets were simulated, with each containing eight taxa and seven orthologs (for 56 sequences per dataset). Branch lengths were varied from 0.05 to 1.55 substitutions per site with standard deviations between 0.05 and 1.05 to prevent perfectly symetrical trees. As illustrated in Figure \ref{fig:branch_len_3d}, RD-MCL was either equivilent to, or out performed, OrthoFinder, OrthoMCL, and ProteinOrtho across the entire dynamic range assessed. All of the methods tested were more sensitive to changes in species tree branch lengths than they were to gene tree branch lengths (i.e., branches within an orthogroup, as opposed to between orthogroups), although both RD-MCL and OrthoMCL performed marginally better on short species trees with the gene trees are longer.
+% Maybe make a figure here, to show the two axes of divergence??
+
+A total of 625 datasets were simulated, with each containing eight taxa and seven orthologs (for 56 sequences per dataset). Branch lengths were varied from 0.05 to 1.55 substitutions per site with standard deviations between 0.05 and 1.05 to prevent perfectly symetrical trees. As illustrated in Figure \ref{fig:branch_len_3d}, RD-MCL was either equivilent to or out performed OrthoFinder, OrthoMCL, and ProteinOrtho across the entire dynamic range assessed. All of the methods tested were more sensitive to changes in species tree branch lengths than they were to gene tree branch lengths (i.e., branches within an orthogroup, as opposed to between orthogroups), although both RD-MCL and OrthoMCL performed marginally better on short species trees with the gene trees were longer.
 
 % May_3_2017_orthofinder_branch_lengths/orthofinder_BL.ipynb
 % May_3_2017_OrthoMCL_branch_lengths/orthomcl_BL.ipynb
@@ -295,7 +297,7 @@ Figure \ref{fig:branch_len_std} illustrates the case-by-case performance of RD-M
 
 
 \subsubsection{Number of sequences}
-\lipsum[2]
+To test the effects of increasing the number of orthogroups and orthogroup size, datasets were simulated with 4 to 30 taxa and between 4 and 30 genes per taxa.
 
 \subsubsection{Differing seed sequences (maybe not though...)}
 \lipsum[2]
@@ -494,7 +496,7 @@ $$
 %%
 %% Do not use \listoffigures as most will included as separate files
 
-\section*{Figures}
+%\section*{Figures}
 % NOTE: to get the figure to stretch across both columns, use {figure*}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -505,7 +507,7 @@ $$
 
 %% Use of \listoftables is discouraged.
 %%
-\section*{Tables}
+%\section*{Tables}
 
 %\begin{table}[ht!]
 %\caption{List of optional third party software that BuddySuite programs can interact with. BuddySuite performs all necessary format conversion to call any of these tools and, where appropriate, returns the result in the same format as the input. This is particularly useful when creating multiple sequence alignments from annotated sequences in GenBank or EMBL format.}
@@ -536,7 +538,7 @@ $$
 %%                               %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\section*{Additional Files}
+%\section*{Additional Files}
 %  \subsection*{Additional file 1 --- Sample additional file title}
 %    Additional file descriptions text (including details of how to
 %    view the file, if it is in a non-standard format or the file extension).  This might
