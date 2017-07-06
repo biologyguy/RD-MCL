@@ -250,7 +250,7 @@ class Cluster(object):
         Compile a best-hit clique.
         The best hit for a given gene may not have the query gene as its reciprocal best hit, so find the actual best
         hit and continue until a fully contained clique is formed.
-        Note that this does not build a COG-like clique, which should grab triangles from all included taxa (I would 
+        Note that this does not build a COG-like clique, which should grab triangles from all included taxa (I would
         prefer to fix this)
         :param gene: Query gene name
         :type gene: str
@@ -1334,15 +1334,15 @@ def argparse_init():
                                      description='''\
 \033[1mRD-MCL\033[m
   Got orthogroups?
-  
+
   Recursive Dynamic Markov Clustering identifies MCL parameters that
   maximize  one-to-one  placement  of  sequences  into  orthogroups.
   Differences in evolutionary rates between orthogroups is accounted
   for  by  recursively  decomposing  large clusters  where possible.
-   
+
   \033[1m\033[91mAll  sequences  must  be  homologous! RD-MCL  is \033[4mNOT\033[24m  intended for
   identifying  orthogroups  from  whole  genome/transcriptome  data.\033[m
-  
+
 \033[1mUsage\033[m:
   rdmcl "/path/to/sequence_file" [outdir] [-options]
 ''')
@@ -1898,7 +1898,7 @@ def setup():
 
         psipred_bin_dir = shutil.which("psipred").split(os.sep)[:-2]
         root, dirs, files = next(os.walk(os.sep + os.path.join(*psipred_bin_dir, "share")))
-        psipred_data_dir = re.search("'(psipred.*?)', ", str(dirs)).group(1)
+        psipred_data_dir = re.search("'(psipred.*?)'[,\]]", str(dirs)).group(1)
         psipred_data_dir = os.sep + os.path.join(*psipred_bin_dir, "share", psipred_data_dir, "data")
         for next_file in weight_files:
             if not os.path.isfile("{0}{1}{2}".format(data_dir, os.sep, next_file)) \
