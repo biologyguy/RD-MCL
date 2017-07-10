@@ -48,16 +48,23 @@ class SQLiteBroker(object):
                 query = queue.get()
                 if query['mode'] == 'sql':
                     pipe = query['pipe']
-                    try:
-                        self.broker_cursor.execute(query['sql'], query['values'])
-                    except sqlite3.OperationalError as err:
-                        if "database is locked" in str(err):
-                            # Wait a few seconds and try one more time, it might get through.
-                            sleep(5)
+                    locked_counter = 0
+                    while True:
+                        try:
                             self.broker_cursor.execute(query['sql'], query['values'])
-                        else:
-                            print("Failed query: %s" % query['sql'])
-                            raise err
+                        except sqlite3.OperationalError as err:
+                            if "database is locked" in str(err):
+                                # Wait for database to become free
+                                if locked_counter == 24:  # Wait up to 2 minutes for lock to be removed
+                                    print("Failed query: %s" % query['sql'])
+                                    raise err
+                                locked_counter += 1
+                                sleep(5)
+                                continue
+                            else:
+                                print("Failed query: %s" % query['sql'])
+                                raise err
+                        break
                     response = self.broker_cursor.fetchall()
                     pipe.send(json.dumps(response))
                 elif query['mode'] == 'stop':
