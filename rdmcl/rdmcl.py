@@ -82,6 +82,7 @@ Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
 --------------------
 '''
 LOCK = Lock()
+SIMSCORE_LOCK = Lock()
 CPUS = br.usable_cpu_count()
 TIMER = helpers.Timer()
 GAP_OPEN = -5
@@ -876,7 +877,8 @@ def mcmcmc_mcl(args, params):
             sb_copy = Sb.make_copy(seqbuddy)
             sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster_ids]))
             alb_obj = generate_msa(sb_copy, sql_broker)
-            sim_scores = create_all_by_all_scores(alb_obj, psi_pred_ss2_dfs, quiet=True)
+            with SIMSCORE_LOCK:
+                sim_scores = create_all_by_all_scores(alb_obj, psi_pred_ss2_dfs, quiet=True)
             cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
                               r_seed=rand_gen.randint(1, 999999999999999))
             cluster2database(cluster, sql_broker, alb_obj)
