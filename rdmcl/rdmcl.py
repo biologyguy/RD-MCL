@@ -1159,6 +1159,25 @@ class Orphans(object):
             else:
                 self.small_clusters[cluster.name()] = cluster
 
+    def temp_merge_clusters(self, clust1, clust2):
+        # Read or create an alignment containing the sequences in the clusters being merged
+        seq_ids = sorted(clust1.seq_ids + clust2.seq_ids)
+        seqbuddy = Sb.make_copy(self.seqbuddy)
+        regex = "^%s$" % "$|^".join(seq_ids)
+        Sb.pull_recs(seqbuddy, regex)
+        alb_obj = generate_msa(seqbuddy, self.sql_broker)
+
+        # If a graph already exists, use it. Otherwise, make a new one for this subset of sequences.
+        graph = self.sql_broker.query("SELECT (graph) FROM data_table "
+                                      "WHERE hash='{0}'".format(helpers.md5_hash(", ".join(seq_ids))))
+        if graph and graph[0][0]:
+            sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
+            sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+        else:
+            sim_scores = create_all_by_all_scores(alb_obj, self.psi_pred_ss2_dfs, quiet=True)
+            cluster2database(Cluster(seq_ids, sim_scores, collapse=False), self.sql_broker, alb_obj)
+        return sim_scores
+
     def _check_orphan(self, small_cluster):
         # First prepare the data for each large cluster so they can be compared
         log_output = "%s\n" % small_cluster.seq_ids
@@ -1169,22 +1188,8 @@ class Orphans(object):
             log_output += "\t%s\n" % large_cluster.seq_ids
             log_output += "\tAmong large:\t%s - %s\n" % (round(large_cluster.sim_scores.raw_score.min(), 4),
                                                          round(large_cluster.sim_scores.raw_score.max(), 4))
-            # Read or create an alignment containing the sequences in the small and large clusters being checked
-            seq_ids = sorted(large_cluster.seq_ids + small_cluster.seq_ids)
-            seqbuddy = Sb.make_copy(self.seqbuddy)
-            regex = "^%s$" % "$|^".join(seq_ids)
-            Sb.pull_recs(seqbuddy, regex)
-            alb_obj = generate_msa(seqbuddy, self.sql_broker)
 
-            # If a graph already exists, use it. Otherwise, make a new one for this subset of sequences.
-            graph = self.sql_broker.query("SELECT (graph) FROM data_table "
-                                          "WHERE hash='{0}'".format(helpers.md5_hash(", ".join(seq_ids))))
-            if graph and graph[0][0]:
-                sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
-                sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
-            else:
-                sim_scores = create_all_by_all_scores(alb_obj, self.psi_pred_ss2_dfs, quiet=True)
-                cluster2database(Cluster(seq_ids, sim_scores, collapse=False), self.sql_broker, alb_obj)
+            sim_scores = self.temp_merge_clusters(large_cluster, small_cluster)
 
             # Pull out the similarity scores between just the large and small cluster sequences
             lrg2sml_group_data = sim_scores.loc[(sim_scores['seq1'].isin(small_cluster.seq_ids))
@@ -1264,13 +1269,19 @@ class Orphans(object):
         starting_orphans = sum([len(sm_clust.seq_ids) for group, sm_clust in self.small_clusters.items()])
 
         # Loop through repeatedly, adding a single small cluster at a time and updating the large clusters on each loop
-        while True:
+        while True and self.large_clusters:
             remaining_orphans = sum([len(sm_clust.seq_ids) for group, sm_clust in self.small_clusters.items()])
             self.printer.write("%s of %s orphans remain" % (remaining_orphans, starting_orphans))
             tmp_file = br.TempFile()
             small_clusters = [clust for clust_name, clust in self.small_clusters.items()]
+
+            # Create each large/small combination and add to database if necessary. This has overhead here, but prevents
+            # over subscribing available CPU resources in mc_check_orphans()
+            for sm_clust in small_clusters:
+                for _, lg_clust in self.large_clusters.items():
+                    self.temp_merge_clusters(sm_clust, lg_clust)
+
             if multi_core:
-                # ToDo: This will spin off other run_multicore_function calls if clusters are not in database... FIX!
                 br.run_multicore_function(small_clusters, self.mc_check_orphans, [tmp_file.path],
                                           quiet=True, max_processes=CPUS)
             else:

@@ -866,7 +866,8 @@ def test_place_orphans(hf):
     cluster5 = rdmcl.Cluster(cluster5, hf.get_db_graph("c62b6378d326c2479296c98f0f620d0f", broker),
                              parent=parent_cluster)
     cluster5.set_name()
-    clusters = [cluster1, cluster2, cluster3, cluster4, cluster5]
+    orig_clusters = [cluster1, cluster2, cluster3, cluster4, cluster5]
+    clusters = [deepcopy(clust) for clust in orig_clusters]
 
     orphans = rdmcl.Orphans(parent_sb, clusters, broker, psi_pred_ss2_dfs)
 
@@ -903,9 +904,10 @@ group_0_3\tgroup_0_0\t0.0192173134297
     assert hf.string2hash(orphans.tmp_file.read()) == "44a16fd327a093de9be87643a89a3a2c", print(orphans.tmp_file.read())
 
     # Multicore doesn't seem to work in py.test, but can at least call it like it does
+    clusters = [deepcopy(clust) for clust in orig_clusters]
     orphans = rdmcl.Orphans(parent_sb, clusters, broker, psi_pred_ss2_dfs)
     orphans.place_orphans(multi_core=True)
-    assert len(orphans.clusters) == 5
+    assert len(orphans.clusters) == 3
 
     # If no small clusters, nothing much happens
     orphans = rdmcl.Orphans(parent_sb, clusters[:2], broker, psi_pred_ss2_dfs)
