@@ -19,12 +19,13 @@ class SQLiteBroker(object):
     """
     Multithread broker to query a SQLite db
     """
-    def __init__(self, db_file="sqlite_db.sqlite"):
+    def __init__(self, db_file="sqlite_db.sqlite", lock_wait_time=120):
         self.db_file = db_file
         self.connection = sqlite3.connect(self.db_file)
         self.broker_cursor = self.connection.cursor()
         self.broker_queue = SimpleQueue()
         self.broker = None
+        self.lock_wait_time = lock_wait_time
 
     def create_table(self, table_name, fields):
         """
@@ -55,7 +56,7 @@ class SQLiteBroker(object):
                         except sqlite3.OperationalError as err:
                             if "database is locked" in str(err):
                                 # Wait for database to become free
-                                if locked_counter == 1200:  # Wait up to 10 minutes for lock to be removed
+                                if locked_counter == self.lock_wait_time * 2:
                                     print("Failed query: %s" % query['sql'])
                                     raise err
                                 locked_counter += 1

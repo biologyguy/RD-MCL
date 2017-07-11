@@ -1392,7 +1392,9 @@ def argparse_init():
                               help="Set minimum Gelman-Rubin PSRF value for convergence (default=%s)" % GELMAN_RUBIN)
     parser_flags.add_argument("-cpu", "--max_cpus", type=int, action="store", default=CPUS, metavar="",
                               help="Specify the maximum number of cores RD-MCL can use (default=%s)" % CPUS)
-
+    parser_flags.add_argument("-lwt", "--lock_wait_time", type=int, default=1200, metavar="",
+                              help="Specify num seconds a process should wait on the SQLite database before crashing"
+                                   " out (default=1200)")
     parser_flags.add_argument("-mcs", "--mcmc_steps", default=0, type=int, metavar="",
                               help="Specify a max number of MCMC steps (default=auto-detect)")
     parser_flags.add_argument("-op", "--open_penalty", type=float, default=GAP_OPEN, metavar="",
@@ -1487,7 +1489,7 @@ Please do so now:
 
     sqlite_path = os.path.join(in_args.outdir, "sqlite_db.sqlite") if not in_args.sqlite_db \
         else os.path.abspath(in_args.sqlite_db)
-    broker = helpers.SQLiteBroker(db_file=sqlite_path)
+    broker = helpers.SQLiteBroker(db_file=sqlite_path, lock_wait_time=in_args.lock_wait_time)
     broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
                                        "graph TEXT", "cluster_score TEXT"])
     broker.start_broker()

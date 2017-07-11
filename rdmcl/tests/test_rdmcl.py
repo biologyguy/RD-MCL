@@ -956,6 +956,9 @@ parser.add_argument("-ch", "--chains", default=rdmcl.MCMC_CHAINS, type=int,
                     help="Specify how many MCMCMC chains to run (default=3)")
 parser.add_argument("-wlk", "--walkers", default=3, type=int,
                     help="Specify how many Metropolis-Hastings walkers are in each chain (default=2)")
+parser.add_argument("-lwt", "--lock_wait_time", type=int, default=1200, metavar="",
+                    help="Specify num seconds a process should wait on the SQLite database before crashing"
+                         " out (default=1200)")
 
 parser.add_argument("-f", "--force", action="store_true",
                     help="Overwrite previous run")
