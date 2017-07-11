@@ -55,11 +55,11 @@ class SQLiteBroker(object):
                         except sqlite3.OperationalError as err:
                             if "database is locked" in str(err):
                                 # Wait for database to become free
-                                if locked_counter == 24:  # Wait up to 2 minutes for lock to be removed
+                                if locked_counter == 1200:  # Wait up to 10 minutes for lock to be removed
                                     print("Failed query: %s" % query['sql'])
                                     raise err
                                 locked_counter += 1
-                                sleep(5)
+                                sleep(.5)
                                 continue
                             else:
                                 print("Failed query: %s" % query['sql'])
