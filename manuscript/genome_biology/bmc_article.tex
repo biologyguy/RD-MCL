@@ -245,13 +245,30 @@ Blahh
 %% Background %%
 %%
 \section{Background and rationale}
-When a gene evolves an important physiological function, purifying selection tends to maintain that function through evolutionary time \cite{Altenhoff:2012ea, Rogozin:2014fp, KryuchkovaMostacci:2016iw}. As a result, orthology (i.e., homology via speciation) has become a widely used predictor of shared gene product function among species, with considerable effort made to develop computational methods for identifying orthologs. The algorithms currently in popular use fall into two broad categories: Tree-based and graph-based clustering methods (recently reviewed by Fredj Tekaia \cite{Tekaia:2016ga}). Breifly, tree-based approaches (e.g., Ensembl Compara \cite{Vilella:2009ju}, LOFT \cite{vanderHeijden:2007bo}, and SYNERGY \cite{Wapinski:2007fa}) identify orthologous clades by estimating phylogenetic trees for a target gene family, and then attempt to reconcile those gene trees against a `known' species tree. While tree-based methods are very accurate under ideal conditions, they are very sensitive to the accuracy of the species trees they rely on, which can become a considerable source of uncertainty or error \cite{Xu:2016ek}. Alternatively, pairwise similarity graph clustering methods leverage graph theory to rapidly identify groups of related sequences from genome scale datasets. Due to the non-transitive nature of orthology (i.e., paralogs in one species can be orthologous to a single gene in another species), groupings of pure orthologs may not be possible. Instead, the term `orthogroup' has come to represent a cluster of genes desended from a common ancestor of the clade in question, which may include paralogs \cite{Wapinski:2007fa}. InParanoid \cite{OBrien:2005cy}, EggNOG \cite{Jensen:2007cc}, and OMA \cite{Roth:2009iu} are popular tools for assigning sequences to orthogroups using a `best-hit clique' approach, where closed best-hit sub-graphs are identified in the dataset. While accurate within each sub-graph, these methods tend to be overly strict in their assignment; this causes an under-representation of actual orthologous relationships among many species. Alternatively, Markov clustering (MCL) is very efficient at isolating more inclusive sub-graphs. OrthoMCL is one of the most popular MCL-based ortholog prediction methods \cite{Li:2003en}, but it is prone to placing too many in-paralogs into orthogroups (i.e., it is less precise).
+When a gene evolves an important physiological function, purifying selection tends to maintain that function through evolutionary time \cite{Altenhoff:2012ea, Rogozin:2014fp, KryuchkovaMostacci:2016iw}.
+As a result, orthology (i.e., homology via speciation) has become a widely used predictor of shared gene product function among species, with considerable effort made to develop computational methods for identifying orthologs.
+Due to the non-transitive nature of orthology (i.e., paralogs in one species can be orthologous to a single gene in another species), groupings of pure orthologs may not be possible \cite{Fitch:2000tf}.
+Instead, the term `orthogroup' has come to represent a cluster of genes desended from a common ancestor of the clade in question, which may include paralogs \cite{Wapinski:2007fa}.
+The algorithms currently in popular use for defining orthogroups fall into three broad categories: Synteny-based, tree-based, and graph-based clustering methods (recently reviewed in \cite{Tekaia:2016ga} and \cite{Habermann2016}).
+
+Syntenic neighborhoods degrade rapidly with evolutionary distance, so pure synteny-based approaches are not generally appropriate except between closely related taxa \cite{Kristensen:2011gw}.
+Furthermore, such approaches require highly contiguous genomic assemblies; while advances in long-read sequencing technology and de novo assembly will likely allow future genome sequencing efforts to acheive the necessary standards, current genome projects often remain highly fragmented \cite{Koren:2015il}.
+
+Tree-based approaches (e.g., Ensembl Compara \cite{Vilella:2009ju}, LOFT \cite{vanderHeijden:2007bo}, and SYNERGY \cite{Wapinski:2007fa}) identify orthologous clades by estimating phylogenetic trees for a target gene family, and then attempt to reconcile those gene trees against a `known' species tree.
+The accuracy of tree-based orthology prediction methods is tied closely to the accuracy of the species trees they rely on; this can lead to considerable uncertainty or error, especially for less well-studied taxonomic groups \cite{Xu:2016ek}.
+
+Alternatively, pairwise similarity graph clustering methods leverage graph theory to rapidly identify groups of related sequences from genome scale datasets.
+InParanoid \cite{OBrien:2005cy}, EggNOG \cite{Jensen:2007cc}, and OMA \cite{Roth:2009iu} are popular tools for assigning sequences to orthogroups using a `best-hit clique' approach, where closed best-hit sub-graphs are identified in the dataset.
+These methods can be fast and accurate for detecting one-to-one orthologs, but they suffer dimminishing recall rates when in-paralogs are present among the species under study \cite{Dalquen:2013fz} (`in-paralog' describes homologs derivied from a genetic duplication \textit{after} speciation between the taxa in question \cite{Sonnhammer:2002vm,Tekaia:2016ga}).
+In contrast, Markov clustering (MCL) can efficiently isolate more inclusive sub-graphs  \cite{VanDongen:kJZ890qx,Enright:2002uq}.
+
+OrthoMCL is one of the most popular MCL-based ortholog prediction methods \cite{Li:2003en}, but it is prone to placing too many in-paralogs into orthogroups (i.e., it is less precise).
 
 For coarse-grained, genome-wide analysis, many of the tools mentioned above perform very well.
 
-Spill some ink regarding in/out paralogs \cite{Sonnhammer:2002vm,Tekaia:2016ga}.
 
-BLAST scores (bit or e-value) have a strong length bias when calculating orthogroups \cite{Emms:2015ig}. OrthoFinder also uses a static inflation/edge similarity threashold \cite{Emms:2015ig}
+
+BLAST scores (bit or e-value) have a strong length bias when calculating orthogroups, but this can be corrected for by creating a linear model from the top 5\% of matches between two species and scaling all other matches according to that model \cite{Emms:2015ig}. OrthoFinder also uses a static inflation/edge similarity threashold for MCL \cite{Emms:2015ig}
 
 In the current study we have increased the overall resolving power of MCL-based orthogroup assignment with a number of novel enhancements, including refinement of the pairwise similarity metrics, using an optimization algorithm to dynamically select MCL parameters, recursively subdividing orthogroups, and testing putative orthogroups for best-hit cliques to maximize resolution.
 
@@ -265,12 +282,15 @@ The impetus for developing RD-MCL was to predict high-quality fine-grained ortho
 \subsection{Simulation data across the dynamic range of RD-MCL}
 To test the performance of RD-MCL compared to other available ortholog prediction tools, we simulated sets of homologs using the Pyvolve module \cite{Spielman:2015kv}. These simulations varied in the number of sequences, branch length (substitutions per site), degree of gene loss or duplication, and domain architecture. The initial seed sequence for all simulations was a polypeptide 398 amino acids long containing four transmembrane domains. More extensive descriptions of the following simulations can be found in the Methods section.
 
+OrthoFinder performs extremely poorly, but this is probably due to the scaling factor that it generates when classifying orthogroups. We are not providing enough data to generate a productive linear model \cite{Emms:2015ig}.
+Is it worth while to create a ven diagram illustrating the overlap between methods?
+
 \subsubsection{Branch lengths}
 Given an idealized set of homologous sequences, where there has been no gene loss and all gene duplications occured prior to the last common ancestor of the taxa included in the set, the phylogenetic relationship within each orthogroup should closely approximate the underlying species tree. Fruthermore, the phylogenetic relationship among the orthogroups will approximate the original gene tree of all paralogs present in the last common ancestor. As such, two distinct axes of divergence must be accounted for when assessing the effect of branch length (i.e., substitutions per site), which we will refer to as the 'species tree length' and 'gene tree length', respectively.
 
 % Maybe make a figure here, to show the two axes of divergence??
 
-A total of 625 datasets were simulated, with each containing eight taxa and seven orthologs (for 56 sequences per dataset). Branch lengths were varied from 0.05 to 1.55 substitutions per site with standard deviations between 0.05 and 1.05 to prevent perfectly symetrical trees. As illustrated in Figure \ref{fig:branch_len_3d}, RD-MCL was either equivilent to or out performed OrthoFinder, OrthoMCL, and ProteinOrtho across the entire dynamic range assessed. All of the methods tested were more sensitive to changes in species tree branch lengths than they were to gene tree branch lengths (i.e., branches within an orthogroup, as opposed to between orthogroups), although both RD-MCL and OrthoMCL performed marginally better on short species trees with the gene trees were longer.
+A total of 625 datasets were simulated, with each containing eight taxa and seven orthologs (for 56 sequences per dataset). Branch lengths were varied from 0.05 to 1.55 substitutions per site with standard deviations between 0.05 and 1.05 to prevent perfectly symetrical trees. As illustrated in Figure \ref{fig:branch_len_3d}, RD-MCL was either equivilent to or out performed OrthoFinder, OrthoMCL, and ProteinOrtho across the entire dynamic range assessed. All of the methods tested were more sensitive to echanges in species tree branch lengths than they were to gene tree branch lengths (i.e., branches within an orthogroup, as opposed to between orthogroups), although both RD-MCL and OrthoMCL performed marginally better on short species trees with the gene trees were longer.
 
 % May_3_2017_orthofinder_branch_lengths/orthofinder_BL.ipynb
 % May_3_2017_OrthoMCL_branch_lengths/orthomcl_BL.ipynb
@@ -330,7 +350,7 @@ To test the effects of increasing the number of orthogroups and orthogroup size,
 \lipsum[1]
 
 \section{Conclusions}
-Can't wait to share my conclusions.
+It is important to remember that there is nothing intrinsically special about true orthologs, and that while there may be a strong tendency to retain function due to evolutionary pressures, the fate of any given gene is still at the mercy of the biological context it finds itself in and the stochastic nature of inheritence. In light of this uncertainty it is almost certainly more useful, from a biological and functional perspective, to focus more on heirarchical similarity among proteins than on the actual geneology.
 
 \section{Methods}
 \subsection{Simulation data}
