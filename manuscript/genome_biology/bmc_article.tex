@@ -257,12 +257,10 @@ Furthermore, such approaches require highly contiguous genomic assemblies; while
 Tree-based approaches (e.g., Ensembl Compara \cite{Vilella:2009ju}, LOFT \cite{vanderHeijden:2007bo}, and SYNERGY \cite{Wapinski:2007fa}) identify orthologous clades by estimating phylogenetic trees for a target gene family, and then attempt to reconcile those gene trees against a `known' species tree.
 The accuracy of tree-based orthology prediction methods is tied closely to the accuracy of the species trees they rely on; this can lead to considerable uncertainty or error, especially for less well-studied taxonomic groups \cite{Xu:2016ek}.
 
-Alternatively, pairwise similarity graph clustering methods leverage graph theory to rapidly identify groups of related sequences from genome scale datasets.
+Finally, pairwise similarity graph clustering methods leverage graph theory to rapidly identify groups of related sequences.
 InParanoid \cite{OBrien:2005cy}, EggNOG \cite{Jensen:2007cc}, and OMA \cite{Roth:2009iu} are popular tools for assigning sequences to orthogroups using a `best-hit clique' approach, where closed best-hit sub-graphs are identified in the dataset.
-These methods can be fast and accurate for detecting one-to-one orthologs, but they suffer dimminishing recall rates when in-paralogs are present among the species under study \cite{Dalquen:2013fz} (`in-paralog' describes homologs derivied from a genetic duplication \textit{after} speciation between the taxa in question \cite{Sonnhammer:2002vm,Tekaia:2016ga}).
-In contrast, Markov clustering (MCL) can efficiently isolate more inclusive sub-graphs  \cite{VanDongen:kJZ890qx,Enright:2002uq}.
-
-OrthoMCL is one of the most popular MCL-based ortholog prediction methods \cite{Li:2003en}, but it is prone to placing too many in-paralogs into orthogroups (i.e., it is less precise).
+These methods can be fast and accurate for detecting one-to-one orthologs, but they suffer dimminishing recall rates when in-paralogs are present among the species under study \cite{Dalquen:2013fz} (`in-paralog' describes homologs derivied from genetic duplication \textit{after} speciation among the taxa in question \cite{Sonnhammer:2002vm,Tekaia:2016ga}).
+In contrast, Markov clustering (MCL) can efficiently isolate more inclusive sub-graphs  \cite{VanDongen:kJZ890qx,Enright:2002uq}. OrthoMCL \cite{Li:2003en}, OrthoFinder \cite{Emms:2015ig}, and ProteinOrtho \cite{Lechner:2011jk} is one of the most popular MCL-based ortholog prediction methods, but it is prone to placing too many in-paralogs into orthogroups (i.e., it is less precise).
 
 For coarse-grained, genome-wide analysis, many of the tools mentioned above perform very well.
 
