@@ -32,6 +32,7 @@ import json
 import logging
 import time
 import argparse
+import sqlite3
 from io import StringIO
 from subprocess import Popen, PIPE, check_output, CalledProcessError
 from multiprocessing import Lock, Pipe
@@ -40,6 +41,7 @@ from math import ceil, log2
 from collections import OrderedDict
 from copy import deepcopy
 from hashlib import md5
+
 
 # 3rd party
 import pandas as pd
@@ -82,7 +84,7 @@ Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
 --------------------
 '''
 LOCK = Lock()
-SIMSCORE_LOCK = Lock()
+MULTICORE_LOCK = Lock()
 CPUS = br.usable_cpu_count()
 TIMER = helpers.Timer()
 GAP_OPEN = -5
@@ -91,6 +93,10 @@ BLOSUM62 = helpers.make_full_mat(SeqMat(MatrixInfo.blosum62))
 MCMC_CHAINS = 3
 DR_BASE = 0.75
 GELMAN_RUBIN = 1.1
+WORKER_DB = ""
+WORKER_PULSE = 60
+PSIPREDDIR = ""
+
 
 ambiguous_X = {"A": 0, "R": -1, "N": -1, "D": -1, "C": -2, "Q": -1, "E": -1, "G": -1, "H": -1, "I": -1, "L": -1,
                "K": -1, "M": -1, "F": -1, "P": -2, "S": 0, "T": 0, "W": -2, "Y": -1, "V": -1}
@@ -100,6 +106,7 @@ for aa in ambiguous_X:
     BLOSUM62[pair] = ambiguous_X[aa]
 
 
+# ToDo: Maybe remove support for taxa_sep. It's complicating my life, so just impose the '-' on users?
 class Cluster(object):
     def __init__(self, seq_ids, sim_scores, taxa_sep="-", parent=None, collapse=True, r_seed=None):
         """
@@ -693,7 +700,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
         if not os.path.isdir(os.path.join(outdir, "mcmcmc", master_cluster.name())):
             temp_dir.save(os.path.join(outdir, "mcmcmc", master_cluster.name()))
-        alignment = generate_msa(seqbuddy, sql_broker)
+        _, alignment = create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, quiet=True)
         alignment.write(os.path.join(outdir, "alignments", master_cluster.name()))
         master_cluster.sim_scores.to_csv(os.path.join(outdir, "sim_scores", "%s.scores" % master_cluster.name()),
                                          header=None, index=False, sep="\t")
@@ -701,6 +708,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         progress.update("placed", update)
         return
 
+    pulse()
     rand_gen = Random(r_seed)
     master_cluster.set_name()
     temp_dir = br.TempDir()
@@ -856,6 +864,7 @@ def mcmcmc_mcl(args, params):
     :param params: List of parameters (see below for unpacking assignment)
     :return:
     """
+    pulse()
     inflation, gq, r_seed = args
     exter_tmp_dir, seqbuddy, parent_cluster, taxa_sep, sql_broker, psi_pred_ss2_dfs, progress = params
     rand_gen = Random(r_seed)
@@ -866,22 +875,11 @@ def mcmcmc_mcl(args, params):
     score = 0
 
     for indx, cluster_ids in enumerate(clusters):
-        cluster_hash = helpers.md5_hash(", ".join(sorted(cluster_ids)))
-        graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_hash))
-        if graph and graph[0][0]:
-            sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
-            score += float()
-            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
-                              r_seed=rand_gen.randint(1, 999999999999999))
-        else:
-            sb_copy = Sb.make_copy(seqbuddy)
-            sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster_ids]))
-            alb_obj = generate_msa(sb_copy, sql_broker)
-            with SIMSCORE_LOCK:
-                sim_scores = create_all_by_all_scores(alb_obj, psi_pred_ss2_dfs, quiet=True)
-            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
-                              r_seed=rand_gen.randint(1, 999999999999999))
-            cluster2database(cluster, sql_broker, alb_obj)
+        sb_copy = Sb.make_copy(seqbuddy)
+        sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster_ids]))
+        sim_scores, alb_obj = create_all_by_all_scores(sb_copy, psi_pred_ss2_dfs, sql_broker, quiet=True)
+        cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
+                          r_seed=rand_gen.randint(1, 999999999999999))
 
         clusters[indx] = cluster
         score += cluster.score()
@@ -955,45 +953,114 @@ def check_sequences(seqbuddy, taxa_sep):
     return
 
 
-def generate_msa(seqbuddy, sql_broker):
-    seq_ids = sorted([rec.id for rec in seqbuddy.records])
-    seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
-    alignment = sql_broker.query("SELECT (alignment) FROM data_table WHERE hash='{0}'".format(seq_id_hash))
-    if alignment and alignment[0][0]:
-        alignment = Alb.AlignBuddy(alignment[0][0])
-    else:
-        if len(seqbuddy) == 1:
-            alignment = Alb.AlignBuddy(str(seqbuddy))
-        else:
-            alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), MAFFT, params="--globalpair --thread -1", quiet=True)
-
-        sql_broker.query("UPDATE data_table SET alignment='{0}' "
-                         "WHERE hash='{1}'".format(str(alignment), seq_id_hash))
-    return alignment
+def pulse():
+    if WORKER_DB and os.path.isfile(WORKER_DB):
+        with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+            master = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master'")
+            master = master.fetchone()
+            if not master:
+                cursor.execute("INSERT INTO heartbeat (thread_type, pulse) "
+                               "VALUES ('master', %s)" % round(time.time()))
+            else:
+                cursor.execute("UPDATE heartbeat SET pulse=%s WHERE thread_type='master'" % round(time.time()))
+    return
 
 
 # ################ SCORING FUNCTIONS ################ #
-def create_all_by_all_scores(alignment, psi_pred_ss2_dfs, gap_open=GAP_OPEN, gap_extend=GAP_EXTEND, quiet=False):
+def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GAP_OPEN,
+                             gap_extend=GAP_EXTEND, quiet=False):
     """
     Generate a multiple sequence alignment and pull out all-by-all similarity graph
-    :param alignment: AlignBuddy object
+    :param seqbuddy: AlignBuddy object
     :param psi_pred_ss2_dfs: OrderedDict of {seqID: ss2 dataframes}
+    :param sql_broker: Active broker object to search/update SQL database
     :param gap_open: Gap initiation penalty
     :param gap_extend: Gap extension penalty
     :param quiet: Supress multicore output
     :return:
     """
-    if len(alignment.records()) == 1:
-        sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
-        return sim_scores
+    seq_ids = sorted([rec.id for rec in seqbuddy.records])
+    seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
 
-    # Don't want to modify the alignbuddy object in place
-    alignment = Alb.make_copy(alignment)
+    if len(seqbuddy) == 1:
+        sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
+        alignment = Alb.AlignBuddy(str(seqbuddy))
+        cluster2database(Cluster(seq_ids, sim_scores, collapse=False), sql_broker, alignment)
+        return sim_scores, alignment
+
+    # Grab from the database first, if the data exists there already
+    query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash='%s'" % seq_id_hash)
+    if query and len(query[0]) == 2:
+        sim_scores, alignment = query[0]
+        sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None)
+        sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+        return sim_scores, Alb.AlignBuddy(alignment)
+
+    # Try to feed the job to independent workers
+    if WORKER_DB and os.path.isfile(WORKER_DB):
+        run_worker = True
+        already_queued = False
+        with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+            workers = cursor.execute("SELECT * FROM heartbeat "
+                                     "WHERE thread_type='worker' "
+                                     "AND pulse>%s" % (time.time() - WORKER_PULSE))
+            if workers.fetchone():
+                # Make sure the job hasn't already been submitted or completed)
+                complete_check = cursor.execute("SELECT * FROM complete WHERE hash='%s'" % seq_id_hash).fetchone()
+                queue_check = cursor.execute("SELECT * FROM queue WHERE hash='%s'" % seq_id_hash).fetchone()
+                processing_check = cursor.execute("SELECT * FROM processing WHERE hash='%s'" % seq_id_hash).fetchone()
+
+                if complete_check or queue_check or processing_check:
+                    already_queued = True
+                else:
+                    cursor.execute("INSERT INTO queue (hash, seqs, psi_pred_dir) VALUES ('%s', '%s', '%s')" %
+                                   (seq_id_hash, str(seqbuddy), PSIPREDDIR))
+            else:
+                run_worker = False
+
+        while run_worker:
+            pulse()
+            if already_queued:
+                query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash='%s'" % seq_id_hash)
+                if query and len(query[0]) == 2:
+                    sim_scores, alignment = query[0]
+                    sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None)
+                    sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+                    return sim_scores, Alb.AlignBuddy(alignment)
+
+            with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+                cursor.execute("UPDATE heartbeat SET pulse=%s WHERE thread_type='master'" % round(time.time()))
+                complete_check = False if already_queued \
+                    else cursor.execute("SELECT * FROM complete WHERE hash='%s'" % seq_id_hash).fetchone()
+
+                if complete_check:
+                    cursor.execute("DELETE FROM complete WHERE hash='%s'" % seq_id_hash)
+                else:
+                    queue_check = cursor.execute("SELECT * FROM queue "
+                                                 "WHERE hash='%s'" % seq_id_hash).fetchone()
+                    processing_check = cursor.execute("SELECT * FROM processing "
+                                                      "WHERE hash='%s'" % seq_id_hash).fetchone()
+                    workers_check = cursor.execute("SELECT * FROM heartbeat "
+                                                   "WHERE thread_type='worker' "
+                                                   "AND pulse>%s" % (time.time() - WORKER_PULSE)).fetchone()
+                    run_worker = True if (queue_check or processing_check) and workers_check else False
+
+            if complete_check:
+                alignment = Alb.AlignBuddy(StringIO(complete_check[1]))
+                sim_scores = pd.read_csv(StringIO(complete_check[2]), index_col=False, header=None)
+                sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+                cluster2database(Cluster(seq_ids, sim_scores, collapse=False), sql_broker, alignment)
+                return sim_scores, alignment
+            else:
+                time.sleep(randint(1, 100) / 100)  # Pause for some part of one second
+    
+    # If the job couldn't be pushed off on a worker, do it directly
+    alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), MAFFT, params="--globalpair --thread -1", quiet=True)
 
     # Need to specify what columns the PsiPred files map to now that there are gaps.
     psi_pred_ss2_dfs = deepcopy(psi_pred_ss2_dfs)  # Don't modify in place...
 
-    for rec in alignment.records_iter():
+    for rec in seqbuddy.records:
         ss_file = psi_pred_ss2_dfs[rec.id]
         ss_counter = 0
         for indx, residue in enumerate(rec.seq):
@@ -1002,10 +1069,10 @@ def create_all_by_all_scores(alignment, psi_pred_ss2_dfs, gap_open=GAP_OPEN, gap
                 ss_counter += 1
         psi_pred_ss2_dfs[rec.id] = ss_file
 
-    # Scores seem to be improved by removing gaps. Need to test this explicitly for the paper though
+    # Scores seem to be improved by removing gaps. ToDo: Need to test this explicitly for the paper
     alignment = Alb.trimal(alignment, threshold=0.9)
 
-    # Re-update PsiPred files now that some columns, posibily including non-gap characters, are removed
+    # Re-update PsiPred files now that some columns, possibly including non-gap characters, are removed
     for rec in alignment.records_iter():
         new_psi_pred = [0 for _ in range(len(psi_pred_ss2_dfs[rec.id].index))]  # Instantiate list of max possible size
         indx = 0
@@ -1032,8 +1099,9 @@ def create_all_by_all_scores(alignment, psi_pred_ss2_dfs, gap_open=GAP_OPEN, gap
         n = int(ceil(len(all_by_all) / CPUS))
         all_by_all = [all_by_all[i:i + n] for i in range(0, len(all_by_all), n)] if all_by_all else []
         score_sequences_params = [alignment, psi_pred_ss2_dfs, all_by_all_outdir.path, gap_open, gap_extend]
-        br.run_multicore_function(all_by_all, mc_score_sequences, score_sequences_params,
-                                  quiet=quiet, max_processes=CPUS)
+        with MULTICORE_LOCK:
+            br.run_multicore_function(all_by_all, mc_score_sequences, score_sequences_params,
+                                      quiet=quiet, max_processes=CPUS)
     sim_scores_file = br.TempFile()
     sim_scores_file.write("seq1,seq2,subsmat,psi")
     aba_root, aba_dirs, aba_files = next(os.walk(all_by_all_outdir.path))
@@ -1053,7 +1121,8 @@ def create_all_by_all_scores(alignment, psi_pred_ss2_dfs, gap_open=GAP_OPEN, gap
 
     # ToDo: Experiment testing these magic number weights...
     sim_scores['score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
-    return sim_scores
+    cluster2database(Cluster(seq_ids, sim_scores, collapse=False), sql_broker, alignment)
+    return sim_scores, alignment
 
 
 def mc_score_sequences(seq_pairs, args):
@@ -1167,17 +1236,9 @@ class Orphans(object):
         seqbuddy = Sb.make_copy(self.seqbuddy)
         regex = "^%s$" % "$|^".join(seq_ids)
         Sb.pull_recs(seqbuddy, regex)
-        alb_obj = generate_msa(seqbuddy, self.sql_broker)
 
-        # If a graph already exists, use it. Otherwise, make a new one for this subset of sequences.
-        graph = self.sql_broker.query("SELECT (graph) FROM data_table "
-                                      "WHERE hash='{0}'".format(helpers.md5_hash(", ".join(seq_ids))))
-        if graph and graph[0][0]:
-            sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
-            sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
-        else:
-            sim_scores = create_all_by_all_scores(alb_obj, self.psi_pred_ss2_dfs, quiet=True)
-            cluster2database(Cluster(seq_ids, sim_scores, collapse=False), self.sql_broker, alb_obj)
+        sim_scores, alb_obj = create_all_by_all_scores(seqbuddy, self.psi_pred_ss2_dfs, self.sql_broker, quiet=True)
+        cluster2database(Cluster(seq_ids, sim_scores, collapse=False), self.sql_broker, alb_obj)
         return sim_scores
 
     def _check_orphan(self, small_cluster):
@@ -1284,8 +1345,9 @@ class Orphans(object):
                     self.temp_merge_clusters(sm_clust, lg_clust)
 
             if multi_core:
-                br.run_multicore_function(small_clusters, self.mc_check_orphans, [tmp_file.path],
-                                          quiet=True, max_processes=CPUS)
+                with MULTICORE_LOCK:
+                    br.run_multicore_function(small_clusters, self.mc_check_orphans, [tmp_file.path],
+                                              quiet=True, max_processes=CPUS)
             else:
                 for clust in small_clusters:
                     self.mc_check_orphans(clust, [tmp_file.path])
@@ -1308,16 +1370,9 @@ class Orphans(object):
                 small_cluster = self.small_clusters[small_name]
                 large_cluster.reset_seq_ids(small_cluster.seq_ids + large_cluster.seq_ids)
 
-                graph = self.sql_broker.query("SELECT (graph) FROM data_table "
-                                              "WHERE hash='{0}'".format(large_cluster.seq_id_hash))
-                if graph and graph[0][0]:
-                    sim_scores = pd.read_csv(StringIO(graph[0][0]), index_col=False, header=None)
-                    sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
-                else:
-                    alb_obj = generate_msa(Sb.pull_recs(Sb.make_copy(self.seqbuddy),
-                                                        "^%s$" % "$|^".join(large_cluster.seq_ids)), self.sql_broker)
-                    sim_scores = create_all_by_all_scores(alb_obj, self.psi_pred_ss2_dfs, quiet=True)
-                    cluster2database(large_cluster, self.sql_broker, alb_obj)
+                seqs = Sb.pull_recs(Sb.make_copy(self.seqbuddy), "^%s$" % "$|^".join(large_cluster.seq_ids))
+                sim_scores, alb_obj = create_all_by_all_scores(seqs, self.psi_pred_ss2_dfs,
+                                                               self.sql_broker, quiet=True)
 
                 large_cluster.sim_scores = sim_scores
                 for taxon, seq_ids in small_cluster.taxa.items():
@@ -1401,6 +1456,8 @@ def argparse_init():
                               help="Penalty for opening a gap in pairwise alignment scoring (default=%s)" % GAP_OPEN)
     parser_flags.add_argument("-ep", "--ext_penalty", type=float, default=GAP_EXTEND, metavar="",
                               help="Penalty to extend a gap in pairwise alignment scoring (default=%s)" % GAP_EXTEND)
+    parser_flags.add_argument("-wdb", "--workdb", action="store", default="",
+                              help="Specify the location of a sqlite database monitored by workers")
     parser_flags.add_argument("-f", "--force", action="store_true",
                               help="Try to run no matter what.")
     parser_flags.add_argument("-q", "--quiet", action="store_true",
@@ -1566,6 +1623,9 @@ Continue? y/[n] """ % len(sequences)
     in_args.psipred_dir = "{0}{1}psi_pred".format(in_args.outdir, os.sep) if not in_args.psipred_dir \
         else in_args.psipred_dir
 
+    global PSIPREDDIR
+    PSIPREDDIR = in_args.psipred_dir
+
     for record in sequences.records:
         if os.path.isfile(os.path.join(in_args.psipred_dir, "%s.ss2" % record.id)):
             records_with_ss_files.append(record.id)
@@ -1592,6 +1652,7 @@ Continue? y/[n] """ % len(sequences)
     logging.warning("\n** All-by-all graph **")
     logging.info("gap open penalty: %s\ngap extend penalty: %s" % (in_args.open_penalty, in_args.ext_penalty))
 
+    """
     align_data = broker.query("SELECT (alignment) FROM data_table WHERE hash='{0}'".format(seq_ids_hash))
     if align_data and align_data[0][0]:
         logging.warning("RESUME: Initial multiple sequence alignment found")
@@ -1601,31 +1662,27 @@ Continue? y/[n] """ % len(sequences)
         alignbuddy = generate_msa(sequences, broker)
         alignbuddy.write(os.path.join(in_args.outdir, "alignments", "group_0.aln"))
         logging.info("\t-- finished in %s --\n" % TIMER.split())
+    """
 
-    graph_data = broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(seq_ids_hash))
-    if graph_data and graph_data[0][0]:
-        logging.warning("RESUME: Initial all-by-all similarity graph found")
-        scores_data = pd.read_csv(StringIO(graph_data[0][0]), index_col=False, header=None)
-        scores_data.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+    global WORKER_DB
+    WORKER_DB = in_args.workdb
 
-    else:
-        num_comparisons = ((len(alignbuddy.alignments[0]) ** 2) - len(alignbuddy.alignments[0])) / 2
-        logging.warning("Generating initial all-by-all similarity graph (%s comparisons)" % int(num_comparisons))
-        logging.info(" written to: {0}{1}sim_scores{1}complete_all_by_all.scores".format(in_args.outdir, os.sep))
-        scores_data = create_all_by_all_scores(alignbuddy, psi_pred_files)
-        scores_data.to_csv(os.path.join(in_args.outdir, "sim_scores", "complete_all_by_all.scores"),
-                           header=None, index=False, sep="\t")
-        logging.info("\t-- finished in %s --\n" % TIMER.split())
+    num_comparisons = ((len(sequences) ** 2) - len(sequences)) / 2
+    logging.warning("Generating initial all-by-all similarity graph (%s comparisons)" % int(num_comparisons))
+    logging.info(" written to: {0}{1}sim_scores{1}complete_all_by_all.scores".format(in_args.outdir, os.sep))
+    scores_data, alignbuddy = create_all_by_all_scores(sequences, psi_pred_files, broker)
+    scores_data.to_csv(os.path.join(in_args.outdir, "sim_scores", "complete_all_by_all.scores"),
+                       header=None, index=False, sep="\t")
+    logging.info("\t-- finished in %s --\n" % TIMER.split())
 
     if in_args.dr_base:
         global DR_BASE
         DR_BASE = in_args.dr_base
     logging.warning("Diminishing returns scoring base: %s" % DR_BASE)
 
-    # First push the really raw first alignment in the database, without any collapsing.
+    # First prepare the really raw first alignment in the database, without any collapsing.
     uncollapsed_group_0 = Cluster([rec.id for rec in sequences.records], scores_data,
                                   taxa_sep=in_args.taxa_sep, collapse=False, r_seed=in_args.r_seed)
-    cluster2database(uncollapsed_group_0, broker, alignbuddy)
 
     # Then prepare the 'real' group_0 cluster
     if not in_args.suppress_paralog_collapse:
@@ -1633,6 +1690,7 @@ Continue? y/[n] """ % len(sequences)
                                   taxa_sep=in_args.taxa_sep, r_seed=in_args.r_seed)
     else:
         group_0_cluster = uncollapsed_group_0
+
     cluster2database(group_0_cluster, broker, alignbuddy)
 
     # Base cluster score

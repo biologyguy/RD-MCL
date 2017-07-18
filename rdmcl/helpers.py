@@ -13,6 +13,30 @@ from copy import copy
 from hashlib import md5
 from multiprocessing import SimpleQueue, Process, Pipe
 from buddysuite.buddy_resources import pretty_time, TempDir, SafetyValve
+from random import randint
+
+
+class ExclusiveConnect(object):
+    def __init__(self, db_path):
+        self.db_path = db_path
+
+    def __enter__(self):
+        while True:
+            try:
+                self.connection = sqlite3.connect(self.db_path, isolation_level=None)
+                self.connection.execute('BEGIN EXCLUSIVE')
+                break
+            except sqlite3.OperationalError as err:
+                if "database is locked" in str(err):
+                    sleep(randint(1, 10) / 100)
+                    continue
+                else:
+                    raise err
+        return self.connection.cursor()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.connection.commit()
+        self.connection.close()
 
 
 class SQLiteBroker(object):
