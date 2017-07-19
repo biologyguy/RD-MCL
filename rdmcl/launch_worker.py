@@ -54,7 +54,7 @@ class Worker(object):
         self.start_time = time.time()
         printer.write("Starting Worker_%s" % self.id)
         printer.new_line(1)
-        seqs, psipred_dir = ["", ""]  # Instantiate some variables
+        seqs, psipred_dir, master_id = ["", "", 0]  # Instantiate some variables
 
         while os.path.isfile("Worker_%s" % self.id):
             printer.write("Idle %s%%" % round(100 * self.idle / (self.idle + self.running), 2))
@@ -75,10 +75,9 @@ class Worker(object):
                 cursor.execute('SELECT * FROM queue')
                 data = cursor.fetchone()
                 if data:
-                    id_hash, seqs, psipred_dir = data
-                    cursor.execute("INSERT INTO processing (hash, worker_id)"
-                                   " VALUES ('%s', '%s')" %
-                                   (id_hash, self.id))
+                    id_hash, seqs, psipred_dir, master_id = data
+                    cursor.execute("INSERT INTO processing (hash, worker_id, master_id)"
+                                   " VALUES ('%s', '%s', %s)" % (id_hash, self.id, master_id))
                     cursor.execute("DELETE FROM queue WHERE hash='%s'" % id_hash)
 
             self.idle += time.time() - self.split_time
@@ -179,8 +178,11 @@ class Worker(object):
 
             with helpers.ExclusiveConnect(self.db_path) as cursor:
                 cursor.execute('UPDATE heartbeat SET pulse=%s WHERE thread_id=%s' % (round(time.time()), self.id))
-                cursor.execute("INSERT INTO complete (hash, alignment, graph) VALUES ('%s', '%s', '%s')" %
-                               (id_hash, str(alignment), sim_scores.to_csv(header=None, index=False)))
+                cursor.execute("INSERT INTO complete (hash, alignment, graph, worker_id, master_id) "
+                               "VALUES ('%s', '%s', '%s', %s, %s)" % (id_hash, str(alignment),
+                                                                      sim_scores.to_csv(header=None, index=False),
+                                                                      self.id, master_id))
+
                 cursor.execute("DELETE FROM processing WHERE hash='%s'" % id_hash)
 
             self.running += time.time() - self.split_time
@@ -293,9 +295,10 @@ if __name__ == '__main__':
 
     connection = sqlite3.connect(in_args.workdb)
     cur = connection.cursor()
-    for sql in ['CREATE TABLE queue (hash TEXT PRIMARY KEY, seqs TEXT, psi_pred_dir TEXT)',
-                'CREATE TABLE processing (hash TEXT PRIMARY KEY, worker_id INTEGER)',
-                'CREATE TABLE complete (hash TEXT PRIMARY KEY, alignment TEXT, graph TEXT)',
+    for sql in ['CREATE TABLE queue (hash TEXT PRIMARY KEY, seqs TEXT, psi_pred_dir TEXT, master_id INTEGER)',
+                'CREATE TABLE processing (hash TEXT PRIMARY KEY, worker_id INTEGER, master_id INTEGER)',
+                'CREATE TABLE complete   (hash TEXT PRIMARY KEY, alignment TEXT, graph TEXT, '
+                'worker_id INTEGER, master_id INTEGER)',
                 'CREATE TABLE heartbeat (thread_id INTEGER PRIMARY KEY AUTOINCREMENT, '
                 'thread_type TEXT, pulse INTEGER)']:
         try:
