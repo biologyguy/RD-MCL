@@ -560,7 +560,7 @@ def test_check_sequences(hf, monkeypatch, capsys):
            "The taxa separator character is currently set to '-',\n" \
            " which can be changed with the '-ts' flag" in out
 
-
+"""
 def test_generate_msa(hf):
     tmpdir = br.TempDir()
     broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
@@ -605,6 +605,7 @@ def test_generate_msa(hf):
     assert len(response) == 2
     connect.close()
     broker.stop_broker()
+"""
 
 
 def test_mc_score_sequence(hf):
@@ -641,21 +642,28 @@ MPPQISAS-I
 
 
 def test_create_all_by_all_scores(hf):
+    tmpdir = br.TempDir()
+    sql_broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
+    sql_broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
+                                           "graph TEXT", "cluster_score TEXT"])
+    sql_broker.start_broker()
+
     seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
     rdmcl.Sb.pull_recs(seqbuddy, "Mle")
-    alignbuddy = rdmcl.Alb.generate_msa(seqbuddy, "mafft", params="--globalpair --thread 2", quiet=True)
     psi_pred_files = [(rec.id, rdmcl.read_ss2_file("%spsi_pred%s%s.ss2" % (hf.resource_path, hf.sep, rec.id)))
-                      for rec in alignbuddy.records()]
+                      for rec in seqbuddy.records]
     psi_pred_files = OrderedDict(psi_pred_files)
 
-    sim_scores = rdmcl.create_all_by_all_scores(alignbuddy, psi_pred_files)
+    sim_scores, alignbuddy = rdmcl.create_all_by_all_scores(seqbuddy, psi_pred_files, sql_broker)
     assert len(sim_scores.index) == 66  # This is for 12 starting sequences --> (a * (a - 1)) / 2
     compare = sim_scores.loc[:][(sim_scores['seq1'] == "Mle-Panxα2") & (sim_scores['seq2'] == "Mle-Panxα12")]
-    assert compare.iloc[0]['score'] == 0.45681517586068199
+    assert compare.iloc[0]['score'] == 0.41742091792119795
+    assert len(alignbuddy.records()) == 12
 
-    rdmcl.Alb.pull_records(alignbuddy, "Mle-Panxα2")
-    sim_scores = rdmcl.create_all_by_all_scores(alignbuddy, psi_pred_files)
+    rdmcl.Sb.pull_recs(seqbuddy, "Mle-Panxα2")
+    sim_scores, alignbuddy = rdmcl.create_all_by_all_scores(seqbuddy, psi_pred_files, sql_broker)
     assert len(sim_scores.index) == 0
+    sql_broker.close()
 
 
 # #########  MCL stuff  ########## #
@@ -827,7 +835,7 @@ def test_instantiate_orphan(hf):
     assert len(orphans.lrg_cluster_sim_scores) == 20
     broker.close()
 
-
+# ToDo: Broken!
 def test_place_orphans(hf):
     broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
     broker.start_broker()
@@ -901,7 +909,7 @@ group_0_3\tgroup_0_0\t0.0192173134297
                                            'Bfr-PanxαA', 'Hca-PanxαA', 'Lcr-PanxαG']
     assert orphans.clusters[2].seq_ids == ['Lla-PanxαA', 'Mle-Panxα11', 'Oma-PanxαD',
                                            'Pba-PanxαB', 'Tin-PanxαF', 'Vpa-PanxαD']
-    assert hf.string2hash(orphans.tmp_file.read()) == "44a16fd327a093de9be87643a89a3a2c", print(orphans.tmp_file.read())
+    assert hf.string2hash(orphans.tmp_file.read()) == "3535657d136a774c9c2d0161f5d2dcd6", print(orphans.tmp_file.read())
 
     # Multicore doesn't seem to work in py.test, but can at least call it like it does
     clusters = [deepcopy(clust) for clust in orig_clusters]
@@ -959,7 +967,8 @@ parser.add_argument("-wlk", "--walkers", default=3, type=int,
 parser.add_argument("-lwt", "--lock_wait_time", type=int, default=1200, metavar="",
                     help="Specify num seconds a process should wait on the SQLite database before crashing"
                          " out (default=1200)")
-
+parser.add_argument("-wdb", "--workdb", action="store", default="",
+                    help="Specify the location of a sqlite database monitored by workers")
 parser.add_argument("-f", "--force", action="store_true",
                     help="Overwrite previous run")
 parser.add_argument("-q", "--quiet", action="store_true",
@@ -1063,7 +1072,6 @@ group_0_2\t7.0\tBOL-PanxαC\tMle-Panxα12\tVpa-PanxαG
 """, print(content)
 
     out, err = capsys.readouterr()
-    assert "Generating initial multiple sequence alignment with MAFFT" in err
     assert "Generating initial all-by-all similarity graph (66 comparisons)" in err
 
     # No supplied seed, make outdir, and no mafft
