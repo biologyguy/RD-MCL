@@ -58,7 +58,8 @@ class Worker(object):
         seqs, psipred_dir, master_id = ["", "", 0]  # Instantiate some variables
 
         while os.path.isfile("Worker_%s" % self.id):
-            printer.write("Idle %s%%" % round(100 * self.idle / (self.idle + self.running), 2))
+            idle = round(100 * self.idle / (self.idle + self.running), 2)
+            printer.write("Idle %s%%" % idle)
             with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
                 if time.time() > self.last_heartbeat:
                     cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master'")
@@ -69,7 +70,8 @@ class Worker(object):
                             breakout = False
                             break
                     if breakout:
-                        printer.write("Terminating Worker_%s due to lack of activity by any master threads." % self.id)
+                        printer.write("Terminating Worker_%s due to lack of activity by any master threads.\n"
+                                      "Spent %s%% of time idle." % (self.id, idle))
                         printer.new_line(1)
                         break
                 cursor.execute('UPDATE heartbeat SET pulse=%s WHERE thread_id=%s' % (round(time.time()), self.id))
@@ -303,7 +305,8 @@ if __name__ == '__main__':
     for sql in ['CREATE TABLE queue (hash TEXT PRIMARY KEY, seqs TEXT, psi_pred_dir TEXT, master_id INTEGER)',
                 'CREATE TABLE processing (hash TEXT PRIMARY KEY, worker_id INTEGER, master_id INTEGER)',
                 'CREATE TABLE complete   (hash TEXT PRIMARY KEY, alignment TEXT, graph TEXT, '
-                'worker_id INTEGER, master_id INTEGER)']:
+                'worker_id INTEGER, master_id INTEGER)',
+                'CREATE TABLE waiting (hash TEXT, master_id INTEGER)']:
         try:
             cur.execute(sql)
         except sqlite3.OperationalError:
