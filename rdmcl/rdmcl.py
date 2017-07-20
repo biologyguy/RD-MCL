@@ -94,6 +94,7 @@ MCMC_CHAINS = 3
 DR_BASE = 0.75
 GELMAN_RUBIN = 1.1
 WORKER_DB = ""
+HEARTBEAT_DB = ""
 WORKER_PULSE = 60
 MASTER_ID = None
 MASTER_PULSE = 60
@@ -954,23 +955,18 @@ def check_sequences(seqbuddy, taxa_sep):
 
 
 class HeartBeat(object):
-    def __init__(self, db, pulse_rate):
-        self.db = db
+    def __init__(self, hbdb_path, pulse_rate):
+        self.hbdb_path = hbdb_path
         self.pulse_rate = pulse_rate
         self.master_id = None
         self.running_process = None
         self.split_time = time.time()
-        with helpers.ExclusiveConnect(self.db) as cursor:
-            for sql in ['CREATE TABLE queue (hash TEXT PRIMARY KEY, seqs TEXT, psi_pred_dir TEXT, master_id INTEGER)',
-                        'CREATE TABLE processing (hash TEXT PRIMARY KEY, worker_id INTEGER, master_id INTEGER)',
-                        'CREATE TABLE complete (hash TEXT PRIMARY KEY, alignment TEXT, graph TEXT, '
-                        'worker_id INTEGER, master_id INTEGER)',
-                        'CREATE TABLE heartbeat (thread_id INTEGER PRIMARY KEY AUTOINCREMENT, '
-                        'thread_type TEXT, pulse INTEGER)']:
-                try:
-                    cursor.execute(sql)
-                except sqlite3.OperationalError:
-                    pass
+        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+            try:
+                cursor.execute('CREATE TABLE heartbeat (thread_id INTEGER PRIMARY KEY AUTOINCREMENT, '
+                               'thread_type TEXT, pulse INTEGER)')
+            except sqlite3.OperationalError:
+                pass
 
     def _run(self, check_file_path):
         while True:
@@ -980,7 +976,7 @@ class HeartBeat(object):
                 break
 
             if self.split_time < time.time() + self.pulse_rate:
-                with helpers.ExclusiveConnect(self.db) as cursor:
+                with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
                     cursor.execute("UPDATE heartbeat SET pulse=%s WHERE thread_id=%s" % (round(time.time()),
                                                                                          self.master_id))
                 self.split_time = time.time()
@@ -992,7 +988,7 @@ class HeartBeat(object):
             self.end()
         tmp_file = br.TempFile()
         tmp_file.write("Running")
-        with helpers.ExclusiveConnect(self.db) as cursor:
+        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
             cursor.execute("INSERT INTO heartbeat (thread_type, pulse) "
                            "VALUES ('master', %s)" % round(time.time()))
             self.master_id = cursor.lastrowid
@@ -1009,7 +1005,7 @@ class HeartBeat(object):
         while self.running_process[1].is_alive():
             continue
         self.running_process = None
-        with helpers.ExclusiveConnect(self.db) as cursor:
+        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
             cursor.execute("DELETE FROM heartbeat WHERE thread_id=%s" % self.master_id)
         self.master_id = None
         return
@@ -1047,7 +1043,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
 
     # Try to feed the job to independent workers
     if WORKER_DB and os.path.isfile(WORKER_DB):
-        heartbeat = HeartBeat(WORKER_DB, MASTER_PULSE)
+        heartbeat = HeartBeat(HEARTBEAT_DB, MASTER_PULSE)
         heartbeat.start()
 
         run_worker = True
@@ -1057,11 +1053,13 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
         processing_check = []
         heartbeat_check = []
 
-        with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+        with helpers.ExclusiveConnect(HEARTBEAT_DB) as cursor:
             workers = cursor.execute("SELECT * FROM heartbeat "
                                      "WHERE thread_type='worker' "
-                                     "AND pulse>%s" % (time.time() - WORKER_PULSE))
-            if workers.fetchone():
+                                     "AND pulse>%s" % (time.time() - WORKER_PULSE)).fetchone()
+
+        if workers:
+            with helpers.ExclusiveConnect(WORKER_DB) as cursor:
                 # Make sure the job hasn't already been submitted or completed)
                 complete_check = cursor.execute("SELECT hash FROM complete WHERE hash='%s'" % seq_id_hash).fetchone()
                 queue_check = cursor.execute("SELECT hash FROM queue WHERE hash='%s'" % seq_id_hash).fetchone()
@@ -1074,8 +1072,8 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                     cursor.execute("INSERT INTO queue (hash, seqs, psi_pred_dir, master_id) "
                                    "VALUES ('%s', '%s', '%s', %s)" %
                                    (seq_id_hash, str(seqbuddy), PSIPREDDIR, heartbeat.master_id))
-            else:
-                run_worker = False
+        else:
+            run_worker = False
 
         while run_worker:
             if already_queued:
@@ -1087,13 +1085,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                     heartbeat.end()
                     return sim_scores, Alb.AlignBuddy(alignment)
 
-                with helpers.ExclusiveConnect(WORKER_DB) as cursor:
-                    queue_check = cursor.execute("SELECT master_id FROM queue WHERE hash='%s'"
-                                                 % seq_id_hash).fetchone()
-                    processing_check = cursor.execute("SELECT worker_id FROM processing WHERE hash='%s'"
-                                                      % seq_id_hash).fetchone()
-                    complete_check = cursor.execute("SELECT worker_id, master_id FROM complete WHERE hash='%s'"
-                                                    % seq_id_hash).fetchone()
+                with helpers.ExclusiveConnect(HEARTBEAT_DB) as cursor:
                     heartbeat_check = cursor.execute("SELECT * FROM heartbeat").fetchall()
 
                 workers = [(thread_id, pulse) for thread_id, thread_type, pulse
@@ -1103,6 +1095,14 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                 masters = [(thread_id, pulse) for thread_id, thread_type, pulse
                            in heartbeat_check if thread_type == "master"]
                 masters = OrderedDict(masters)
+
+                with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+                    queue_check = cursor.execute("SELECT master_id FROM queue WHERE hash='%s'"
+                                                 % seq_id_hash).fetchone()
+                    processing_check = cursor.execute("SELECT worker_id FROM processing WHERE hash='%s'"
+                                                      % seq_id_hash).fetchone()
+                    complete_check = cursor.execute("SELECT worker_id, master_id FROM complete WHERE hash='%s'"
+                                                    % seq_id_hash).fetchone()
 
                 if queue_check:
                     # Make sure there are still workers kicking around
@@ -1133,12 +1133,17 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                         # Doesn't look like it... Might as well take the results
                         already_queued = False
                 else:
-                    # Hmmm... Race? Safest to just add it back to the queue
+                    # Hmmm... Race? Safest to just try and add it back to the queue
                     with helpers.ExclusiveConnect(WORKER_DB) as cursor:
-                        cursor.execute("INSERT INTO queue (hash, seqs, psi_pred_dir, master_id) "
-                                       "VALUES ('%s', '%s', '%s', %s)" %
-                                       (seq_id_hash, str(seqbuddy), PSIPREDDIR, heartbeat.master_id))
-                    already_queued = False
+                        try:
+                            cursor.execute("INSERT INTO queue (hash, seqs, psi_pred_dir, master_id) "
+                                           "VALUES ('%s', '%s', '%s', %s)" %
+                                           (seq_id_hash, str(seqbuddy), PSIPREDDIR, heartbeat.master_id))
+                            already_queued = False
+                        except sqlite3.IntegrityError as err:
+                            # Ooops, someone else must have beat us too it
+                            if "UNIQUE constraint failed: queue.hash" not in str(err):
+                                raise err
 
                 if already_queued:
                     time.sleep(randint(1, 100) / 100)  # Pause for some part of one second
@@ -1153,9 +1158,6 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                                                  "WHERE hash='%s'" % seq_id_hash).fetchone()
                     processing_check = cursor.execute("SELECT * FROM processing "
                                                       "WHERE hash='%s'" % seq_id_hash).fetchone()
-                    heartbeat_check = cursor.execute("SELECT * FROM heartbeat "
-                                                     "WHERE thread_type='worker' "
-                                                     "AND pulse>%s" % (time.time() - (WORKER_PULSE * 3))).fetchall()
                 else:
                     cursor.execute("DELETE FROM complete WHERE hash='%s'" % seq_id_hash)
             if complete_check:
@@ -1166,6 +1168,10 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                 heartbeat.end()
                 return sim_scores, alignment
             else:
+                with helpers.ExclusiveConnect(HEARTBEAT_DB) as cursor:
+                    heartbeat_check = cursor.execute("SELECT * FROM heartbeat "
+                                                     "WHERE thread_type='worker' "
+                                                     "AND pulse>%s" % (time.time() - (WORKER_PULSE * 3))).fetchall()
                 # Ensure there are still workers kicking around
                 if not heartbeat_check:
                     run_worker = False
@@ -1181,18 +1187,30 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                         if worker_id not in workers:
                             # Doesn't look like it... Might as well queue it back up
                             with helpers.ExclusiveConnect(WORKER_DB) as cursor:
-                                cursor.execute("DELETE FROM processing WHERE hash='%s'" % seq_id_hash)
-                                cursor.execute("INSERT INTO queue (hash, seqs, psi_pred_dir, master_id) "
-                                               "VALUES ('%s', '%s', '%s', %s)" %
-                                               (seq_id_hash, str(seqbuddy), PSIPREDDIR, heartbeat.master_id))
+                                try:
+                                    cursor.execute("INSERT INTO queue (hash, seqs, psi_pred_dir, master_id) "
+                                                   "VALUES ('%s', '%s', '%s', %s)" %
+                                                   (seq_id_hash, str(seqbuddy), PSIPREDDIR, heartbeat.master_id))
+                                    cursor.execute("DELETE FROM processing WHERE hash='%s'" % seq_id_hash)
+                                except sqlite3.IntegrityError as err:
+                                    # Ooops, someone else must have beat us too it
+                                    already_queued = True
+                                    if "UNIQUE constraint failed: queue.hash" not in str(err):
+                                        raise err
                     elif queue_check:
                         pass
                     else:
                         # Ummmm... Where'd the job go??? Queue it back up
                         with helpers.ExclusiveConnect(WORKER_DB) as cursor:
-                            cursor.execute("INSERT INTO queue (hash, seqs, psi_pred_dir, master_id) "
-                                           "VALUES ('%s', '%s', '%s', %s)" %
-                                           (seq_id_hash, str(seqbuddy), PSIPREDDIR, heartbeat.master_id))
+                            try:
+                                cursor.execute("INSERT INTO queue (hash, seqs, psi_pred_dir, master_id) "
+                                               "VALUES ('%s', '%s', '%s', %s)" %
+                                               (seq_id_hash, str(seqbuddy), PSIPREDDIR, heartbeat.master_id))
+                            except sqlite3.IntegrityError as err:
+                                # Ooops, someone else must have beat us too it
+                                already_queued = True
+                                if "UNIQUE constraint failed: queue.hash" not in str(err):
+                                    raise err
 
             time.sleep(randint(1, 100) / 100)  # Pause for some part of one second
         heartbeat.end()
@@ -1600,7 +1618,7 @@ def argparse_init():
     parser_flags.add_argument("-ep", "--ext_penalty", type=float, default=GAP_EXTEND, metavar="",
                               help="Penalty to extend a gap in pairwise alignment scoring (default=%s)" % GAP_EXTEND)
     parser_flags.add_argument("-wdb", "--workdb", action="store", default="",
-                              help="Specify the location of a sqlite database monitored by workers")
+                              help="Specify the directory that independent workers will be monitoring")
     parser_flags.add_argument("-f", "--force", action="store_true",
                               help="Try to run no matter what.")
     parser_flags.add_argument("-q", "--quiet", action="store_true",
@@ -1696,10 +1714,14 @@ Please do so now:
     sequences = Sb.SeqBuddy(in_args.sequences)
 
     global WORKER_DB
-    WORKER_DB = in_args.workdb
+    global HEARTBEAT_DB
 
-    if WORKER_DB:
-        heartbeat = HeartBeat(WORKER_DB, MASTER_PULSE)
+    if in_args.workdb:
+        in_args.workdb = os.path.abspath(in_args.workdb)
+        WORKER_DB = os.path.join(in_args.workdb, "work_db.sqlite")
+
+        HEARTBEAT_DB = os.path.join(in_args.workdb, "heartbeat_db.sqlite")
+        heartbeat = HeartBeat(HEARTBEAT_DB, MASTER_PULSE)
         heartbeat.start()
 
     # Do a check for large data sets and confirm run
@@ -1979,7 +2001,7 @@ Continue? y/[n] """ % len(sequences)
                             " the inclusion of collapsed paralogs")
         logging.warning("Clusters written to: %s%sfinal_clusters.txt" % (in_args.outdir, os.sep))
 
-    if WORKER_DB:
+    if in_args.workdb:
         heartbeat.end()
     broker.close()
 

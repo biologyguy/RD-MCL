@@ -33,11 +33,12 @@ printer = br.DynamicPrint()
 
 
 class Worker(object):
-    def __init__(self, db_path, heartbeat_wait=120):
-        self.db_path = db_path
+    def __init__(self, wrkdb_path, hbdb_path, heartbeat_wait=120):
+        self.wrkdb_path = wrkdb_path
+        self.hbdb_path = hbdb_path
         self.heartbeat_wait = heartbeat_wait
         self.last_heartbeat = self.heartbeat_wait + time.time()
-        with helpers.ExclusiveConnect(self.db_path) as cursor:
+        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
             cursor.execute("INSERT INTO heartbeat (thread_type, pulse) VALUES ('worker', %s)" % round(time.time()))
             self.id = cursor.lastrowid
         with open("Worker_%s" % self.id, "w") as ofile:
@@ -58,7 +59,7 @@ class Worker(object):
 
         while os.path.isfile("Worker_%s" % self.id):
             printer.write("Idle %s%%" % round(100 * self.idle / (self.idle + self.running), 2))
-            with helpers.ExclusiveConnect(self.db_path) as cursor:
+            with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
                 if time.time() > self.last_heartbeat:
                     cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master'")
                     masters = cursor.fetchall()
@@ -72,6 +73,8 @@ class Worker(object):
                         printer.new_line(1)
                         break
                 cursor.execute('UPDATE heartbeat SET pulse=%s WHERE thread_id=%s' % (round(time.time()), self.id))
+
+            with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
                 cursor.execute('SELECT * FROM queue')
                 data = cursor.fetchone()
                 if data:
@@ -103,8 +106,10 @@ class Worker(object):
                 psipred_file = "%s/%s.ss2" % (psipred_dir, rec.id)
                 if not os.path.isfile(psipred_file):
                     print("Terminating Worker_%s because psi file %s not found." % (self.id, psipred_file))
-                    with helpers.ExclusiveConnect(self.db_path) as cursor:
-                        cursor.execute('UPDATE heartbeat SET pulse=0 WHERE thread_id=%s' % self.id)
+                    with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+                        cursor.execute('DELETE FROM heartbeat WHERE thread_id=%s' % self.id)
+
+                    with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
                         cursor.execute("DELETE FROM processing WHERE hash='%s'" % id_hash)
                     breakout = True
                     break
@@ -150,7 +155,7 @@ class Worker(object):
                 del ids2[ids2.index(rec1)]
                 for rec2 in ids2:
                     data[indx] = (rec1, rec2, alignment, psipred_dfs[rec1], psipred_dfs[rec2],
-                                  -5, 0, ".Worker_%s.dat" % self.id, self.id, self.db_path)
+                                  -5, 0, ".Worker_%s.dat" % self.id, self.id, self.hbdb_path)
                     indx += 1
 
             # Launch multicore
@@ -176,8 +181,7 @@ class Worker(object):
             # ToDo: Experiment testing these magic number weights...
             sim_scores['score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
 
-            with helpers.ExclusiveConnect(self.db_path) as cursor:
-                cursor.execute('UPDATE heartbeat SET pulse=%s WHERE thread_id=%s' % (round(time.time()), self.id))
+            with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
                 cursor.execute("INSERT INTO complete (hash, alignment, graph, worker_id, master_id) "
                                "VALUES ('%s', '%s', '%s', %s, %s)" % (id_hash, str(alignment),
                                                                       sim_scores.to_csv(header=None, index=False),
@@ -195,17 +199,17 @@ class Worker(object):
             os.remove("Worker_%s" % self.id)
         else:
             print("Terminating Worker_%s because check file was deleted." % self.id)
-            with helpers.ExclusiveConnect(self.db_path) as cursor:
-                cursor.execute('UPDATE heartbeat SET pulse=0 WHERE thread_id=%s' % self.id)
+            with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+                cursor.execute('DELETE FROM heartbeat WHERE thread_id=%s' % self.id)
         return
 
 
 def score_sequences(args):
-    id1, id2, align, psi1_df, psi2_df, gap_open, gap_extend, output_file, worker_id, db_path = args
+    id1, id2, align, psi1_df, psi2_df, gap_open, gap_extend, output_file, worker_id, hbdb_path = args
 
     # Occasionally update the heartbeat database so masters know there is still life
     if random() < 2 / CPUS:
-        with helpers.ExclusiveConnect(db_path) as cursor:
+        with helpers.ExclusiveConnect(hbdb_path) as cursor:
             cursor.execute('UPDATE heartbeat SET pulse=%s WHERE thread_id=%s' % (round(time.time()), worker_id))
 
     # Calculate the best possible scores, and divide by the observed scores
@@ -285,22 +289,21 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog="launch_worker", description="",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument("-wdb", "--workdb", action="store", default="workerdb.sqlite",
-                        help="Specify the location of a sqlite database being fed by RD-MCL", )
+    parser.add_argument("-wdb", "--workdb", action="store", default=os.getcwd(),
+                        help="Specify the directory where sqlite databases will be fed by RD-MCL", )
     parser.add_argument("-mw", "--max_wait", help="", action="store", type=int, default=120)
-    # parser.add_argument("-c", "--choice", help="", type=str, choices=["", ""], default=False)
-    # parser.add_argument("-m", "--multi_arg", nargs="+", help="", default=[])
 
     in_args = parser.parse_args()
 
-    connection = sqlite3.connect(in_args.workdb)
+    workdb = os.path.join(in_args.workdb, "work_db.sqlite")
+    heartbeatdb = os.path.join(in_args.workdb, "heartbeat_db.sqlite")
+
+    connection = sqlite3.connect(workdb)
     cur = connection.cursor()
     for sql in ['CREATE TABLE queue (hash TEXT PRIMARY KEY, seqs TEXT, psi_pred_dir TEXT, master_id INTEGER)',
                 'CREATE TABLE processing (hash TEXT PRIMARY KEY, worker_id INTEGER, master_id INTEGER)',
                 'CREATE TABLE complete   (hash TEXT PRIMARY KEY, alignment TEXT, graph TEXT, '
-                'worker_id INTEGER, master_id INTEGER)',
-                'CREATE TABLE heartbeat (thread_id INTEGER PRIMARY KEY AUTOINCREMENT, '
-                'thread_type TEXT, pulse INTEGER)']:
+                'worker_id INTEGER, master_id INTEGER)']:
         try:
             cur.execute(sql)
         except sqlite3.OperationalError:
@@ -309,5 +312,16 @@ if __name__ == '__main__':
     cur.close()
     connection.close()
 
-    wrkr = Worker(in_args.workdb, in_args.max_wait)
+    connection = sqlite3.connect(heartbeatdb)
+    cur = connection.cursor()
+    try:
+        cur.execute('CREATE TABLE heartbeat (thread_id INTEGER PRIMARY KEY AUTOINCREMENT, '
+                    'thread_type TEXT, pulse INTEGER)')
+    except sqlite3.OperationalError:
+        pass
+
+    cur.close()
+    connection.close()
+
+    wrkr = Worker(workdb, heartbeatdb, in_args.max_wait)
     wrkr.start()
