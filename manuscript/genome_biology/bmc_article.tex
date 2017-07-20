@@ -259,23 +259,25 @@ The accuracy of tree-based orthology prediction methods is tied closely to the a
 
 Finally, pairwise similarity graph clustering methods leverage graph theory to rapidly identify groups of related sequences.
 InParanoid \cite{OBrien:2005cy}, EggNOG \cite{Jensen:2007cc}, and OMA \cite{Roth:2009iu} are popular tools for assigning sequences to orthogroups using a `best-hit clique' approach, where closed best-hit sub-graphs are identified in the dataset.
-These methods can be fast and accurate for detecting one-to-one orthologs, but they suffer dimminishing recall rates when in-paralogs are present among the species under study \cite{Dalquen:2013fz} (`in-paralog' describes homologs derivied from genetic duplication \textit{after} speciation among the taxa in question \cite{Sonnhammer:2002vm,Tekaia:2016ga}).
-In contrast, Markov clustering (MCL) can efficiently isolate more inclusive sub-graphs  \cite{VanDongen:kJZ890qx,Enright:2002uq}. OrthoMCL \cite{Li:2003en}, OrthoFinder \cite{Emms:2015ig}, and ProteinOrtho \cite{Lechner:2011jk} is one of the most popular MCL-based ortholog prediction methods, but it is prone to placing too many in-paralogs into orthogroups (i.e., it is less precise).
+These methods can be fast and accurate for detecting one-to-one orthologs, but they suffer dimminishing recall rates when in-paralogs are present among the species under study \cite{Dalquen:2013fz} (`in-paralog' describes homologs derivied from genetic duplication \textit{after} speciation \cite{Sonnhammer:2002vm,Tekaia:2016ga}).
+In contrast, Markov clustering (MCL) can efficiently isolate more inclusive sub-graphs \cite{VanDongen:kJZ890qx,Enright:2002uq}, althought the tradeoff can be a reduction in precision (too many in-paralogs may be placed into orthogroups).
+OrthoMCL \cite{Li:2003en}, OrthoFinder \cite{Emms:2015ig}, and ProteinOrtho \cite{Lechner:2011jk} are popular MCL-based ortholog prediction methods.
 
-For coarse-grained, genome-wide analysis, many of the tools mentioned above perform very well.
-
-
-
-BLAST scores (bit or e-value) have a strong length bias when calculating orthogroups, but this can be corrected for by creating a linear model from the top 5\% of matches between two species and scaling all other matches according to that model \cite{Emms:2015ig}. OrthoFinder also uses a static inflation/edge similarity threashold for MCL \cite{Emms:2015ig}
-
-In the current study we have increased the overall resolving power of MCL-based orthogroup assignment with a number of novel enhancements, including refinement of the pairwise similarity metrics, using an optimization algorithm to dynamically select MCL parameters, recursively subdividing orthogroups, and testing putative orthogroups for best-hit cliques to maximize resolution.
+In this current study we strive to further refine the precision of pairwise similarity graph orthogroup prediction.
+Specifically, we introduce Recursive Dynamic Markov Clustering (RD-MCL), a new method that improves upon the BLASTP-based pairwise similarity metrics currently in popular use, uses an optimization algorithm to dynamically select MCL parameters, recursively subdivides overly inclusive orthogroups, and implements a number of final `polishing' steps to maximize overall accuracy.
 
 
-\section{Results}
+
+
+\section{Results and Discussion}
 \subsection{Description of the RD-MCL algorithm and software}
 The impetus for developing RD-MCL was to predict high-quality fine-grained orthogroups among any collection of homologous protein sequence.
 
 \lipsum[3]
+
+\subsection{BLASTP scores reduce overall resolving power of MCL when sequences are too similar or too dissimilar}
+BLAST scores (bit or e-value) have a strong length bias when calculating orthogroups, but this can be corrected for by creating a linear model from the top 5\% of matches between two species and scaling all other matches according to that model \cite{Emms:2015ig}. OrthoFinder also uses a static inflation/edge similarity threashold for MCL \cite{Emms:2015ig}
+
 
 \subsection{Simulation data across the dynamic range of RD-MCL}
 To test the performance of RD-MCL compared to other available ortholog prediction tools, we simulated sets of homologs using the Pyvolve module \cite{Spielman:2015kv}. These simulations varied in the number of sequences, branch length (substitutions per site), degree of gene loss or duplication, and domain architecture. The initial seed sequence for all simulations was a polypeptide 398 amino acids long containing four transmembrane domains. More extensive descriptions of the following simulations can be found in the Methods section.
