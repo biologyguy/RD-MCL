@@ -85,6 +85,7 @@ Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
 '''
 LOCK = Lock()
 MULTICORE_LOCK = Lock()
+LOGGING_LOCK = Lock()
 CPUS = br.usable_cpu_count()
 TIMER = helpers.Timer()
 GAP_OPEN = -5
@@ -99,7 +100,8 @@ WORKER_PULSE = 60
 MASTER_ID = None
 MASTER_PULSE = 60
 PSIPREDDIR = ""
-
+RUNTIMELOG = "runtime.log"
+STARTTIME = time.time()
 
 ambiguous_X = {"A": 0, "R": -1, "N": -1, "D": -1, "C": -2, "Q": -1, "E": -1, "G": -1, "H": -1, "I": -1, "L": -1,
                "K": -1, "M": -1, "F": -1, "P": -2, "S": 0, "T": 0, "W": -2, "Y": -1, "V": -1}
@@ -127,6 +129,7 @@ class Cluster(object):
         :param r_seed: Set the random generator seed value
         """
         # Do an initial sanity check on the incoming graph and list of sequence ids
+        log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
         expected_num_edges = int(((len(seq_ids)**2) - len(seq_ids)) / 2)
         if len(sim_scores.index) != expected_num_edges:
             raise ValueError("The number of incoming sequence ids (%s) does not match the expected graph size of %s"
@@ -167,6 +170,9 @@ class Cluster(object):
 
         self.seq_ids_str = str(", ".join(seq_ids))
         self.seq_id_hash = helpers.md5_hash(self.seq_ids_str)
+        with LOGGING_LOCK:
+            with open(RUNTIMELOG, "a") as ofile:
+                ofile.write("%s%s\tCluster.__init__()\n" % (log_data, time.time() - STARTTIME))
 
     def reset_seq_ids(self, seq_ids):
         # Note that this does NOT reset sim_scores. This needs to be updated manually
@@ -309,15 +315,21 @@ class Cluster(object):
             cluster = cluster.parent
 
     def score(self, algorithm="dem_ret", force=False):
+        log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
         if self.cluster_score and not force:
             return self.cluster_score
 
         assert algorithm in ["dem_ret", "drp"]
-
+        output = []
         if algorithm == "dem_ret":
-            return self._score_diminishing_returns()
+            output = self._score_diminishing_returns()
         elif algorithm == "drp":
-            return self._score_direct_replicate_penalty()
+            output = self._score_direct_replicate_penalty()
+
+        with LOGGING_LOCK:
+            with open(RUNTIMELOG, "a") as ofile:
+                ofile.write("%s%s\tCluster.score()\n" % (log_data, time.time() - STARTTIME))
+        return output
 
     def _score_diminishing_returns(self):
         """
@@ -426,12 +438,16 @@ class Cluster(object):
         :param log_file: Handle to a writable file
         :return: list of Cluster objects or False
         """
+        log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
         log_file = log_file if log_file else br.TempFile()
         log_file.write("# ####### Testing %s ####### #\n%s\n" % (self.name(), self.seq_ids))
         results = []
         # Anything less than 6 sequences cannot be subdivided into smaller cliques, because it would create orphans
         if len(self) < 6:
             log_file.write("\tTERMINATED: Group too small.\n\n")
+            with LOGGING_LOCK:
+                with open(RUNTIMELOG, "a") as ofile:
+                    ofile.write("%s%s\trbhc TERM too small\n" % (log_data, time.time() - STARTTIME))
             return [self]
 
         paralogs = OrderedDict()
@@ -444,6 +460,9 @@ class Cluster(object):
                     # If ANY clique encompasses the entire cluster, we're done
                     if len(set(list(rbhc.seq1.values) + list(rbhc.seq2.values))) == len(self):
                         log_file.write("\tTERMINATED: Entire cluster pulled into clique on %s." % taxa_id)
+                        with LOGGING_LOCK:
+                            with open(RUNTIMELOG, "a") as ofile:
+                                ofile.write("%s%s\trbhc TERM entire\n" % (log_data, time.time() - STARTTIME))
                         return [self]
 
                     paralogs.setdefault(taxa_id, [])
@@ -452,6 +471,9 @@ class Cluster(object):
         # If there aren't any paralogs, we can't break up the group
         if not paralogs:
             log_file.write("\tTERMINATED: No paralogs present.\n\n")
+            with LOGGING_LOCK:
+                with open(RUNTIMELOG, "a") as ofile:
+                    ofile.write("%s%s\trbhc TERM no para\n" % (log_data, time.time() - STARTTIME))
             return [self]
 
         # RBHCs with any overlap within a taxon cannot be separated from the cluster
@@ -533,6 +555,9 @@ class Cluster(object):
         # After all that, no significant cliques to spin off as independent clusters...
         if not seqs_to_remove:
             log_file.write("\tTERMINATED: No significant cliques identified.\n\n")
+            with LOGGING_LOCK:
+                with open(RUNTIMELOG, "a") as ofile:
+                    ofile.write("%s%s\trbhc TERM no-cliq\n" % (log_data, time.time() - STARTTIME))
             return [self]
 
         # Look for any overlap between the cliques identified for each taxon and merge them together
@@ -563,6 +588,9 @@ class Cluster(object):
         # Do not leave orphans by spinning off cliques
         if len(remaining_seqs) in [1, 2]:
             log_file.write("\tTERMINATED: Spinning off cliques would orphan %s.\n\n" % " and ".join(remaining_seqs))
+            with LOGGING_LOCK:
+                with open(RUNTIMELOG, "a") as ofile:
+                    ofile.write("%s%s\trbhc TERM orphans\n" % (log_data, time.time() - STARTTIME))
             return [self]
 
         for indx, result in enumerate(combined):
@@ -581,6 +609,9 @@ class Cluster(object):
             results.append(remaining_cluster)
         log_file.write("\tCliques identified and spun off:\n\t\t%s\n\n" %
                        "\n\t\t".join([str(res.seq_ids) for res in results]))
+        with LOGGING_LOCK:
+            with open(RUNTIMELOG, "a") as ofile:
+                ofile.write("%s%s\trbhc identified\n" % (log_data, time.time() - STARTTIME))
         return results
 
     def __len__(self):
@@ -693,6 +724,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     :return: list of sequence_ids objects
     """
     def save_cluster(end_message=None):
+        _log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
         cluster_list.append(master_cluster)
         if not os.path.isfile(os.path.join(temp_dir.path, "best_group")):
             with open(os.path.join(temp_dir.path, "best_group"), "w") as _ofile:
@@ -709,6 +741,9 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                                          header=None, index=False, sep="\t")
         update = len(master_cluster.seq_ids) if not master_cluster.subgroup_counter else 0
         progress.update("placed", update)
+        with LOGGING_LOCK:
+            with open(RUNTIMELOG, "a") as ofile:
+                ofile.write("%s%s\tsave_cluster()\n" % (_log_data, time.time() - STARTTIME))
         return
 
     rand_gen = Random(r_seed)
@@ -725,6 +760,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     if not keep_going:
         save_cluster("No paralogs")
         return cluster_list
+    log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
     inflation_var = mcmcmc.Variable("I", 1.1, 20, r_seed=rand_gen.randint(1, 999999999999999))
     gq_var = mcmcmc.Variable("gq", min(master_cluster.sim_scores.score), max(master_cluster.sim_scores.score),
                              r_seed=rand_gen.randint(1, 999999999999999))
@@ -738,8 +774,14 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                                        outfiles=os.path.join(temp_dir.path, "mcmcmc_out"), params=mcmcmc_params,
                                        include_lava=True, include_ice=True, r_seed=rand_gen.randint(1, 999999999999999))
 
+        with LOGGING_LOCK:
+            with open(RUNTIMELOG, "a") as ofile:
+                ofile.write("%s%s\tmcmcmc setup passes\n" % (log_data, time.time() - STARTTIME))
     except RuntimeError:  # Happens when mcmcmc fails to find different initial chain parameters
         save_cluster("MCMCMC failed to find parameters")
+        with LOGGING_LOCK:
+            with open(RUNTIMELOG, "a") as ofile:
+                ofile.write("%s%s\tmcmcmc setup fails\n" % (log_data, time.time() - STARTTIME))
         return cluster_list
 
     # I know what the best and worst possible scores are, so let MCMCMC know (better for calculating acceptance rates)
@@ -750,6 +792,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         worst_score += bad_clust.score()
 
     # The best score would be perfect separation of taxa
+    log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
     sub_clusters = [[]]
     for taxon, genes in master_cluster.taxa.items():
         for indx, gene in enumerate(genes):
@@ -757,6 +800,9 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                 sub_clusters[indx].append(gene)
             else:
                 sub_clusters.append([gene])
+    with LOGGING_LOCK:
+        with open(RUNTIMELOG, "a") as ofile:
+            ofile.write("%s%s\tmake sub_clusters list\n" % (log_data, time.time() - STARTTIME))
     best_score = 0
     for seq_ids in sub_clusters:
         subcluster = Cluster(seq_ids, master_cluster.pull_scores_subgraph(seq_ids), parent=master_cluster)
@@ -768,13 +814,23 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
     mcmcmc_factory.reset_params(["%s" % temp_dir.path, seqbuddy, master_cluster,
                                  taxa_sep, sql_broker, psi_pred_ss2_dfs, progress])
+
+    log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
     mcmcmc_factory.run()
+    with LOGGING_LOCK:
+        with open(RUNTIMELOG, "a") as ofile:
+            ofile.write("%s%s\tmcmcmc_factor.run()\n" % (log_data, time.time() - STARTTIME))
+
+    log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
     best_score = pd.DataFrame()
     for indx in range(len(mcmcmc_factory.chains)):
         mcmcmc_output = pd.read_csv(os.path.join(temp_dir.path, "mcmcmc_out_%s.csv" % (indx+1)), "\t", index_col=False)
         result = mcmcmc_output.loc[mcmcmc_output["result"] == mcmcmc_output["result"].max()]
         best_score = result if best_score.empty or result["result"].iloc[0] > best_score["result"].iloc[0] \
             else best_score
+    with LOGGING_LOCK:
+        with open(RUNTIMELOG, "a") as ofile:
+            ofile.write("%s%s\tcreate best_score df\n" % (log_data, time.time() - STARTTIME))
 
     if round(best_score["result"].iloc[0], 8) <= round(master_cluster.score(), 8):
         save_cluster("New best score of %s is less than master cluster at %s"
@@ -869,12 +925,17 @@ def mcmcmc_mcl(args, params):
     inflation, gq, r_seed = args
     exter_tmp_dir, seqbuddy, parent_cluster, taxa_sep, sql_broker, psi_pred_ss2_dfs, progress = params
     rand_gen = Random(r_seed)
+    log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
     mcl_obj = helpers.MarkovClustering(parent_cluster.sim_scores, inflation=inflation, edge_sim_threshold=gq)
     mcl_obj.run()
+    with LOGGING_LOCK:
+        with open(RUNTIMELOG, "a") as ofile:
+            ofile.write("%s%s\tmcmcmc_mcl mcl_obj.run()\n" % (log_data, time.time() - STARTTIME))
+
+    log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
     progress.update('mcl_runs', 1)
     clusters = mcl_obj.clusters
     score = 0
-
     for indx, cluster_ids in enumerate(clusters):
         sb_copy = Sb.make_copy(seqbuddy)
         sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster_ids]))
@@ -884,8 +945,17 @@ def mcmcmc_mcl(args, params):
 
         clusters[indx] = cluster
         score += cluster.score()
+    with LOGGING_LOCK:
+        with open(RUNTIMELOG, "a") as ofile:
+            ofile.write("%s%s\tmcmcmc_mcl calc score\n" % (log_data, time.time() - STARTTIME))
 
+    log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
     with LOCK:
+        with LOGGING_LOCK:
+            with open(RUNTIMELOG, "a") as ofile:
+                ofile.write("%s%s\tmcmcmc_mcl fetch LOCK\n" % (log_data, time.time() - STARTTIME))
+
+        log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
         with open(os.path.join(exter_tmp_dir, "max.txt"), "r") as ifile:
             results = ifile.readlines()
             results = [result.strip() for result in results]
@@ -920,14 +990,21 @@ def mcmcmc_mcl(args, params):
             best_clusters = [cluster.replace(', ', '\t') for cluster in best_clusters[0]]
             with open(os.path.join(exter_tmp_dir, "best_group"), "w") as ofile:
                 ofile.write('\n'.join(best_clusters))
+    with LOGGING_LOCK:
+        with open(RUNTIMELOG, "a") as ofile:
+            ofile.write("%s%s\tmcmcmc_mcl release LOCK\n" % (log_data, time.time() - STARTTIME))
     return score
 
 
 def parse_mcl_clusters(path):
+    log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
     with open(path, "r") as ifile:
         clusters = ifile.read()
     clusters = clusters.strip().split("\n")
     clusters = [cluster.strip().split("\t") for cluster in clusters]
+    with LOGGING_LOCK:
+        with open(RUNTIMELOG, "a") as ofile:
+            ofile.write("%s%s\tparse_mcl_clusters()\n" % (log_data, time.time() - STARTTIME))
     return clusters
 
 
@@ -939,6 +1016,7 @@ def write_mcl_clusters(clusters, path):
 
 
 def check_sequences(seqbuddy, taxa_sep):
+    log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
     logging.warning("Checking that the format of all sequence ids matches 'taxa%sgene'" % taxa_sep)
     failures = []
     for rec in seqbuddy.records:
@@ -951,6 +1029,9 @@ def check_sequences(seqbuddy, taxa_sep):
         sys.exit()
     else:
         logging.warning("    %s sequences PASSED" % len(seqbuddy))
+    with LOGGING_LOCK:
+        with open(RUNTIMELOG, "a") as ofile:
+            ofile.write("%s%s\tcheck_sequences()\n" % (log_data, time.time() - STARTTIME))
     return
 
 
@@ -969,21 +1050,28 @@ class HeartBeat(object):
 
     def _run(self, check_file_path):
         split_time = time.time()
+        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+            cursor.execute("UPDATE heartbeat SET pulse=%s WHERE thread_id=%s" % (round(time.time()), self.master_id))
         while True:
             with open("%s" % check_file_path, "r") as ifile:
                 ifile_content = ifile.read()
             if ifile_content != "Running":
                 break
 
-            if split_time < time.time() - self.pulse_rate:
+            if split_time < (time.time() - self.pulse_rate):
+                log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
                 with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
                     cursor.execute("UPDATE heartbeat SET pulse=%s WHERE thread_id=%s" % (round(time.time()),
                                                                                          self.master_id))
                 split_time = time.time()
+                with LOGGING_LOCK:
+                    with open(RUNTIMELOG, "a") as ofile:
+                        ofile.write("%s%s\theartbeat pulse\n" % (log_data, time.time() - STARTTIME))
             time.sleep(randint(1, 100) / 100)
         return
 
     def start(self):
+        log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
         if self.running_process:
             self.end()
         tmp_file = br.TempFile()
@@ -996,9 +1084,13 @@ class HeartBeat(object):
         p.daemon = 1
         p.start()
         self.running_process = [tmp_file, p]
+        with LOGGING_LOCK:
+            with open(RUNTIMELOG, "a") as ofile:
+                ofile.write("%s%s\theartbeat start\n" % (log_data, time.time() - STARTTIME))
         return
 
     def end(self):
+        log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
         if not self.running_process:
             return
         self.running_process[0].clear()
@@ -1008,6 +1100,9 @@ class HeartBeat(object):
         with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
             cursor.execute("DELETE FROM heartbeat WHERE thread_id=%s" % self.master_id)
         self.master_id = None
+        with LOGGING_LOCK:
+            with open(RUNTIMELOG, "a") as ofile:
+                ofile.write("%s%s\theartbeat end\n" % (log_data, time.time() - STARTTIME))
         return
 
 
@@ -1024,6 +1119,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
     :param quiet: Supress multicore output
     :return:
     """
+    log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
     seq_ids = sorted([rec.id for rec in seqbuddy.records])
     seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
 
@@ -1031,6 +1127,9 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
         sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
         alignment = Alb.AlignBuddy(str(seqbuddy))
         cluster2database(Cluster(seq_ids, sim_scores, collapse=False), sql_broker, alignment)
+        with LOGGING_LOCK:
+            with open(RUNTIMELOG, "a") as ofile:
+                ofile.write("%s%s\tall_by_all len=1\n" % (log_data, time.time() - STARTTIME))
         return sim_scores, alignment
 
     # Grab from the database first, if the data exists there already
@@ -1039,6 +1138,9 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
         sim_scores, alignment = query[0]
         sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None)
         sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+        with LOGGING_LOCK:
+            with open(RUNTIMELOG, "a") as ofile:
+                ofile.write("%s%s\tall_by_all from DB\n" % (log_data, time.time() - STARTTIME))
         return sim_scores, Alb.AlignBuddy(alignment)
 
     # Try to feed the job to independent workers
@@ -1047,8 +1149,6 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
         heartbeat.start()
 
         run_worker = True
-        already_queued = False
-        # complete_check = []
         queue_check = []
         processing_check = []
         heartbeat_check = []
@@ -1075,6 +1175,11 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
         else:
             run_worker = False
 
+        with LOGGING_LOCK:
+            with open(RUNTIMELOG, "a") as ofile:
+                ofile.write("%s%s\tall_by_all setup\n" % (log_data, time.time() - STARTTIME))
+
+        log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
         vanished = 0
         while run_worker:
             query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash='%s'" % seq_id_hash)
@@ -1089,6 +1194,9 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                     cursor.execute("DELETE FROM waiting WHERE hash='%s' AND master_id=%s"
                                    % (seq_id_hash, heartbeat.master_id))
                 heartbeat.end()
+                with LOGGING_LOCK:
+                    with open(RUNTIMELOG, "a") as ofile:
+                        ofile.write("%s%s\tall_by_all run_worker\n" % (log_data, time.time() - STARTTIME))
                 return sim_scores, Alb.AlignBuddy(alignment)
 
             ######################
@@ -1113,6 +1221,9 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                     sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
                     cluster2database(Cluster(seq_ids, sim_scores, collapse=False), sql_broker, alignment)
                     heartbeat.end()
+                    with LOGGING_LOCK:
+                        with open(RUNTIMELOG, "a") as ofile:
+                            ofile.write("%s%s\tall_by_all run_worker\n" % (log_data, time.time() - STARTTIME))
                     return sim_scores, alignment
 
             with helpers.ExclusiveConnect(HEARTBEAT_DB) as cursor:
@@ -1127,6 +1238,9 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                     cursor.execute("DELETE FROM queue")
                     cursor.execute("DELETE FROM processing")
                     cursor.execute("DELETE FROM waiting WHERE master_id=%s" % heartbeat.master_id)
+                with LOGGING_LOCK:
+                    with open(RUNTIMELOG, "a") as ofile:
+                        ofile.write("%s%s\tall_by_all run_worker lost\n" % (log_data, time.time() - STARTTIME))
             else:
                 if processing_check:
                     # Make sure the respective worker is still alive to finish processing this job
@@ -1166,6 +1280,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                 time.sleep(randint(1, 100) / 100)  # Pause for some part of one second
         heartbeat.end()
 
+    log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
     # If the job couldn't be pushed off on a worker, do it directly
     alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), MAFFT, params="--globalpair --thread -1", quiet=True)
 
@@ -1234,6 +1349,9 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
     # ToDo: Experiment testing these magic number weights...
     sim_scores['score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
     cluster2database(Cluster(seq_ids, sim_scores, collapse=False), sql_broker, alignment)
+    with LOGGING_LOCK:
+        with open(RUNTIMELOG, "a") as ofile:
+            ofile.write("%s%s\tall_by_all direct run\n" % (log_data, time.time() - STARTTIME))
     return sim_scores, alignment
 
 
@@ -1318,6 +1436,7 @@ class Orphans(object):
         :param psi_pred_ss2_dfs: OrderedDict of all PSI Pred graphs (seq_id: df)
         :param quiet: Suppress any terminal output
         """
+        log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
         self.seqbuddy = seqbuddy
         self.clusters = clusters
         self.sql_broker = sql_broker
@@ -1334,6 +1453,9 @@ class Orphans(object):
         for clust_name, clust in self.large_clusters.items():
             self.lrg_cluster_sim_scores = self.lrg_cluster_sim_scores.append(clust.sim_scores.raw_score,
                                                                              ignore_index=True)
+        with LOGGING_LOCK:
+            with open(RUNTIMELOG, "a") as ofile:
+                ofile.write("%s%s\tOrphans.__init__\n" % (log_data, time.time() - STARTTIME))
 
     def _separate_large_small(self):
         for cluster in self.clusters:
@@ -1437,6 +1559,7 @@ class Orphans(object):
         return
 
     def place_orphans(self, multi_core=True):
+        log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
         if not self.small_clusters:
             return
         best_cluster = OrderedDict([("small_name", None), ("large_name", None), ("meandiff", 0)])
@@ -1503,6 +1626,9 @@ class Orphans(object):
         self.clusters = [cluster for group, cluster in self.small_clusters.items()] + \
                         [cluster for group, cluster in self.large_clusters.items()]
 
+        with LOGGING_LOCK:
+            with open(RUNTIMELOG, "a") as ofile:
+                ofile.write("%s%s\tOrphans.place_orphans\n" % (log_data, time.time() - STARTTIME))
         return
 
 
@@ -1644,6 +1770,12 @@ Please do so now:
     if not os.path.isdir(in_args.outdir):
         os.makedirs(in_args.outdir)
 
+    global RUNTIMELOG
+    RUNTIMELOG = os.path.join(in_args.outdir, "runtime.log")
+    open(RUNTIMELOG, "w").close()
+    with open(RUNTIMELOG, "a") as ofile:
+        ofile.write("%s\t%s\t%s\tStart\n" % (os.getpid(), time.time() - STARTTIME, time.time() - STARTTIME))
+
     if not os.path.isfile(MAFFT):
         logging.error("The 'MAFFT' program is not detected "
                       "on your system. Please run \n\t$: %s -setup" % __file__)
@@ -1735,6 +1867,7 @@ Continue? y/[n] """ % len(sequences)
     CPUS = in_args.max_cpus
 
     # PSIPRED
+    log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
     logging.warning("\n** PSI-Pred **")
     records_missing_ss_files = []
     records_with_ss_files = []
@@ -1770,6 +1903,9 @@ Continue? y/[n] """ % len(sequences)
         psi_pred_files.append((record.id, read_ss2_file(os.path.join(in_args.psipred_dir, "%s.ss2" % record.id))))
 
     psi_pred_files = OrderedDict(psi_pred_files)
+    with LOGGING_LOCK:
+        with open(RUNTIMELOG, "a") as ofile:
+            ofile.write("%s%s\tPSIPRED()\n" % (log_data, time.time() - STARTTIME))
 
     # Initial alignment
     logging.warning("\n** All-by-all graph **")
@@ -1790,7 +1926,11 @@ Continue? y/[n] """ % len(sequences)
     num_comparisons = ((len(sequences) ** 2) - len(sequences)) / 2
     logging.warning("Generating initial all-by-all similarity graph (%s comparisons)" % int(num_comparisons))
     logging.info(" written to: {0}{1}sim_scores{1}complete_all_by_all.scores".format(in_args.outdir, os.sep))
+    log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
     scores_data, alignbuddy = create_all_by_all_scores(sequences, psi_pred_files, broker)
+    with LOGGING_LOCK:
+        with open(RUNTIMELOG, "a") as ofile:
+            ofile.write("%s%s\tfirst create_all_by_all_scores()\n" % (log_data, time.time() - STARTTIME))
     scores_data.to_csv(os.path.join(in_args.outdir, "sim_scores", "complete_all_by_all.scores"),
                        header=None, index=False, sep="\t")
     logging.info("\t-- finished in %s --\n" % TIMER.split())
