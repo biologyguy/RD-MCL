@@ -960,7 +960,6 @@ class HeartBeat(object):
         self.pulse_rate = pulse_rate
         self.master_id = None
         self.running_process = None
-        self.split_time = time.time()
         with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
             try:
                 cursor.execute('CREATE TABLE heartbeat (thread_id INTEGER PRIMARY KEY AUTOINCREMENT, '
@@ -969,17 +968,18 @@ class HeartBeat(object):
                 pass
 
     def _run(self, check_file_path):
+        split_time = time.time()
         while True:
             with open("%s" % check_file_path, "r") as ifile:
                 ifile_content = ifile.read()
             if ifile_content != "Running":
                 break
 
-            if self.split_time < time.time() + self.pulse_rate:
+            if split_time < time.time() - self.pulse_rate:
                 with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
                     cursor.execute("UPDATE heartbeat SET pulse=%s WHERE thread_id=%s" % (round(time.time()),
                                                                                          self.master_id))
-                self.split_time = time.time()
+                split_time = time.time()
             time.sleep(randint(1, 100) / 100)
         return
 
