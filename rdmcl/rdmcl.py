@@ -1399,6 +1399,13 @@ class Orphans(object):
                 self.tmp_file.write(log_output)
             return False
 
+        groupsunique, groupintlab = np.unique(df.grouplabel, return_inverse=True)
+        if len(groupsunique) < 2:
+            # The gene can be grouped with the max_ave cluster because it's the only large cluster available
+            log_output += "\n%s added to %s\n###########################\n\n" % (small_cluster.seq_ids, max_ave_name)
+            mean_diff = abs(np.mean(data_dict[max_ave_name][1]) - np.mean(self.lrg_cluster_sim_scores))
+            return max_ave_name, mean_diff
+
         # Run pairwise Tukey HSD and parse the results
         # The max_ave cluster must be significantly different from all other clusters
         result = sm.stats.multicomp.pairwise_tukeyhsd(df.observations, df.grouplabel)
