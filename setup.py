@@ -53,7 +53,8 @@ ENTRY_POINTS = {
     'console_scripts': [
         'rdmcl = rdmcl.rdmcl:main',
         'compare_homolog_groups = rdmcl.compare_homolog_groups:main',
-        'homolog_tree_builder = rdmcl.homolog_tree_builder:main'
+        'homolog_tree_builder = rdmcl.homolog_tree_builder:main',
+        'launch_worker = rdmcl.launch_worker:main'
     ]
 }
 

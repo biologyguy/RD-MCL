@@ -285,7 +285,7 @@ def score_sequences(args):
     return
 
 
-if __name__ == '__main__':
+def main():
     import argparse
 
     parser = argparse.ArgumentParser(prog="launch_worker", description="",
@@ -328,3 +328,6 @@ if __name__ == '__main__':
 
     wrkr = Worker(workdb, heartbeatdb, in_args.max_wait)
     wrkr.start()
+
+if __name__ == '__main__':
+    main()
