@@ -1464,9 +1464,8 @@ class Orphans(object):
                     self.temp_merge_clusters(sm_clust, lg_clust)
 
             if multi_core:
-                with MULTICORE_LOCK:
-                    br.run_multicore_function(small_clusters, self.mc_check_orphans, [tmp_file.path],
-                                              quiet=True, max_processes=CPUS)
+                br.run_multicore_function(small_clusters, self.mc_check_orphans, [tmp_file.path],
+                                          quiet=True, max_processes=CPUS)
             else:
                 for clust in small_clusters:
                     self.mc_check_orphans(clust, [tmp_file.path])
