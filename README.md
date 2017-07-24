@@ -60,6 +60,33 @@ A new directory will be created which will contain all of the accoutrement assoc
 
 There are several parameters you can modify; use `:$ rdmcl -h` to get a listing of them. Things are still under development so I haven't written a wiki yet, but I'd be overjoyed to get feedback if you are confused by anything. Please do not hesitate to email me!
 
+## Video of Evolution 2017 talk
+I discuss the rationale and high level implementation details of RD-MCL
+
+[![Alt text](https://img.youtube.com/vi/52STQpKv8j4/0.jpg)](https://www.youtube.com/watch?v=52STQpKv8j4)
+
+## Running many RD-MCL jobs on a cluster (not relevant for single jobs)
+RD-MCL will parallelize creation of all-by-all graphs while searching MCL parameter space. Once a graph has been
+ created it is saved in a database, thus preventing repetition of the 'hard' work in case the same cluster is identified
+ again at a later time. This means that the computational burden of a given run will tend to decrease with time and many
+ cores may end up sitting idle as the job wears on. This could get you in trouble with your sys-admins and
+ fellow users if running many RD-MCL jobs on shared resources, because it will look like you're tying up a bunch of
+ CPUs without actually making use of them...
+ 
+Instead, set up one or more dedicated worker nodes with the `launch_worker` script bundled with RD-MCL:
+ 
+    `$: launch_worker --workdb <path/to/desired/directory>`
+ 
+Make sure to sequester entire nodes for this script, as it will use all the cores it can find. Next, launch RD-MCL
+ jobs with the `--max_cpus` flag set to 4, and the `--workdb` flag set to the same path you specified for 
+ `launch_worker`:
+ 
+    `$: rdmcl --max_cpus 4 --workdb <path/to/same/directory/as/launch_worker>`
+ 
+RD-MCL will now send its expensive all-by-all work to a queue and wait around for one of the workers to do the 
+ calculations. A good starting point is about one worker with ≥16 cores for every ten rdmcl jobs.
+
+
 ## References
 ¹ Fitch, W. M. [Distinguishing homologous from analogous proteins](https://doi.org/10.2307/2412448).
  _Systemat. Zool._ **19**, 99–106 (1970).
