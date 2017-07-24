@@ -57,9 +57,13 @@ class Worker(object):
         printer.new_line(1)
         seqs, psipred_dir, master_id = ["", "", 0]  # Instantiate some variables
 
+        idle_countdown = 1
         while os.path.isfile("Worker_%s" % self.id):
             idle = round(100 * self.idle / (self.idle + self.running), 2)
-            printer.write("Idle %s%%" % idle)
+            if not idle_countdown:
+                printer.write("Idle %s%%" % idle)
+                idle_countdown = 10
+
             with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
                 if time.time() > self.last_heartbeat:
                     cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master'")
@@ -89,8 +93,10 @@ class Worker(object):
             self.split_time = time.time()
             if not data:
                 time.sleep(randint(1, 100) / 100)  # Pause for some part of one second
+                idle_countdown -= 1
                 continue
 
+            idle_countdown = 1
             # Prepare alignment
             seqbuddy = Sb.SeqBuddy(StringIO(seqs))
             if len(seqbuddy) == 1:
@@ -107,7 +113,8 @@ class Worker(object):
             for rec in alignment.records_iter():
                 psipred_file = "%s/%s.ss2" % (psipred_dir, rec.id)
                 if not os.path.isfile(psipred_file):
-                    print("Terminating Worker_%s because psi file %s not found." % (self.id, psipred_file))
+                    printer.write("Terminating Worker_%s because psi file %s not found." % (self.id, psipred_file))
+                    printer.new_line(1)
                     with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
                         cursor.execute('DELETE FROM heartbeat WHERE thread_id=%s' % self.id)
 
@@ -203,7 +210,8 @@ class Worker(object):
         if os.path.isfile("Worker_%s" % self.id):
             os.remove("Worker_%s" % self.id)
         else:
-            print("Terminating Worker_%s because check file was deleted." % self.id)
+            printer.write("Terminating Worker_%s because check file was deleted." % self.id)
+            printer.new_line(1)
             with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
                 cursor.execute('DELETE FROM heartbeat WHERE thread_id=%s' % self.id)
         return
@@ -303,11 +311,30 @@ def main():
     parser.add_argument("-wdb", "--workdb", action="store", default=os.getcwd(),
                         help="Specify the directory where sqlite databases will be fed by RD-MCL", )
     parser.add_argument("-mw", "--max_wait", help="", action="store", type=int, default=120)
+    parser.add_argument("-log", "--log", help="Stream log data one line at a time", action="store_true")
+    parser.add_argument("-q", "--quiet", help="Suppress all output", action="store_true")
 
     in_args = parser.parse_args()
 
     workdb = os.path.join(in_args.workdb, "work_db.sqlite")
     heartbeatdb = os.path.join(in_args.workdb, "heartbeat_db.sqlite")
+
+    global printer
+    if in_args.log:
+        def _write(self):
+            try:
+                while True:
+                    self.out_type.write("\n%s" % self._next_print,)
+                    self.out_type.flush()
+                    self._last_print = self._next_print
+                    yield
+            finally:
+                pass
+        br.DynamicPrint._write = _write
+        printer = br.DynamicPrint()
+
+    if in_args.quiet:
+        printer = br.DynamicPrint(quiet=True)
 
     connection = sqlite3.connect(workdb)
     cur = connection.cursor()

@@ -75,16 +75,16 @@ RD-MCL will parallelize creation of all-by-all graphs while searching MCL parame
  
 Instead, set up one or more dedicated worker nodes with the `launch_worker` script bundled with RD-MCL:
  
-    `$: launch_worker --workdb <path/to/desired/directory>`
+    $: launch_worker --workdb <path/to/desired/directory>
  
 Make sure to sequester entire nodes for this script, as it will use all the cores it can find. Next, launch RD-MCL
  jobs with the `--max_cpus` flag set to 4, and the `--workdb` flag set to the same path you specified for 
  `launch_worker`:
  
-    `$: rdmcl --max_cpus 4 --workdb <path/to/same/directory/as/launch_worker>`
+    $: rdmcl --max_cpus 4 --workdb <path/to/same/directory/as/launch_worker>
  
 RD-MCL will now send its expensive all-by-all work to a queue and wait around for one of the workers to do the 
- calculations. A good starting point is about one worker with ≥16 cores for every ten rdmcl jobs.
+ calculations. A good starting point is about one worker with ≥16 cores for every ten rdmcl jobs of <100 sequences.
 
 
 ## References
