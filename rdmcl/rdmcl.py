@@ -36,7 +36,7 @@ import sqlite3
 from io import StringIO
 from subprocess import Popen, PIPE, check_output, CalledProcessError
 from multiprocessing import Lock, Pipe, Process
-from random import gauss, Random, randint, random
+from random import choice, Random, randint, random
 from math import ceil, log2
 from collections import OrderedDict
 from copy import deepcopy
@@ -1624,8 +1624,8 @@ class _SetupAction(argparse.Action):
 
 
 def full_run(in_args):
-    tmp_log = br.TempDir()
-    logger_obj = helpers.Logger("%s/rdmcl.log" % tmp_log.path)
+    tmp_name = "".join([choice(br.string.ascii_letters + br.string.digits) for _ in range(10)])
+    logger_obj = helpers.Logger(tmp_name)
     logging.info("*************************** Recursive Dynamic Markov Clustering ****************************")
     logging.warning("RD-MCL version %s\n\n%s" % (VERSION, NOTICE))
     logging.info("********************************************************************************************\n")
@@ -1727,7 +1727,7 @@ Continue? y/[n] """ % len(sequences)
         os.remove(os.path.join(in_args.outdir, "rdmcl.log"))
 
     logger_obj.move_log(os.path.join(in_args.outdir, "rdmcl.log"))
-    del tmp_log
+
     if os.path.isfile(os.path.join(in_args.outdir, "orphans.log")):
         os.remove(os.path.join(in_args.outdir, "orphans.log"))
 
