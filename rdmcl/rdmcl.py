@@ -1624,7 +1624,8 @@ class _SetupAction(argparse.Action):
 
 
 def full_run(in_args):
-    logger_obj = helpers.Logger("rdmcl.log")
+    tmp_log = br.TempDir()
+    logger_obj = helpers.Logger("%s/rdmcl.log" % tmp_log.path)
     logging.info("*************************** Recursive Dynamic Markov Clustering ****************************")
     logging.warning("RD-MCL version %s\n\n%s" % (VERSION, NOTICE))
     logging.info("********************************************************************************************\n")
@@ -1726,6 +1727,7 @@ Continue? y/[n] """ % len(sequences)
         os.remove(os.path.join(in_args.outdir, "rdmcl.log"))
 
     logger_obj.move_log(os.path.join(in_args.outdir, "rdmcl.log"))
+    del tmp_log
     if os.path.isfile(os.path.join(in_args.outdir, "orphans.log")):
         os.remove(os.path.join(in_args.outdir, "orphans.log"))
 
