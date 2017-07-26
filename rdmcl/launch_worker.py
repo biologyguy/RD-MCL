@@ -33,11 +33,12 @@ printer = br.DynamicPrint()
 
 
 class Worker(object):
-    def __init__(self, wrkdb_path, hbdb_path, heartbeat_wait=120):
+    def __init__(self, wrkdb_path, hbdb_path, heartrate=60, max_wait=120):
         self.wrkdb_path = wrkdb_path
         self.hbdb_path = hbdb_path
-        self.heartbeat_wait = heartbeat_wait
-        self.last_heartbeat = self.heartbeat_wait + time.time()
+        self.heartrate = heartrate
+        self.last_heartbeat = self.heartrate + time.time()
+        self.max_wait = max_wait
         with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
             cursor.execute("INSERT INTO heartbeat (thread_type, pulse) VALUES ('worker', %s)" % round(time.time()))
             self.id = cursor.lastrowid
@@ -62,23 +63,43 @@ class Worker(object):
             idle = round(100 * self.idle / (self.idle + self.running), 2)
             if not idle_countdown:
                 printer.write("Idle %s%%" % idle)
-                idle_countdown = 10
+                idle_countdown = 5
 
-            with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-                if time.time() > self.last_heartbeat:
-                    cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master'")
+            if time.time() > self.last_heartbeat:
+                # Make sure there are some masters still kicking around
+                self.last_heartbeat = self.heartrate + time.time()
+                with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+                    cursor.execute('UPDATE heartbeat SET pulse=%s WHERE thread_id=%s' % (round(time.time()), self.id))
+                    cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
+                                   "AND pulse>%s" % (time.time() - self.max_wait))
                     masters = cursor.fetchall()
-                    breakout = True
-                    for master in masters:
-                        if time.time() < master[2] + self.heartbeat_wait:
-                            breakout = False
-                            break
-                    if breakout:
+                    if not masters:
                         printer.write("Terminating Worker_%s due to lack of activity by any master threads.\n"
                                       "Spent %s%% of time idle." % (self.id, idle))
                         printer.new_line(1)
+                        cursor.execute("DELETE FROM heartbeat WHERE thread_id=%s" % self.id)
                         break
-                cursor.execute('UPDATE heartbeat SET pulse=%s WHERE thread_id=%s' % (round(time.time()), self.id))
+
+            # Occasionally clean up the databases, in case masters have died
+            rand_check = random()
+            if rand_check > 0.975:
+                with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+                    dead_masters = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
+                                                  "AND pulse < %s" % (time.time() - self.max_wait)).fetchall()
+                    if dead_masters:
+                        dead_masters = [str(x[0]) for x in dead_masters]
+                        dead_masters = ", ".join(dead_masters)
+                        cursor.execute("DELETE FROM heartbeat WHERE thread_id IN (%s)" % dead_masters)
+
+                if dead_masters:
+                    with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+                        cursor.execute("DELETE FROM queue WHERE master_id IN (%s)" % dead_masters)
+                        cursor.execute("DELETE FROM waiting WHERE master_id IN (%s)" % dead_masters)
+
+                        complete_jobs = cursor.execute("SELECT hash FROM complete").fetchall()
+                        for job_hash in complete_jobs:
+                            if not cursor.execute("SELECT hash FROM waiting WHERE hash='%s'" % job_hash).fetchall():
+                                cursor.execute("DELETE FROM complete WHERE hash='%s'" % job_hash)
 
             with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
                 cursor.execute('SELECT * FROM queue')
@@ -92,7 +113,7 @@ class Worker(object):
             self.idle += time.time() - self.split_time
             self.split_time = time.time()
             if not data:
-                time.sleep(randint(1, 100) / 100)  # Pause for some part of one second
+                time.sleep(random() * 3)  # Pause for some part of three seconds
                 idle_countdown -= 1
                 continue
 
@@ -225,7 +246,7 @@ def score_sequences(data, func_args):
         id1, id2, psi1_df, psi2_df = recs
 
         # Occasionally update the heartbeat database so masters know there is still life
-        if random() < 2 / CPUS:
+        if random() > 0.95:
             with helpers.ExclusiveConnect(hbdb_path) as cursor:
                 cursor.execute('UPDATE heartbeat SET pulse=%s WHERE thread_id=%s' % (round(time.time()), worker_id))
 
@@ -310,7 +331,10 @@ def main():
 
     parser.add_argument("-wdb", "--workdb", action="store", default=os.getcwd(),
                         help="Specify the directory where sqlite databases will be fed by RD-MCL", )
-    parser.add_argument("-mw", "--max_wait", help="", action="store", type=int, default=120)
+    parser.add_argument("-hr", "--heart_rate", type=int, default=60,
+                        help="Specify how often the worker should check in")
+    parser.add_argument("-mw", "--max_wait", action="store", type=int, default=120,
+                        help="Specify the maximum time a worker will stay alive without seeing a master")
     parser.add_argument("-log", "--log", help="Stream log data one line at a time", action="store_true")
     parser.add_argument("-q", "--quiet", help="Suppress all output", action="store_true")
 
@@ -362,7 +386,7 @@ def main():
     cur.close()
     connection.close()
 
-    wrkr = Worker(workdb, heartbeatdb, in_args.max_wait)
+    wrkr = Worker(workdb, heartbeatdb, in_args.heart_rate, in_args.max_wait)
     wrkr.start()
 
 if __name__ == '__main__':

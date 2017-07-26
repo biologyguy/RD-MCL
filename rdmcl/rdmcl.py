@@ -36,7 +36,7 @@ import sqlite3
 from io import StringIO
 from subprocess import Popen, PIPE, check_output, CalledProcessError
 from multiprocessing import Lock, Pipe, Process
-from random import gauss, Random, randint
+from random import gauss, Random, randint, random
 from math import ceil, log2
 from collections import OrderedDict
 from copy import deepcopy
@@ -95,7 +95,7 @@ DR_BASE = 0.75
 GELMAN_RUBIN = 1.1
 WORKER_DB = ""
 HEARTBEAT_DB = ""
-WORKER_PULSE = 60
+MAX_WORKER_WAIT = 120
 MASTER_ID = None
 MASTER_PULSE = 60
 PSIPREDDIR = ""
@@ -980,7 +980,7 @@ class HeartBeat(object):
                     cursor.execute("UPDATE heartbeat SET pulse=%s WHERE thread_id=%s" % (round(time.time()),
                                                                                          self.master_id))
                 split_time = time.time()
-            time.sleep(randint(1, 100) / 100)
+            time.sleep(random())
         return
 
     def start(self):
@@ -1051,12 +1051,12 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
         # complete_check = []
         queue_check = []
         processing_check = []
-        heartbeat_check = []
+        worker_heartbeat_check = []
 
         with helpers.ExclusiveConnect(HEARTBEAT_DB) as cursor:
             workers = cursor.execute("SELECT * FROM heartbeat "
                                      "WHERE thread_type='worker' "
-                                     "AND pulse>%s" % (time.time() - WORKER_PULSE)).fetchone()
+                                     "AND pulse>%s" % (time.time() - MAX_WORKER_WAIT)).fetchone()
 
         if workers:
             with helpers.ExclusiveConnect(WORKER_DB) as cursor:
@@ -1104,7 +1104,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
 
                 else:
                     waiting_check = cursor.execute("SELECT * FROM waiting WHERE hash='%s'" % seq_id_hash).fetchall()
-                    if len(waiting_check) == 1:
+                    if len(waiting_check) <= 1:
                         cursor.execute("DELETE FROM complete WHERE hash='%s'" % seq_id_hash)
                     cursor.execute("DELETE FROM waiting WHERE hash='%s' AND master_id=%s"
                                    % (seq_id_hash, heartbeat.master_id))
@@ -1116,12 +1116,12 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                     return sim_scores, alignment
 
             with helpers.ExclusiveConnect(HEARTBEAT_DB) as cursor:
-                heartbeat_check = cursor.execute("SELECT * FROM heartbeat "
-                                                 "WHERE thread_type='worker' "
-                                                 "AND pulse>%s" % (time.time() - (WORKER_PULSE * 3))).fetchall()
+                worker_heartbeat_check = cursor.execute("SELECT * FROM heartbeat "
+                                                        "WHERE thread_type='worker' "
+                                                        "AND pulse>%s" % (time.time() - (MAX_WORKER_WAIT * 3))).fetchall()
 
             # Ensure there are still workers kicking around
-            if not heartbeat_check:
+            if not worker_heartbeat_check:
                 run_worker = False
                 with helpers.ExclusiveConnect(WORKER_DB) as cursor:
                     cursor.execute("DELETE FROM queue")
@@ -1130,7 +1130,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
             else:
                 if processing_check:
                     # Make sure the respective worker is still alive to finish processing this job
-                    workers = [(thread_id, pulse) for thread_id, thread_type, pulse in heartbeat_check]
+                    workers = [(thread_id, pulse) for thread_id, thread_type, pulse in worker_heartbeat_check]
                     workers = OrderedDict(workers)
                     worker_id = processing_check[1]
                     if worker_id not in workers:
@@ -1163,7 +1163,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                                     raise err
                     else:
                         vanished += 1
-                time.sleep(randint(1, 100) / 100)  # Pause for some part of one second
+                time.sleep(random())  # Pause for some part of one second
         heartbeat.end()
 
     # If the job couldn't be pushed off on a worker, do it directly
@@ -1722,6 +1722,9 @@ Continue? y/[n] """ % len(sequences)
                 shutil.rmtree(os.path.join(root, _dir))
 
     # Prepare log files into output directory
+    if os.path.isfile(os.path.join(in_args.outdir, "rdmcl.log")):
+        os.remove(os.path.join(in_args.outdir, "rdmcl.log"))
+
     logger_obj.move_log(os.path.join(in_args.outdir, "rdmcl.log"))
     if os.path.isfile(os.path.join(in_args.outdir, "orphans.log")):
         os.remove(os.path.join(in_args.outdir, "orphans.log"))

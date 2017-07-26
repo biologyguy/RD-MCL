@@ -77,14 +77,15 @@ class SQLiteBroker(object):
                     while True:
                         try:
                             self.broker_cursor.execute(query['sql'], query['values'])
+                            self.connection.commit()
                         except sqlite3.OperationalError as err:
                             if "database is locked" in str(err):
                                 # Wait for database to become free
-                                if locked_counter == self.lock_wait_time * 2:
+                                if locked_counter == self.lock_wait_time * 5:
                                     print("Failed query: %s" % query['sql'])
                                     raise err
                                 locked_counter += 1
-                                sleep(.5)
+                                sleep(.2)
                                 continue
                             else:
                                 print("Failed query: %s" % query['sql'])
@@ -96,7 +97,6 @@ class SQLiteBroker(object):
                     break
                 else:
                     raise RuntimeError("Broker instruction '%s' not understood." % query['mode'])
-                self.connection.commit()
 
     def start_broker(self):
         if not self.broker:
@@ -206,6 +206,8 @@ def bit_score(raw_score):
     return bits
 
 
+# ToDo: implement Regularized MCL to take into account flows of neighbors (Expansion step is M*M_G, instead of M*M)
+# https://www.youtube.com/watch?v=574z9nisRuE around 12:00
 class MarkovClustering(object):
     def __init__(self, data, inflation, edge_sim_threshold=0.):
         self.dataframe = data
