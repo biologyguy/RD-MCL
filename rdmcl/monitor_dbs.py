@@ -24,7 +24,7 @@ class Monitor(object):
 
     def _run(self, check_file_path):
         printer = DynamicPrint()
-        printer.write("#Mas\tAveMhb\t#Wor\tAveWhb\t#queue\t#proc\t#comp\t#Hwait\t#Iwait")
+        printer.write("#Mas\tAveMhb\t#Wor\tAveWhb\t#queue\t#proc\t#comp\t#Hwait\t#Iwait\tConTime")
         printer.new_line(1)
         while True:
             with open("%s" % check_file_path, "r") as ifile:
@@ -32,6 +32,7 @@ class Monitor(object):
             if ifile_content != "Running":
                 break
 
+            split_time = time()
             with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
                 heartbeat = cursor.execute("SELECT * FROM heartbeat").fetchall()
             with helpers.ExclusiveConnect(self.wdb_path) as cursor:
@@ -39,7 +40,7 @@ class Monitor(object):
                 processing = cursor.execute("SELECT master_id, worker_id FROM processing").fetchall()
                 complete = cursor.execute("SELECT master_id, worker_id FROM complete").fetchall()
                 waiting = cursor.execute("SELECT * FROM waiting").fetchall()
-
+            connect_time = round(time() - split_time, 3)
             master_hb = [hb[2] for hb in heartbeat if hb[1] == "master"]
             len_mas = len(master_hb)
             master_hb = 0 if not master_hb else round(time() - (sum(master_hb) / len(master_hb)), 1)
@@ -55,11 +56,11 @@ class Monitor(object):
                 master_wait.setdefault(master_id, 0)
                 master_wait[master_id] += 1
 
-            output = "%s\t\t%s\t\t%s\t\t%s\t\t%s\t\t%s\t\t%s\t\t%s\t\t%s" % \
+            output = "%s\t\t%s\t\t%s\t\t%s\t\t%s\t\t%s\t\t%s\t\t%s\t\t%s\t\t%s" % \
                      (len_mas, master_hb, len_wor, worker_hb, len(queue), len(processing),
-                      len(complete), len(hash_wait), len(master_wait))
+                      len(complete), len(hash_wait), len(master_wait), connect_time)
             printer.write(output)
-            sleep(0.1)
+            sleep(0.5)
         return
 
     def start(self):
