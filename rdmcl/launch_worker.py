@@ -80,19 +80,27 @@ class Worker(object):
                         cursor.execute("DELETE FROM heartbeat WHERE thread_id=%s" % self.id)
                         break
 
-            # Occasionally clean up the databases, in case masters have died
+            # Check for and clean up dead threads and orphaned jobs every hundredth(ish) time through
             rand_check = random()
-            if rand_check > 0.975:
+            if rand_check > 0.5:
                 with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
                     dead_masters = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
+                                                  "AND pulse < %s" % (time.time() - self.max_wait)).fetchall()
+                    dead_workers = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='worker' "
                                                   "AND pulse < %s" % (time.time() - self.max_wait)).fetchall()
                     if dead_masters:
                         dead_masters = [str(x[0]) for x in dead_masters]
                         dead_masters = ", ".join(dead_masters)
                         cursor.execute("DELETE FROM heartbeat WHERE thread_id IN (%s)" % dead_masters)
+                    if dead_workers:
+                        dead_workers = [str(x[0]) for x in dead_workers]
+                        dead_workers = ", ".join(dead_workers)
+                        cursor.execute("DELETE FROM heartbeat WHERE thread_id IN (%s)" % dead_workers)
 
-                if dead_masters:
-                    with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+                    master_ids = cursor.execute("SELECT thread_id FROM heartbeat WHERE thread_type='master'").fetchall()
+
+                with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+                    if dead_masters:
                         cursor.execute("DELETE FROM queue WHERE master_id IN (%s)" % dead_masters)
                         cursor.execute("DELETE FROM waiting WHERE master_id IN (%s)" % dead_masters)
 
@@ -100,6 +108,21 @@ class Worker(object):
                         for job_hash in complete_jobs:
                             if not cursor.execute("SELECT hash FROM waiting WHERE hash='%s'" % job_hash).fetchall():
                                 cursor.execute("DELETE FROM complete WHERE hash='%s'" % job_hash)
+
+                    if master_ids:
+                        master_ids = ", ".join([str(x[0]) for x in master_ids])
+                        orphaned_jobs = cursor.execute("SELECT hash FROM complete "
+                                                       "WHERE master_id NOT IN (%s)" % master_ids).fetchall()
+                        if orphaned_jobs:
+                            orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in orphaned_jobs])
+
+                            waiting = cursor.execute("SELECT hash FROM waiting "
+                                                     "WHERE hash IN (%s)" % orphaned_job_hashes).fetchall()
+                            orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in waiting])
+                            orphaned_jobs = cursor.execute("SELECT hash FROM complete "
+                                                           "WHERE hash NOT IN (%s)" % orphaned_job_hashes).fetchall()
+                            orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in orphaned_jobs])
+                            cursor.execute("DELETE FROM complete WHERE hash IN (%s)" % orphaned_job_hashes)
 
             with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
                 cursor.execute('SELECT * FROM queue')
