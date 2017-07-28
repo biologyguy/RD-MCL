@@ -269,7 +269,7 @@ def score_sequences(data, func_args):
         id1, id2, psi1_df, psi2_df = recs
 
         # Occasionally update the heartbeat database so masters know there is still life
-        if random() > 0.95:
+        if random() > 0.99:
             with helpers.ExclusiveConnect(hbdb_path) as cursor:
                 cursor.execute('UPDATE heartbeat SET pulse=%s WHERE thread_id=%s' % (round(time.time()), worker_id))
 

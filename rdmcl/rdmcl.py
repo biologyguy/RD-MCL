@@ -1092,7 +1092,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                 return sim_scores, Alb.AlignBuddy(alignment)
 
             ######################
-
+            finished = False
             with helpers.ExclusiveConnect(WORKER_DB) as cursor:
                 complete_check = cursor.execute("SELECT * FROM complete WHERE hash='%s'" % seq_id_hash).fetchone()
                 if not complete_check:
@@ -1108,12 +1108,15 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                         cursor.execute("DELETE FROM complete WHERE hash='%s'" % seq_id_hash)
                     cursor.execute("DELETE FROM waiting WHERE hash='%s' AND master_id=%s"
                                    % (seq_id_hash, heartbeat.master_id))
-                    alignment = Alb.AlignBuddy(StringIO(complete_check[1]))
-                    sim_scores = pd.read_csv(StringIO(complete_check[2]), index_col=False, header=None)
-                    sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
-                    cluster2database(Cluster(seq_ids, sim_scores, collapse=False), sql_broker, alignment)
-                    heartbeat.end()
-                    return sim_scores, alignment
+                    finished = True
+
+            if finished:
+                alignment = Alb.AlignBuddy(StringIO(complete_check[1]))
+                sim_scores = pd.read_csv(StringIO(complete_check[2]), index_col=False, header=None)
+                sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+                cluster2database(Cluster(seq_ids, sim_scores, collapse=False), sql_broker, alignment)
+                heartbeat.end()
+                return sim_scores, alignment
 
             # Occasionally check to make sure the job is still active
             if random() > 0.75:
