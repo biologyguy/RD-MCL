@@ -82,7 +82,7 @@ class Worker(object):
 
             # Check for and clean up dead threads and orphaned jobs every hundredth(ish) time through
             rand_check = random()
-            if rand_check > 0.5:
+            if rand_check > 0.99:
                 with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
                     dead_masters = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
                                                   "AND pulse < %s" % (time.time() - self.max_wait)).fetchall()
