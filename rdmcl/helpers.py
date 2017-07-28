@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 import sqlite3
-import sys
-import re
 import json
 import logging
 import shutil
@@ -12,8 +10,7 @@ from time import time, sleep
 from copy import copy
 from hashlib import md5
 from multiprocessing import SimpleQueue, Process, Pipe
-from buddysuite.buddy_resources import pretty_time, TempDir, SafetyValve
-from random import randint
+from buddysuite.buddy_resources import pretty_time, SafetyValve
 
 
 class ExclusiveConnect(object):
@@ -28,7 +25,6 @@ class ExclusiveConnect(object):
                 break
             except sqlite3.OperationalError as err:
                 if "database is locked" in str(err):
-                    sleep(randint(1, 10) / 100)
                     continue
                 else:
                     raise err

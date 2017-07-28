@@ -1115,19 +1115,21 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                     heartbeat.end()
                     return sim_scores, alignment
 
-            with helpers.ExclusiveConnect(HEARTBEAT_DB) as cursor:
-                worker_heartbeat_check = cursor.execute("SELECT * FROM heartbeat "
-                                                        "WHERE thread_type='worker' "
-                                                        "AND pulse>%s" % (time.time() - (MAX_WORKER_WAIT * 3))).fetchall()
+            # Occasionally check to make sure the job is still active
+            if random() > 0.75:
+                with helpers.ExclusiveConnect(HEARTBEAT_DB) as cursor:
+                    worker_heartbeat_check = cursor.execute("SELECT * FROM heartbeat "
+                                                            "WHERE thread_type='worker' "
+                                                            "AND pulse>%s"
+                                                            % (time.time() - (MAX_WORKER_WAIT * 3))).fetchall()
 
-            # Ensure there are still workers kicking around
-            if not worker_heartbeat_check:
-                run_worker = False
-                with helpers.ExclusiveConnect(WORKER_DB) as cursor:
-                    cursor.execute("DELETE FROM queue")
-                    cursor.execute("DELETE FROM processing")
-                    cursor.execute("DELETE FROM waiting WHERE master_id=%s" % heartbeat.master_id)
-            else:
+                if not worker_heartbeat_check:
+                    with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+                        cursor.execute("DELETE FROM queue")
+                        cursor.execute("DELETE FROM processing")
+                        cursor.execute("DELETE FROM waiting WHERE master_id=%s" % heartbeat.master_id)
+                        break
+
                 if processing_check:
                     # Make sure the respective worker is still alive to finish processing this job
                     workers = [(thread_id, pulse) for thread_id, thread_type, pulse in worker_heartbeat_check]
@@ -1163,7 +1165,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                                     raise err
                     else:
                         vanished += 1
-                time.sleep(random())  # Pause for some part of one second
+            time.sleep(5)  # Pause for five seconds to prevent spamming the database with requests
         heartbeat.end()
 
     # If the job is small or couldn't be pushed off on a worker, do it directly
