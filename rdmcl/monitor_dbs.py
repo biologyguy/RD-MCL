@@ -24,7 +24,12 @@ class Monitor(object):
 
     def _run(self, check_file_path):
         printer = DynamicPrint()
-        printer.write("#Mas\tAveMhb\t#Wor\tAveWhb\t#queue\t#proc\t#comp\t#Hwait\t#Iwait\tConTime")
+        output = [("#Master", 10), ("AveMhb", 10), ("#Worker", 10), ("AveWhb", 10), ("#queue", 10),
+                  ("#proc", 10), ("#comp", 10), ("#HashWait", 11),
+                  ("#IdWait", 10), ("ConnectTime", 10)]
+
+        output = [str(x[0]).ljust(x[1]) for x in output]
+        printer.write("".join(output))
         printer.new_line(1)
         while True:
             with open("%s" % check_file_path, "r") as ifile:
@@ -56,10 +61,12 @@ class Monitor(object):
                 master_wait.setdefault(master_id, 0)
                 master_wait[master_id] += 1
 
-            output = "%s\t\t%s\t\t%s\t\t%s\t\t%s\t\t%s\t\t%s\t\t%s\t\t%s\t\t%s" % \
-                     (len_mas, master_hb, len_wor, worker_hb, len(queue), len(processing),
-                      len(complete), len(hash_wait), len(master_wait), connect_time)
-            printer.write(output)
+            output = [(len_mas, 10), (master_hb, 10), (len_wor, 10), (worker_hb, 10), (len(queue), 10),
+                      (len(processing), 10), (len(complete), 10), (len(hash_wait), 11),
+                      (len(master_wait), 10), (connect_time, 10)]
+            output = [str(x[0]).ljust(x[1]) for x in output]
+
+            printer.write("".join(output))
             sleep(0.5)
         return
 
