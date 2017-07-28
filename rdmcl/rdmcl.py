@@ -1042,7 +1042,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
         return sim_scores, Alb.AlignBuddy(alignment)
 
     # Try to feed the job to independent workers
-    if WORKER_DB and os.path.isfile(WORKER_DB):
+    if WORKER_DB and os.path.isfile(WORKER_DB) and len(seq_ids) > 15:
         heartbeat = HeartBeat(HEARTBEAT_DB, MASTER_PULSE)
         heartbeat.start()
 
@@ -1084,7 +1084,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                 sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
                 with helpers.ExclusiveConnect(WORKER_DB) as cursor:
                     waiting_check = cursor.execute("SELECT * FROM waiting WHERE hash='%s'" % seq_id_hash).fetchall()
-                    if len(waiting_check) == 1:
+                    if len(waiting_check) <= 1:
                         cursor.execute("DELETE FROM complete WHERE hash='%s'" % seq_id_hash)
                     cursor.execute("DELETE FROM waiting WHERE hash='%s' AND master_id=%s"
                                    % (seq_id_hash, heartbeat.master_id))
@@ -1166,7 +1166,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                 time.sleep(random())  # Pause for some part of one second
         heartbeat.end()
 
-    # If the job couldn't be pushed off on a worker, do it directly
+    # If the job is small or couldn't be pushed off on a worker, do it directly
     alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), MAFFT, params="--globalpair --thread -1", quiet=True)
 
     # Need to specify what columns the PsiPred files map to now that there are gaps.
