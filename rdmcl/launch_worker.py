@@ -18,6 +18,8 @@ from random import randint, random
 from collections import OrderedDict
 from io import StringIO
 from copy import copy
+from inspect import currentframe, getframeinfo
+
 # My packages
 try:
     import helpers
@@ -39,7 +41,8 @@ class Worker(object):
         self.heartrate = heartrate
         self.last_heartbeat = self.heartrate + time.time()
         self.max_wait = max_wait
-        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+        with helpers.ExclusiveConnect(self.hbdb_path,
+                                      "LN%s" % getframeinfo(currentframe()).lineno, "WorkerConnect.log") as cursor:
             cursor.execute("INSERT INTO heartbeat (thread_type, pulse) "
                            "VALUES ('worker', %s)" % round(time.time() + cursor.lag))
             self.id = cursor.lastrowid
@@ -69,7 +72,8 @@ class Worker(object):
             if time.time() > self.last_heartbeat:
                 # Make sure there are some masters still kicking around
                 self.last_heartbeat = self.heartrate + time.time()
-                with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+                with helpers.ExclusiveConnect(self.hbdb_path, "LN%s" % getframeinfo(currentframe()).lineno,
+                                              "WorkerConnect.log") as cursor:
                     cursor.execute('UPDATE heartbeat SET pulse=%s '
                                    'WHERE thread_id=%s' % (round(time.time() + cursor.lag), self.id))
                     cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
@@ -85,7 +89,8 @@ class Worker(object):
             # Check for and clean up dead threads and orphaned jobs every hundredth(ish) time through
             rand_check = random()
             if rand_check > 0.99:
-                with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+                with helpers.ExclusiveConnect(self.hbdb_path, "LN%s" % getframeinfo(currentframe()).lineno,
+                                              "WorkerConnect.log") as cursor:
                     wait_time = time.time() - self.max_wait - cursor.lag
                     dead_masters = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
                                                   "AND pulse < %s" % wait_time).fetchall()
@@ -102,7 +107,8 @@ class Worker(object):
 
                     master_ids = cursor.execute("SELECT thread_id FROM heartbeat WHERE thread_type='master'").fetchall()
 
-                with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+                with helpers.ExclusiveConnect(self.wrkdb_path, "LN%s" % getframeinfo(currentframe()).lineno,
+                                              "WorkerConnect.log") as cursor:
                     if dead_masters:
                         cursor.execute("DELETE FROM queue WHERE master_id IN (%s)" % dead_masters)
                         cursor.execute("DELETE FROM waiting WHERE master_id IN (%s)" % dead_masters)
@@ -127,7 +133,8 @@ class Worker(object):
                             orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in orphaned_jobs])
                             cursor.execute("DELETE FROM complete WHERE hash IN (%s)" % orphaned_job_hashes)
 
-            with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+            with helpers.ExclusiveConnect(self.wrkdb_path, "LN%s" % getframeinfo(currentframe()).lineno,
+                                          "WorkerConnect.log") as cursor:
                 cursor.execute('SELECT * FROM queue')
                 data = cursor.fetchone()
                 if data:
@@ -162,10 +169,12 @@ class Worker(object):
                 if not os.path.isfile(psipred_file):
                     printer.write("Terminating Worker_%s because psi file %s not found." % (self.id, psipred_file))
                     printer.new_line(1)
-                    with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+                    with helpers.ExclusiveConnect(self.hbdb_path, "LN%s" % getframeinfo(currentframe()).lineno,
+                                                  "WorkerConnect.log") as cursor:
                         cursor.execute('DELETE FROM heartbeat WHERE thread_id=%s' % self.id)
 
-                    with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+                    with helpers.ExclusiveConnect(self.wrkdb_path, "LN%s" % getframeinfo(currentframe()).lineno,
+                                                  "WorkerConnect.log") as cursor:
                         cursor.execute("DELETE FROM processing WHERE hash='%s'" % id_hash)
                     breakout = True
                     break
@@ -240,7 +249,8 @@ class Worker(object):
             # ToDo: Experiment testing these magic number weights...
             sim_scores['score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
 
-            with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+            with helpers.ExclusiveConnect(self.wrkdb_path, "LN%s" % getframeinfo(currentframe()).lineno,
+                                          "WorkerConnect.log") as cursor:
                 # Confirm that the job is still being waited on before adding to the `complete` table
                 waiting = cursor.execute("SELECT master_id FROM waiting WHERE hash='%s'" % id_hash)
 
@@ -263,7 +273,8 @@ class Worker(object):
         else:
             printer.write("Terminating Worker_%s because check file was deleted." % self.id)
             printer.new_line(1)
-            with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+            with helpers.ExclusiveConnect(self.hbdb_path, "LN%s" % getframeinfo(currentframe()).lineno,
+                                          "WorkerConnect.log") as cursor:
                 cursor.execute('DELETE FROM heartbeat WHERE thread_id=%s' % self.id)
         return
 
@@ -277,7 +288,8 @@ def score_sequences(data, func_args):
 
         # Occasionally update the heartbeat database so masters know there is still life
         if random() > 0.99:
-            with helpers.ExclusiveConnect(hbdb_path) as cursor:
+            with helpers.ExclusiveConnect(hbdb_path, "LN%s" % getframeinfo(currentframe()).lineno,
+                                          "WorkerConnect.log") as cursor:
                 cursor.execute('UPDATE heartbeat SET pulse=%s '
                                'WHERE thread_id=%s' % (round(time.time() + cursor.lag), worker_id))
 
