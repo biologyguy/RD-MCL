@@ -238,10 +238,14 @@ class Worker(object):
             sim_scores['score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
 
             with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
-                cursor.execute("INSERT INTO complete (hash, alignment, graph, worker_id, master_id) "
-                               "VALUES ('%s', '%s', '%s', %s, %s)" % (id_hash, str(alignment),
-                                                                      sim_scores.to_csv(header=None, index=False),
-                                                                      self.id, master_id))
+                # Confirm that the job is still being waited on before adding to the `complete` table
+                waiting = cursor.execute("SELECT master_id FROM waiting WHERE hash='%s'" % id_hash)
+
+                if waiting:
+                    cursor.execute("INSERT INTO complete (hash, alignment, graph, worker_id, master_id) "
+                                   "VALUES ('%s', '%s', '%s', %s, %s)" % (id_hash, str(alignment),
+                                                                          sim_scores.to_csv(header=None, index=False),
+                                                                          self.id, master_id))
 
                 cursor.execute("DELETE FROM processing WHERE hash='%s'" % id_hash)
 
