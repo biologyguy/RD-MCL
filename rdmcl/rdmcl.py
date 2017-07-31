@@ -41,7 +41,7 @@ from math import ceil, log2
 from collections import OrderedDict
 from copy import deepcopy
 from hashlib import md5
-
+from inspect import currentframe, getframeinfo
 
 # 3rd party
 import pandas as pd
@@ -1045,7 +1045,7 @@ class HeartBeat(object):
         self.pulse_rate = pulse_rate
         self.master_id = None
         self.running_process = None
-        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+        with helpers.ExclusiveConnect(self.hbdb_path, "LN%s" % getframeinfo(currentframe()).lineno) as cursor:
             try:
                 cursor.execute('CREATE TABLE heartbeat (thread_id INTEGER PRIMARY KEY AUTOINCREMENT, '
                                'thread_type TEXT, pulse INTEGER)')
@@ -1054,7 +1054,7 @@ class HeartBeat(object):
 
     def _run(self, check_file_path):
         split_time = time.time()
-        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+        with helpers.ExclusiveConnect(self.hbdb_path, "LN%s" % getframeinfo(currentframe()).lineno) as cursor:
             cursor.execute("UPDATE heartbeat SET pulse=%s WHERE thread_id=%s" % (round(time.time()), self.master_id))
         while True:
             with open("%s" % check_file_path, "r") as ifile:
@@ -1064,7 +1064,7 @@ class HeartBeat(object):
 
             if split_time < (time.time() - self.pulse_rate):
                 log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
-                with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+                with helpers.ExclusiveConnect(self.hbdb_path, "LN%s" % getframeinfo(currentframe()).lineno) as cursor:
                     cursor.execute("UPDATE heartbeat SET pulse=%s "
                                    "WHERE thread_id=%s" % (round(time.time() + cursor.lag), self.master_id))
                 split_time = time.time()
@@ -1080,7 +1080,7 @@ class HeartBeat(object):
             self.end()
         tmp_file = br.TempFile()
         tmp_file.write("Running")
-        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+        with helpers.ExclusiveConnect(self.hbdb_path, "LN%s" % getframeinfo(currentframe()).lineno) as cursor:
             cursor.execute("INSERT INTO heartbeat (thread_type, pulse) "
                            "VALUES ('master', %s)" % round(time.time()))
             self.master_id = cursor.lastrowid
@@ -1101,7 +1101,7 @@ class HeartBeat(object):
         while self.running_process[1].is_alive():
             continue
         self.running_process = None
-        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+        with helpers.ExclusiveConnect(self.hbdb_path, "LN%s" % getframeinfo(currentframe()).lineno) as cursor:
             cursor.execute("DELETE FROM heartbeat WHERE thread_id=%s" % self.master_id)
         self.master_id = None
         with LOGGING_LOCK:
@@ -1154,13 +1154,13 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
 
         run_worker = True
 
-        with helpers.ExclusiveConnect(HEARTBEAT_DB) as cursor:
+        with helpers.ExclusiveConnect(HEARTBEAT_DB, "LN%s" % getframeinfo(currentframe()).lineno) as cursor:
             workers = cursor.execute("SELECT * FROM heartbeat "
                                      "WHERE thread_type='worker' "
                                      "AND pulse>%s" % (time.time() - MAX_WORKER_WAIT - cursor.lag)).fetchone()
 
         if workers:
-            with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+            with helpers.ExclusiveConnect(WORKER_DB, "LN%s" % getframeinfo(currentframe()).lineno) as cursor:
                 # Make sure the job hasn't already been submitted or completed)
                 complete_check = cursor.execute("SELECT hash FROM complete WHERE hash='%s'" % seq_id_hash).fetchone()
                 queue_check = cursor.execute("SELECT hash FROM queue WHERE hash='%s'" % seq_id_hash).fetchone()
@@ -1189,7 +1189,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                 sim_scores, alignment = query[0]
                 sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None)
                 sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
-                with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+                with helpers.ExclusiveConnect(WORKER_DB, "LN%s" % getframeinfo(currentframe()).lineno) as cursor:
                     waiting_check = cursor.execute("SELECT * FROM waiting WHERE hash='%s'" % seq_id_hash).fetchall()
                     if len(waiting_check) <= 1:
                         cursor.execute("DELETE FROM complete WHERE hash='%s'" % seq_id_hash)
@@ -1203,7 +1203,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
 
             ######################
             finished = False
-            with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+            with helpers.ExclusiveConnect(WORKER_DB, "LN%s" % getframeinfo(currentframe()).lineno) as cursor:
                 complete_check = cursor.execute("SELECT * FROM complete WHERE hash='%s'" % seq_id_hash).fetchone()
                 if not complete_check:
                     # Occasionally check to make sure the job is still active
@@ -1213,7 +1213,8 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                         processing_check = cursor.execute("SELECT * FROM processing "
                                                           "WHERE hash='%s'" % seq_id_hash).fetchone()
 
-                        with helpers.ExclusiveConnect(HEARTBEAT_DB) as hb_cursor:
+                        with helpers.ExclusiveConnect(HEARTBEAT_DB, "LN%s" % getframeinfo(currentframe()).lineno) \
+                                as hb_cursor:
                             min_pulse = time.time() - (MAX_WORKER_WAIT * 3) - hb_cursor.lag
                             worker_heartbeat_check = hb_cursor.execute("SELECT * FROM heartbeat "
                                                                        "WHERE thread_type='worker' AND pulse>%s"
