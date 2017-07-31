@@ -22,12 +22,13 @@ class AttrWrapper(object):
 
 
 class ExclusiveConnect(object):
-    def __init__(self, db_path, log_message=None):
+    def __init__(self, db_path, log_message=None, log_path="ExclusiveConnect.log"):
         self.db_path = db_path
         self.log_message = log_message
         self.log_output = ""
         self.start_time = time()
         self.loop_counter = 0
+        self.log_path = log_path
 
     def __enter__(self):
         while True:
@@ -51,7 +52,7 @@ class ExclusiveConnect(object):
         self.connection.commit()
         self.connection.close()
         if self.log_message:
-            with open("ExclusiveConnect.log", "a") as ofile:
+            with open(self.log_path, "a") as ofile:
                 self.log_output += "\t%s\t%s\n" % (round(time() - self.start_time, 4), self.log_message)
                 ofile.write(self.log_output)
 
