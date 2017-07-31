@@ -14,17 +14,24 @@ from buddysuite.buddy_resources import pretty_time, SafetyValve
 
 
 class ExclusiveConnect(object):
-    def __init__(self, db_path):
+    def __init__(self, db_path, log_message=None):
         self.db_path = db_path
+        self.log_message = log_message
+        self.start_time = time()
+        self.loop_counter = 0
 
     def __enter__(self):
         while True:
             try:
                 self.connection = sqlite3.connect(self.db_path, isolation_level=None)
                 self.connection.execute('BEGIN EXCLUSIVE')
+                if self.log_message:
+                    with open("ExclusiveConnect.log", "a") as ofile:
+                        ofile.write("%s\t%s" % (round(time() - self.start_time, 4), self.loop_counter))
                 break
             except sqlite3.OperationalError as err:
                 if "database is locked" in str(err):
+                    self.loop_counter += 1
                     continue
                 else:
                     raise err
@@ -33,6 +40,9 @@ class ExclusiveConnect(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.connection.commit()
         self.connection.close()
+        if self.log_message:
+            with open("ExclusiveConnect.log", "a") as ofile:
+                ofile.write("\t%s\t%s\n" % (round(time() - self.start_time, 4), self.log_message))
 
 
 class SQLiteBroker(object):
