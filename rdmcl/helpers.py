@@ -25,6 +25,7 @@ class ExclusiveConnect(object):
     def __init__(self, db_path, log_message=None):
         self.db_path = db_path
         self.log_message = log_message
+        self.log_output = ""
         self.start_time = time()
         self.loop_counter = 0
 
@@ -34,8 +35,7 @@ class ExclusiveConnect(object):
                 self.connection = sqlite3.connect(self.db_path, isolation_level=None)
                 self.connection.execute('BEGIN EXCLUSIVE')
                 if self.log_message:
-                    with open("ExclusiveConnect.log", "a") as ofile:
-                        ofile.write("%s\t%s" % (round(time() - self.start_time, 4), self.loop_counter))
+                    self.log_output += "%s\t%s" % (round(time() - self.start_time, 4), self.loop_counter)
                 break
             except sqlite3.OperationalError as err:
                 if "database is locked" in str(err):
@@ -52,7 +52,8 @@ class ExclusiveConnect(object):
         self.connection.close()
         if self.log_message:
             with open("ExclusiveConnect.log", "a") as ofile:
-                ofile.write("\t%s\t%s\n" % (round(time() - self.start_time, 4), self.log_message))
+                self.log_output += "\t%s\t%s\n" % (round(time() - self.start_time, 4), self.log_message)
+                ofile.write(self.log_output)
 
 
 class SQLiteBroker(object):
