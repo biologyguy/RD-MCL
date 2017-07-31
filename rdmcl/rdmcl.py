@@ -36,7 +36,7 @@ import sqlite3
 from io import StringIO
 from subprocess import Popen, PIPE, check_output, CalledProcessError
 from multiprocessing import Lock, Pipe, Process
-from random import gauss, Random, randint
+from random import choice, Random, randint, random
 from math import ceil, log2
 from collections import OrderedDict
 from copy import deepcopy
@@ -96,7 +96,7 @@ DR_BASE = 0.75
 GELMAN_RUBIN = 1.1
 WORKER_DB = ""
 HEARTBEAT_DB = ""
-WORKER_PULSE = 60
+MAX_WORKER_WAIT = 120
 MASTER_ID = None
 MASTER_PULSE = 60
 PSIPREDDIR = ""
@@ -1067,7 +1067,7 @@ class HeartBeat(object):
                 with LOGGING_LOCK:
                     with open(RUNTIMELOG, "a") as ofile:
                         ofile.write("%s%s\theartbeat pulse\n" % (log_data, time.time() - STARTTIME))
-            time.sleep(randint(1, 100) / 100)
+            time.sleep(random())
         return
 
     def start(self):
@@ -1144,19 +1144,21 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
         return sim_scores, Alb.AlignBuddy(alignment)
 
     # Try to feed the job to independent workers
-    if WORKER_DB and os.path.isfile(WORKER_DB):
+    if WORKER_DB and os.path.isfile(WORKER_DB) and len(seq_ids) > 15:
         heartbeat = HeartBeat(HEARTBEAT_DB, MASTER_PULSE)
         heartbeat.start()
 
         run_worker = True
+        already_queued = False
+        # complete_check = []
         queue_check = []
         processing_check = []
-        heartbeat_check = []
+        worker_heartbeat_check = []
 
         with helpers.ExclusiveConnect(HEARTBEAT_DB) as cursor:
             workers = cursor.execute("SELECT * FROM heartbeat "
                                      "WHERE thread_type='worker' "
-                                     "AND pulse>%s" % (time.time() - WORKER_PULSE)).fetchone()
+                                     "AND pulse>%s" % (time.time() - MAX_WORKER_WAIT)).fetchone()
 
         if workers:
             with helpers.ExclusiveConnect(WORKER_DB) as cursor:
@@ -1189,7 +1191,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                 sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
                 with helpers.ExclusiveConnect(WORKER_DB) as cursor:
                     waiting_check = cursor.execute("SELECT * FROM waiting WHERE hash='%s'" % seq_id_hash).fetchall()
-                    if len(waiting_check) == 1:
+                    if len(waiting_check) <= 1:
                         cursor.execute("DELETE FROM complete WHERE hash='%s'" % seq_id_hash)
                     cursor.execute("DELETE FROM waiting WHERE hash='%s' AND master_id=%s"
                                    % (seq_id_hash, heartbeat.master_id))
@@ -1200,7 +1202,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                 return sim_scores, Alb.AlignBuddy(alignment)
 
             ######################
-
+            finished = False
             with helpers.ExclusiveConnect(WORKER_DB) as cursor:
                 complete_check = cursor.execute("SELECT * FROM complete WHERE hash='%s'" % seq_id_hash).fetchone()
                 if not complete_check:
@@ -1212,39 +1214,44 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
 
                 else:
                     waiting_check = cursor.execute("SELECT * FROM waiting WHERE hash='%s'" % seq_id_hash).fetchall()
-                    if len(waiting_check) == 1:
+                    if len(waiting_check) <= 1:
                         cursor.execute("DELETE FROM complete WHERE hash='%s'" % seq_id_hash)
                     cursor.execute("DELETE FROM waiting WHERE hash='%s' AND master_id=%s"
                                    % (seq_id_hash, heartbeat.master_id))
-                    alignment = Alb.AlignBuddy(StringIO(complete_check[1]))
-                    sim_scores = pd.read_csv(StringIO(complete_check[2]), index_col=False, header=None)
-                    sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
-                    cluster2database(Cluster(seq_ids, sim_scores, collapse=False), sql_broker, alignment)
-                    heartbeat.end()
-                    with LOGGING_LOCK:
+                    finished = True
+
+            if finished:
+                alignment = Alb.AlignBuddy(StringIO(complete_check[1]))
+                sim_scores = pd.read_csv(StringIO(complete_check[2]), index_col=False, header=None)
+                sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+                cluster2database(Cluster(seq_ids, sim_scores, collapse=False), sql_broker, alignment)
+                heartbeat.end()
+                with LOGGING_LOCK:
                         with open(RUNTIMELOG, "a") as ofile:
                             ofile.write("%s%s\tall_by_all run_worker\n" % (log_data, time.time() - STARTTIME))
-                    return sim_scores, alignment
+                return sim_scores, alignment
 
-            with helpers.ExclusiveConnect(HEARTBEAT_DB) as cursor:
-                heartbeat_check = cursor.execute("SELECT * FROM heartbeat "
-                                                 "WHERE thread_type='worker' "
-                                                 "AND pulse>%s" % (time.time() - (WORKER_PULSE * 3))).fetchall()
+            # Occasionally check to make sure the job is still active
+            if random() > 0.75:
+                with helpers.ExclusiveConnect(HEARTBEAT_DB) as cursor:
+                    worker_heartbeat_check = cursor.execute("SELECT * FROM heartbeat "
+                                                            "WHERE thread_type='worker' "
+                                                            "AND pulse>%s"
+                                                            % (time.time() - (MAX_WORKER_WAIT * 3))).fetchall()
 
-            # Ensure there are still workers kicking around
-            if not heartbeat_check:
-                run_worker = False
-                with helpers.ExclusiveConnect(WORKER_DB) as cursor:
-                    cursor.execute("DELETE FROM queue")
-                    cursor.execute("DELETE FROM processing")
-                    cursor.execute("DELETE FROM waiting WHERE master_id=%s" % heartbeat.master_id)
-                with LOGGING_LOCK:
-                    with open(RUNTIMELOG, "a") as ofile:
-                        ofile.write("%s%s\tall_by_all run_worker lost\n" % (log_data, time.time() - STARTTIME))
-            else:
+                if not worker_heartbeat_check:
+                    with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+                        cursor.execute("DELETE FROM queue")
+                        cursor.execute("DELETE FROM processing")
+                        cursor.execute("DELETE FROM waiting WHERE master_id=%s" % heartbeat.master_id)
+                        with LOGGING_LOCK:
+                            with open(RUNTIMELOG, "a") as ofile:
+                                ofile.write("%s%s\tall_by_all run_worker lost\n" % (log_data, time.time() - STARTTIME))
+                        break
+
                 if processing_check:
                     # Make sure the respective worker is still alive to finish processing this job
-                    workers = [(thread_id, pulse) for thread_id, thread_type, pulse in heartbeat_check]
+                    workers = [(thread_id, pulse) for thread_id, thread_type, pulse in worker_heartbeat_check]
                     workers = OrderedDict(workers)
                     worker_id = processing_check[1]
                     if worker_id not in workers:
@@ -1277,11 +1284,11 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                                     raise err
                     else:
                         vanished += 1
-                time.sleep(randint(1, 100) / 100)  # Pause for some part of one second
+            time.sleep(5)  # Pause for five seconds to prevent spamming the database with requests
         heartbeat.end()
 
     log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
-    # If the job couldn't be pushed off on a worker, do it directly
+    # If the job is small or couldn't be pushed off on a worker, do it directly
     alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), MAFFT, params="--globalpair --thread -1", quiet=True)
 
     # Need to specify what columns the PsiPred files map to now that there are gaps.
@@ -1521,6 +1528,13 @@ class Orphans(object):
                 self.tmp_file.write(log_output)
             return False
 
+        groupsunique, groupintlab = np.unique(df.grouplabel, return_inverse=True)
+        if len(groupsunique) < 2:
+            # The gene can be grouped with the max_ave cluster because it's the only large cluster available
+            log_output += "\n%s added to %s\n###########################\n\n" % (small_cluster.seq_ids, max_ave_name)
+            mean_diff = abs(np.mean(data_dict[max_ave_name][1]) - np.mean(self.lrg_cluster_sim_scores))
+            return max_ave_name, mean_diff
+
         # Run pairwise Tukey HSD and parse the results
         # The max_ave cluster must be significantly different from all other clusters
         result = sm.stats.multicomp.pairwise_tukeyhsd(df.observations, df.grouplabel)
@@ -1580,9 +1594,8 @@ class Orphans(object):
                     self.temp_merge_clusters(sm_clust, lg_clust)
 
             if multi_core:
-                with MULTICORE_LOCK:
-                    br.run_multicore_function(small_clusters, self.mc_check_orphans, [tmp_file.path],
-                                              quiet=True, max_processes=CPUS)
+                br.run_multicore_function(small_clusters, self.mc_check_orphans, [tmp_file.path],
+                                          quiet=True, max_processes=CPUS)
             else:
                 for clust in small_clusters:
                     self.mc_check_orphans(clust, [tmp_file.path])
@@ -1744,7 +1757,8 @@ class _SetupAction(argparse.Action):
 
 
 def full_run(in_args):
-    logger_obj = helpers.Logger("rdmcl.log")
+    tmp_name = "".join([choice(br.string.ascii_letters + br.string.digits) for _ in range(10)])
+    logger_obj = helpers.Logger(tmp_name)
     logging.info("*************************** Recursive Dynamic Markov Clustering ****************************")
     logging.warning("RD-MCL version %s\n\n%s" % (VERSION, NOTICE))
     logging.info("********************************************************************************************\n")
@@ -1848,7 +1862,11 @@ Continue? y/[n] """ % len(sequences)
                 shutil.rmtree(os.path.join(root, _dir))
 
     # Prepare log files into output directory
+    if os.path.isfile(os.path.join(in_args.outdir, "rdmcl.log")):
+        os.remove(os.path.join(in_args.outdir, "rdmcl.log"))
+
     logger_obj.move_log(os.path.join(in_args.outdir, "rdmcl.log"))
+
     if os.path.isfile(os.path.join(in_args.outdir, "orphans.log")):
         os.remove(os.path.join(in_args.outdir, "orphans.log"))
 

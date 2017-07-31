@@ -33,11 +33,12 @@ printer = br.DynamicPrint()
 
 
 class Worker(object):
-    def __init__(self, wrkdb_path, hbdb_path, heartbeat_wait=120):
+    def __init__(self, wrkdb_path, hbdb_path, heartrate=60, max_wait=120):
         self.wrkdb_path = wrkdb_path
         self.hbdb_path = hbdb_path
-        self.heartbeat_wait = heartbeat_wait
-        self.last_heartbeat = self.heartbeat_wait + time.time()
+        self.heartrate = heartrate
+        self.last_heartbeat = self.heartrate + time.time()
+        self.max_wait = max_wait
         with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
             cursor.execute("INSERT INTO heartbeat (thread_type, pulse) VALUES ('worker', %s)" % round(time.time()))
             self.id = cursor.lastrowid
@@ -57,24 +58,71 @@ class Worker(object):
         printer.new_line(1)
         seqs, psipred_dir, master_id = ["", "", 0]  # Instantiate some variables
 
+        idle_countdown = 1
         while os.path.isfile("Worker_%s" % self.id):
             idle = round(100 * self.idle / (self.idle + self.running), 2)
-            printer.write("Idle %s%%" % idle)
-            with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-                if time.time() > self.last_heartbeat:
-                    cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master'")
+            if not idle_countdown:
+                printer.write("Idle %s%%" % idle)
+                idle_countdown = 5
+
+            if time.time() > self.last_heartbeat:
+                # Make sure there are some masters still kicking around
+                self.last_heartbeat = self.heartrate + time.time()
+                with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+                    cursor.execute('UPDATE heartbeat SET pulse=%s WHERE thread_id=%s' % (round(time.time()), self.id))
+                    cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
+                                   "AND pulse>%s" % (time.time() - self.max_wait))
                     masters = cursor.fetchall()
-                    breakout = True
-                    for master in masters:
-                        if time.time() < master[2] + self.heartbeat_wait:
-                            breakout = False
-                            break
-                    if breakout:
+                    if not masters:
                         printer.write("Terminating Worker_%s due to lack of activity by any master threads.\n"
                                       "Spent %s%% of time idle." % (self.id, idle))
                         printer.new_line(1)
+                        cursor.execute("DELETE FROM heartbeat WHERE thread_id=%s" % self.id)
                         break
-                cursor.execute('UPDATE heartbeat SET pulse=%s WHERE thread_id=%s' % (round(time.time()), self.id))
+
+            # Check for and clean up dead threads and orphaned jobs every hundredth(ish) time through
+            rand_check = random()
+            if rand_check > 0.99:
+                with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+                    dead_masters = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
+                                                  "AND pulse < %s" % (time.time() - self.max_wait)).fetchall()
+                    dead_workers = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='worker' "
+                                                  "AND pulse < %s" % (time.time() - self.max_wait)).fetchall()
+                    if dead_masters:
+                        dead_masters = [str(x[0]) for x in dead_masters]
+                        dead_masters = ", ".join(dead_masters)
+                        cursor.execute("DELETE FROM heartbeat WHERE thread_id IN (%s)" % dead_masters)
+                    if dead_workers:
+                        dead_workers = [str(x[0]) for x in dead_workers]
+                        dead_workers = ", ".join(dead_workers)
+                        cursor.execute("DELETE FROM heartbeat WHERE thread_id IN (%s)" % dead_workers)
+
+                    master_ids = cursor.execute("SELECT thread_id FROM heartbeat WHERE thread_type='master'").fetchall()
+
+                with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+                    if dead_masters:
+                        cursor.execute("DELETE FROM queue WHERE master_id IN (%s)" % dead_masters)
+                        cursor.execute("DELETE FROM waiting WHERE master_id IN (%s)" % dead_masters)
+
+                        complete_jobs = cursor.execute("SELECT hash FROM complete").fetchall()
+                        for job_hash in complete_jobs:
+                            if not cursor.execute("SELECT hash FROM waiting WHERE hash='%s'" % job_hash).fetchall():
+                                cursor.execute("DELETE FROM complete WHERE hash='%s'" % job_hash)
+
+                    if master_ids:
+                        master_ids = ", ".join([str(x[0]) for x in master_ids])
+                        orphaned_jobs = cursor.execute("SELECT hash FROM complete "
+                                                       "WHERE master_id NOT IN (%s)" % master_ids).fetchall()
+                        if orphaned_jobs:
+                            orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in orphaned_jobs])
+
+                            waiting = cursor.execute("SELECT hash FROM waiting "
+                                                     "WHERE hash IN (%s)" % orphaned_job_hashes).fetchall()
+                            orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in waiting])
+                            orphaned_jobs = cursor.execute("SELECT hash FROM complete "
+                                                           "WHERE hash NOT IN (%s)" % orphaned_job_hashes).fetchall()
+                            orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in orphaned_jobs])
+                            cursor.execute("DELETE FROM complete WHERE hash IN (%s)" % orphaned_job_hashes)
 
             with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
                 cursor.execute('SELECT * FROM queue')
@@ -88,9 +136,11 @@ class Worker(object):
             self.idle += time.time() - self.split_time
             self.split_time = time.time()
             if not data:
-                time.sleep(randint(1, 100) / 100)  # Pause for some part of one second
+                time.sleep(random() * 3)  # Pause for some part of three seconds
+                idle_countdown -= 1
                 continue
 
+            idle_countdown = 1
             # Prepare alignment
             seqbuddy = Sb.SeqBuddy(StringIO(seqs))
             if len(seqbuddy) == 1:
@@ -107,7 +157,8 @@ class Worker(object):
             for rec in alignment.records_iter():
                 psipred_file = "%s/%s.ss2" % (psipred_dir, rec.id)
                 if not os.path.isfile(psipred_file):
-                    print("Terminating Worker_%s because psi file %s not found." % (self.id, psipred_file))
+                    printer.write("Terminating Worker_%s because psi file %s not found." % (self.id, psipred_file))
+                    printer.new_line(1)
                     with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
                         cursor.execute('DELETE FROM heartbeat WHERE thread_id=%s' % self.id)
 
@@ -156,16 +207,19 @@ class Worker(object):
             for rec1 in ids1:
                 del ids2[ids2.index(rec1)]
                 for rec2 in ids2:
-                    data[indx] = (rec1, rec2, alignment, psipred_dfs[rec1], psipred_dfs[rec2],
-                                  -5, 0, ".Worker_%s.dat" % self.id, self.id, self.hbdb_path)
+                    data[indx] = (rec1, rec2, psipred_dfs[rec1], psipred_dfs[rec2])
                     indx += 1
 
+            data_len = len(data)
+            n = int(rdmcl.ceil(len(data) / self.cpus))
+            data = [data[i:i + n] for i in range(0, len(data), n)]
             # Launch multicore
-            printer.write("Running all-by-all data (%s comparisons)" % len(data))
+            printer.write("Running all-by-all data (%s comparisons)" % data_len)
             with open(".Worker_%s.dat" % self.id, "w") as ofile:
                 ofile.write("seq1,seq2,subsmat,psi")
 
-            br.run_multicore_function(data, score_sequences, quiet=True, max_processes=self.cpus)
+            br.run_multicore_function(data, score_sequences, quiet=True, max_processes=self.cpus,
+                                      func_args=[alignment, -5, 0, ".Worker_%s.dat" % self.id, self.id, self.hbdb_path])
 
             printer.write("Processing final results")
             with open(".Worker_%s.dat" % self.id, "r") as ifile:
@@ -200,92 +254,99 @@ class Worker(object):
         if os.path.isfile("Worker_%s" % self.id):
             os.remove("Worker_%s" % self.id)
         else:
-            print("Terminating Worker_%s because check file was deleted." % self.id)
+            printer.write("Terminating Worker_%s because check file was deleted." % self.id)
+            printer.new_line(1)
             with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
                 cursor.execute('DELETE FROM heartbeat WHERE thread_id=%s' % self.id)
         return
 
 
-def score_sequences(args):
-    id1, id2, align, psi1_df, psi2_df, gap_open, gap_extend, output_file, worker_id, hbdb_path = args
+def score_sequences(data, func_args):
+    results = ["" for _ in data]
+    alb_obj, gap_open, gap_extend, output_file, worker_id, hbdb_path = func_args
+    for indx, recs in enumerate(data):
+        align = Alb.make_copy(alb_obj)
+        id1, id2, psi1_df, psi2_df = recs
 
-    # Occasionally update the heartbeat database so masters know there is still life
-    if random() < 2 / CPUS:
-        with helpers.ExclusiveConnect(hbdb_path) as cursor:
-            cursor.execute('UPDATE heartbeat SET pulse=%s WHERE thread_id=%s' % (round(time.time()), worker_id))
+        # Occasionally update the heartbeat database so masters know there is still life
+        if random() > 0.99:
+            with helpers.ExclusiveConnect(hbdb_path) as cursor:
+                cursor.execute('UPDATE heartbeat SET pulse=%s WHERE thread_id=%s' % (round(time.time()), worker_id))
 
-    # Calculate the best possible scores, and divide by the observed scores
-    id_regex = "^%s$|^%s$" % (id1, id2)
+        # Calculate the best possible scores, and divide by the observed scores
+        id_regex = "^%s$|^%s$" % (id1, id2)
 
-    # Alignment comparison
-    Alb.pull_records(align, id_regex)
+        # Alignment comparison
+        Alb.pull_records(align, id_regex)
 
-    observed_score = 0
-    observed_len = align.lengths()[0]
-    seq1_best = 0
-    seq1_len = 0
-    seq2_best = 0
-    seq2_len = 0
-    seq1, seq2 = align.records()
-    prev_aa1 = "-"
-    prev_aa2 = "-"
+        observed_score = 0
+        observed_len = align.lengths()[0]
+        seq1_best = 0
+        seq1_len = 0
+        seq2_best = 0
+        seq2_len = 0
+        seq1, seq2 = align.records()
+        prev_aa1 = "-"
+        prev_aa2 = "-"
 
-    for aa_pos in range(observed_len):
-        aa1 = seq1.seq[aa_pos]
-        aa2 = seq2.seq[aa_pos]
+        for aa_pos in range(observed_len):
+            aa1 = seq1.seq[aa_pos]
+            aa2 = seq2.seq[aa_pos]
 
-        if aa1 != "-":
-            seq1_best += rdmcl.BLOSUM62[aa1, aa1]
-            seq1_len += 1
-        if aa2 != "-":
-            seq2_best += rdmcl.BLOSUM62[aa2, aa2]
-            seq2_len += 1
-        if aa1 == "-" or aa2 == "-":
-            if prev_aa1 == "-" or prev_aa2 == "-":
-                observed_score += gap_extend
+            if aa1 != "-":
+                seq1_best += rdmcl.BLOSUM62[aa1, aa1]
+                seq1_len += 1
+            if aa2 != "-":
+                seq2_best += rdmcl.BLOSUM62[aa2, aa2]
+                seq2_len += 1
+            if aa1 == "-" or aa2 == "-":
+                if prev_aa1 == "-" or prev_aa2 == "-":
+                    observed_score += gap_extend
+                else:
+                    observed_score += gap_open
             else:
-                observed_score += gap_open
-        else:
-            observed_score += rdmcl.BLOSUM62[aa1, aa2]
-        prev_aa1 = str(aa1)
-        prev_aa2 = str(aa2)
+                observed_score += rdmcl.BLOSUM62[aa1, aa2]
+            prev_aa1 = str(aa1)
+            prev_aa2 = str(aa2)
 
-    # Calculate average per-residue log-odds ratios for both best possible alignments and observed
-    # Note: The best score range is 4 to 11. Possible observed range is -4 to 11.
-    observed_score = (observed_score / observed_len)
+        # Calculate average per-residue log-odds ratios for both best possible alignments and observed
+        # Note: The best score range is 4 to 11. Possible observed range is -4 to 11.
+        observed_score = (observed_score / observed_len)
 
-    seq1_best = (seq1_best / seq1_len)
-    seq1_score = observed_score / seq1_best
+        seq1_best = (seq1_best / seq1_len)
+        seq1_score = observed_score / seq1_best
 
-    seq2_best = (seq2_best / seq2_len)
-    seq2_score = observed_score / seq2_best
+        seq2_best = (seq2_best / seq2_len)
+        seq2_score = observed_score / seq2_best
 
-    subs_mat_score = (seq1_score + seq2_score) / 2
+        subs_mat_score = (seq1_score + seq2_score) / 2
 
-    # PSI PRED comparison
-    align = Sb.SeqBuddy(align.records())
-    Sb.clean_seq(align)
-    num_gaps = 0
-    ss_score = 0
-    for row1 in psi1_df.itertuples():
-        row2 = psi2_df.loc[psi2_df["indx"] == row1.indx]
-        if not row2.empty:
-            row_score = 0
-            row_score += 1 - abs(float(row1.coil_prob) - float(row2.coil_prob))
-            row_score += 1 - abs(float(row1.helix_prob) - float(row2.helix_prob))
-            row_score += 1 - abs(float(row1.sheet_prob) - float(row2.sheet_prob))
-            ss_score += row_score / 3
-        else:
-            num_gaps += 1
-    align_len = len(psi2_df) + num_gaps
-    ss_score /= align_len
+        # PSI PRED comparison
+        align = Sb.SeqBuddy(align.records())
+        Sb.clean_seq(align)
+        num_gaps = 0
+        ss_score = 0
+        for row1 in psi1_df.itertuples():
+            row2 = psi2_df.loc[psi2_df["indx"] == row1.indx]
+            if not row2.empty:
+                row_score = 0
+                row_score += 1 - abs(float(row1.coil_prob) - float(row2.coil_prob))
+                row_score += 1 - abs(float(row1.helix_prob) - float(row2.helix_prob))
+                row_score += 1 - abs(float(row1.sheet_prob) - float(row2.sheet_prob))
+                ss_score += row_score / 3
+            else:
+                num_gaps += 1
+        align_len = len(psi2_df) + num_gaps
+        ss_score /= align_len
+        results[indx] = "\n%s,%s,%s,%s" % (id1, id2, subs_mat_score, ss_score)
+
     with WORKERLOCK:
         with open(output_file, "a") as ofile:
-            ofile.write("\n%s,%s,%s,%s" % (id1, id2, subs_mat_score, ss_score))
+            ofile.write("".join(results))
     return
 
 
-if __name__ == '__main__':
+def main():
     import argparse
 
     parser = argparse.ArgumentParser(prog="launch_worker", description="",
@@ -293,12 +354,34 @@ if __name__ == '__main__':
 
     parser.add_argument("-wdb", "--workdb", action="store", default=os.getcwd(),
                         help="Specify the directory where sqlite databases will be fed by RD-MCL", )
-    parser.add_argument("-mw", "--max_wait", help="", action="store", type=int, default=120)
+    parser.add_argument("-hr", "--heart_rate", type=int, default=60,
+                        help="Specify how often the worker should check in")
+    parser.add_argument("-mw", "--max_wait", action="store", type=int, default=120,
+                        help="Specify the maximum time a worker will stay alive without seeing a master")
+    parser.add_argument("-log", "--log", help="Stream log data one line at a time", action="store_true")
+    parser.add_argument("-q", "--quiet", help="Suppress all output", action="store_true")
 
     in_args = parser.parse_args()
 
     workdb = os.path.join(in_args.workdb, "work_db.sqlite")
     heartbeatdb = os.path.join(in_args.workdb, "heartbeat_db.sqlite")
+
+    global printer
+    if in_args.log:
+        def _write(self):
+            try:
+                while True:
+                    self.out_type.write("\n%s" % self._next_print,)
+                    self.out_type.flush()
+                    self._last_print = self._next_print
+                    yield
+            finally:
+                pass
+        br.DynamicPrint._write = _write
+        printer = br.DynamicPrint()
+
+    if in_args.quiet:
+        printer = br.DynamicPrint(quiet=True)
 
     connection = sqlite3.connect(workdb)
     cur = connection.cursor()
@@ -326,5 +409,8 @@ if __name__ == '__main__':
     cur.close()
     connection.close()
 
-    wrkr = Worker(workdb, heartbeatdb, in_args.max_wait)
+    wrkr = Worker(workdb, heartbeatdb, in_args.heart_rate, in_args.max_wait)
     wrkr.start()
+
+if __name__ == '__main__':
+    main()
