@@ -283,18 +283,19 @@ class Cluster(object):
                 global_best_hits = self.recursive_best_hits(_edge.seq2, global_best_hits, tested_ids)
         return global_best_hits
 
-    def perturb(self, scores):
+    def perturb(self, scores, col_name="score"):
         """
         Add a very small bit of variance into score values when std == 0
         :param scores: Similarity scores
         :type scores: pd.DataFrame
+        :param col_name: DataFrame column label
         :return: updated data frame
         """
         valve = br.SafetyValve(global_reps=10)
-        while scores.score.std() == 0:
+        while scores[col_name].std() == 0:
             valve.step("Failed to perturb:\n%s" % scores)
-            for indx, score in scores.score.iteritems():
-                scores.set_value(indx, "score", self.rand_gen.gauss(score, (score * 0.0000001)))
+            for indx, score in scores[col_name].iteritems():
+                scores.set_value(indx, col_name, self.rand_gen.gauss(score, (score * 0.0000001)))
         return scores
 
     def get_base_cluster(self):
@@ -505,7 +506,10 @@ class Cluster(object):
 
                 # if all sim scores in a group are identical, we can't get a KDE. Fix by perturbing the scores a little.
                 clique_scores = self.perturb(clique_scores)
+                clique_scores = self.perturb(clique_scores, "raw_score")
+
                 outer_scores = self.perturb(outer_scores)
+                outer_scores = self.perturb(outer_scores, "raw_score")
 
                 total_kde = scipy.stats.gaussian_kde(outer_scores.raw_score, bw_method='silverman')
                 log_file.write("""\
