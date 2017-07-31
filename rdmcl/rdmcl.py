@@ -981,8 +981,8 @@ class HeartBeat(object):
 
             if split_time < time.time() - self.pulse_rate:
                 with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-                    cursor.execute("UPDATE heartbeat SET pulse=%s WHERE thread_id=%s" % (round(time.time()),
-                                                                                         self.master_id))
+                    cursor.execute("UPDATE heartbeat SET pulse=%s "
+                                   "WHERE thread_id=%s" % (round(time.time() + cursor.lag), self.master_id))
                 split_time = time.time()
             time.sleep(random())
         return
@@ -1055,7 +1055,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
         with helpers.ExclusiveConnect(HEARTBEAT_DB) as cursor:
             workers = cursor.execute("SELECT * FROM heartbeat "
                                      "WHERE thread_type='worker' "
-                                     "AND pulse>%s" % (time.time() - MAX_WORKER_WAIT)).fetchone()
+                                     "AND pulse>%s" % (time.time() - MAX_WORKER_WAIT - cursor.lag)).fetchone()
 
         if workers:
             with helpers.ExclusiveConnect(WORKER_DB) as cursor:
@@ -1103,7 +1103,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                                                           "WHERE hash='%s'" % seq_id_hash).fetchone()
 
                         with helpers.ExclusiveConnect(HEARTBEAT_DB) as hb_cursor:
-                            min_pulse = time.time() - (MAX_WORKER_WAIT * 3)
+                            min_pulse = time.time() - (MAX_WORKER_WAIT * 3) - hb_cursor.lag
                             worker_heartbeat_check = hb_cursor.execute("SELECT * FROM heartbeat "
                                                                        "WHERE thread_type='worker' AND pulse>%s"
                                                                        % min_pulse).fetchall()

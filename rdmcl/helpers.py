@@ -13,6 +13,14 @@ from multiprocessing import SimpleQueue, Process, Pipe
 from buddysuite.buddy_resources import pretty_time, SafetyValve
 
 
+class AttrWrapper(object):
+    def __init__(self, wrapped):
+        self._wrapped = wrapped
+
+    def __getattr__(self, n):
+        return getattr(self._wrapped, n)
+
+
 class ExclusiveConnect(object):
     def __init__(self, db_path, log_message=None):
         self.db_path = db_path
@@ -35,7 +43,9 @@ class ExclusiveConnect(object):
                     continue
                 else:
                     raise err
-        return self.connection.cursor()
+        cursor = AttrWrapper(self.connection.cursor())
+        cursor.lag = time() - self.start_time
+        return cursor
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.connection.commit()

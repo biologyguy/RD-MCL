@@ -40,7 +40,8 @@ class Worker(object):
         self.last_heartbeat = self.heartrate + time.time()
         self.max_wait = max_wait
         with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-            cursor.execute("INSERT INTO heartbeat (thread_type, pulse) VALUES ('worker', %s)" % round(time.time()))
+            cursor.execute("INSERT INTO heartbeat (thread_type, pulse) "
+                           "VALUES ('worker', %s)" % round(time.time() + cursor.lag))
             self.id = cursor.lastrowid
         with open("Worker_%s" % self.id, "w") as ofile:
             ofile.write("To terminate this Worker, simply delete this file.")
@@ -69,9 +70,10 @@ class Worker(object):
                 # Make sure there are some masters still kicking around
                 self.last_heartbeat = self.heartrate + time.time()
                 with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-                    cursor.execute('UPDATE heartbeat SET pulse=%s WHERE thread_id=%s' % (round(time.time()), self.id))
+                    cursor.execute('UPDATE heartbeat SET pulse=%s '
+                                   'WHERE thread_id=%s' % (round(time.time() + cursor.lag), self.id))
                     cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
-                                   "AND pulse>%s" % (time.time() - self.max_wait))
+                                   "AND pulse>%s" % (time.time() - self.max_wait - cursor.lag))
                     masters = cursor.fetchall()
                     if not masters:
                         printer.write("Terminating Worker_%s due to lack of activity by any master threads.\n"
@@ -84,10 +86,11 @@ class Worker(object):
             rand_check = random()
             if rand_check > 0.99:
                 with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+                    wait_time = time.time() - self.max_wait - cursor.lag
                     dead_masters = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
-                                                  "AND pulse < %s" % (time.time() - self.max_wait)).fetchall()
+                                                  "AND pulse < %s" % wait_time).fetchall()
                     dead_workers = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='worker' "
-                                                  "AND pulse < %s" % (time.time() - self.max_wait)).fetchall()
+                                                  "AND pulse < %s" % wait_time).fetchall()
                     if dead_masters:
                         dead_masters = [str(x[0]) for x in dead_masters]
                         dead_masters = ", ".join(dead_masters)
@@ -275,7 +278,8 @@ def score_sequences(data, func_args):
         # Occasionally update the heartbeat database so masters know there is still life
         if random() > 0.99:
             with helpers.ExclusiveConnect(hbdb_path) as cursor:
-                cursor.execute('UPDATE heartbeat SET pulse=%s WHERE thread_id=%s' % (round(time.time()), worker_id))
+                cursor.execute('UPDATE heartbeat SET pulse=%s '
+                               'WHERE thread_id=%s' % (round(time.time() + cursor.lag), worker_id))
 
         # Calculate the best possible scores, and divide by the observed scores
         id_regex = "^%s$|^%s$" % (id1, id2)
