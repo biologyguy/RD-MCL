@@ -291,7 +291,7 @@ class MarkovClustering(object):
         while True:
             try:
                 valve.step()
-            except RuntimeError:
+            except RuntimeError:  # No convergence after 1000 MCL steps
                 self.clusters = [self.name_order]
                 return
             self.mcl_step()

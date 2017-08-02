@@ -295,7 +295,7 @@ class Cluster(object):
         while scores[col_name].std() == 0:
             valve.step("Failed to perturb:\n%s" % scores)
             for indx, score in scores[col_name].iteritems():
-                scores.set_value(indx, col_name, self.rand_gen.gauss(score, (score * 0.0000001)))
+                scores.set_value(indx, col_name, round(self.rand_gen.gauss(score, (score * 0.0000001)), 12))
         return scores
 
     def get_base_cluster(self):
@@ -735,10 +735,10 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
     # I know what the best and worst possible scores are, so let MCMCMC know (better for calculating acceptance rates)
     # The worst score possible would be all genes in each taxa segregated.
-    worst_score = 0
+    worst_possible_score = 0
     for taxon, seq_ids in master_cluster.taxa.items():
         bad_clust = Cluster(seq_ids, master_cluster.pull_scores_subgraph(seq_ids), parent=master_cluster)
-        worst_score += bad_clust.score()
+        worst_possible_score += bad_clust.score()
 
     # The best score would be perfect separation of taxa
     sub_clusters = [[]]
@@ -748,25 +748,25 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                 sub_clusters[indx].append(gene)
             else:
                 sub_clusters.append([gene])
-    best_score = 0
+    best_possible_score = 0
     for seq_ids in sub_clusters:
         subcluster = Cluster(seq_ids, master_cluster.pull_scores_subgraph(seq_ids), parent=master_cluster)
-        best_score += subcluster.score()
+        best_possible_score += subcluster.score()
 
-    if best_score == worst_score:
+    if best_possible_score == worst_possible_score:
         return cluster_list
 
     open(os.path.join(temp_dir.path, "max.txt"), "w").close()
     mcmcmc_params = ["%s" % temp_dir.path, seqbuddy, master_cluster,
-                     taxa_sep, sql_broker, psi_pred_ss2_dfs, progress]
+                     taxa_sep, sql_broker, psi_pred_ss2_dfs, progress, chains * (walkers + 2)]
     mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, quiet=quiet,
                                    num_walkers=walkers, num_chains=chains, convergence=convergence,
                                    outfiles=os.path.join(temp_dir.path, "mcmcmc_out"), params=mcmcmc_params,
                                    include_lava=True, include_ice=True, r_seed=rand_gen.randint(1, 999999999999999),
-                                   min_max=(worst_score, best_score))
+                                   min_max=(worst_possible_score, best_possible_score))
 
     mcmcmc_factory.reset_params([temp_dir.path, seqbuddy, master_cluster,
-                                 taxa_sep, sql_broker, psi_pred_ss2_dfs, progress])
+                                 taxa_sep, sql_broker, psi_pred_ss2_dfs, progress, chains * (walkers + 2)])
     mcmcmc_factory.run()
     best_score = pd.DataFrame()
     for indx in range(len(mcmcmc_factory.chains)):
@@ -866,7 +866,8 @@ def mcmcmc_mcl(args, params):
     :return:
     """
     inflation, gq, r_seed = args
-    exter_tmp_dir, seqbuddy, parent_cluster, taxa_sep, sql_broker, psi_pred_ss2_dfs, progress = params
+    exter_tmp_dir, seqbuddy, parent_cluster, taxa_sep, \
+        sql_broker, psi_pred_ss2_dfs, progress, expect_num_results = params
     rand_gen = Random(r_seed)
     mcl_obj = helpers.MarkovClustering(parent_cluster.sim_scores, inflation=inflation, edge_sim_threshold=gq)
     mcl_obj.run()
@@ -894,7 +895,7 @@ def mcmcmc_mcl(args, params):
         with open(os.path.join(exter_tmp_dir, "max.txt"), "w") as ofile:
             ofile.write("\n".join(results))
 
-    if len(results) == MCMC_CHAINS:
+    if len(results) == expect_num_results:
         best_score = None
         best_clusters = []  # Hopefully just find a single best set of cluster, but could be more
         for clusters in results:
@@ -904,12 +905,14 @@ def mcmcmc_mcl(args, params):
                 sql_query = sql_broker.query("SELECT seq_ids, graph FROM data_table WHERE hash='%s'" % cluster)
                 seq_ids = sql_query[0][0].split(", ")
                 cluster_ids.append(sql_query[0][0])
-                if len(seq_ids) > 1:  # Prevent crash if pulling a cluster with a single sequence
+                if len(seq_ids) == 1:
+                    sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
+                else:
                     sim_scores = pd.read_csv(StringIO(sql_query[0][1]), index_col=False, header=None)
-                    cluster = Cluster(seq_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
-                                      r_seed=rand_gen.randint(1, 999999999999))
-                    score_sum += cluster.score()
 
+                cluster = Cluster(seq_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
+                                  r_seed=rand_gen.randint(1, 999999999999))
+                score_sum += cluster.score()
             if score_sum == best_score:
                 best_clusters.append(cluster_ids)
             elif best_score is None or score_sum > best_score:
@@ -921,8 +924,8 @@ def mcmcmc_mcl(args, params):
             with open(os.path.join(exter_tmp_dir, "best_group"), "w") as ofile:
                 ofile.write('\n'.join(best_clusters))
             open(os.path.join(exter_tmp_dir, "max.txt"), "w").close()
-    elif len(results) > MCMC_CHAINS:
-        raise ValueError("More results written to max.txt than MCMC_CHAINS")
+    elif len(results) > expect_num_results:  # This should never be able to happen
+        raise ValueError("More results written to max.txt than expect_num_results")
     return score
 
 
