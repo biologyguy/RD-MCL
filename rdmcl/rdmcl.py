@@ -733,19 +733,6 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     gq_var = mcmcmc.Variable("gq", min(master_cluster.sim_scores.score), max(master_cluster.sim_scores.score),
                              r_seed=rand_gen.randint(1, 999999999999999))
 
-    try:
-        open(os.path.join(temp_dir.path, "max.txt"), "w").close()
-        mcmcmc_params = ["%s" % temp_dir.path, seqbuddy, master_cluster,
-                         taxa_sep, sql_broker, psi_pred_ss2_dfs, progress]
-        mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, quiet=quiet,
-                                       num_walkers=walkers, num_chains=chains, convergence=convergence,
-                                       outfiles=os.path.join(temp_dir.path, "mcmcmc_out"), params=mcmcmc_params,
-                                       include_lava=True, include_ice=True, r_seed=rand_gen.randint(1, 999999999999999))
-
-    except RuntimeError:  # Happens when mcmcmc fails to find different initial chain parameters
-        save_cluster("MCMCMC failed to find parameters")
-        return cluster_list
-
     # I know what the best and worst possible scores are, so let MCMCMC know (better for calculating acceptance rates)
     # The worst score possible would be all genes in each taxa segregated.
     worst_score = 0
@@ -766,11 +753,19 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         subcluster = Cluster(seq_ids, master_cluster.pull_scores_subgraph(seq_ids), parent=master_cluster)
         best_score += subcluster.score()
 
-    for chain in mcmcmc_factory.chains:
-        for walker in chain.walkers:
-            walker.score_history += [worst_score, best_score]
+    if best_score == worst_score:
+        return cluster_list
 
-    mcmcmc_factory.reset_params(["%s" % temp_dir.path, seqbuddy, master_cluster,
+    open(os.path.join(temp_dir.path, "max.txt"), "w").close()
+    mcmcmc_params = ["%s" % temp_dir.path, seqbuddy, master_cluster,
+                     taxa_sep, sql_broker, psi_pred_ss2_dfs, progress]
+    mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, quiet=quiet,
+                                   num_walkers=walkers, num_chains=chains, convergence=convergence,
+                                   outfiles=os.path.join(temp_dir.path, "mcmcmc_out"), params=mcmcmc_params,
+                                   include_lava=True, include_ice=True, r_seed=rand_gen.randint(1, 999999999999999),
+                                   min_max=(worst_score, best_score))
+
+    mcmcmc_factory.reset_params([temp_dir.path, seqbuddy, master_cluster,
                                  taxa_sep, sql_broker, psi_pred_ss2_dfs, progress])
     mcmcmc_factory.run()
     best_score = pd.DataFrame()
