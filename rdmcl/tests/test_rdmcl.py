@@ -27,7 +27,7 @@ class MockLogging(object):
 
 # #########  Cluster class and functions  ########## #
 def test_cluster_instantiate_group_0(hf):
-    cluster = rdmcl.Cluster(*hf.base_cluster_args())
+    cluster = rdmcl.Cluster(*hf.base_cluster_args(), collapse=True)
     assert [taxa for taxa in cluster.taxa] == ['BOL', 'Bab', 'Bch', 'Bfo', 'Bfr', 'Cfu', 'Dgl', 'Edu', 'Hca', 'Hru',
                                                'Hvu', 'Lcr', 'Lla', 'Mle', 'Oma', 'Pba', 'Tin', 'Vpa']
     assert hf.string2hash(cluster.sim_scores.to_csv()) == "ae11f765826e65eeefb52c3d04776d9b"
@@ -73,7 +73,7 @@ def test_cluster_instantiate_group_0(hf):
 
 
 def test_cluster_instantiate_child(hf):
-    parent = rdmcl.Cluster(*hf.base_cluster_args())
+    parent = rdmcl.Cluster(*hf.base_cluster_args(), collapse=True)
     child_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Edu-PanxαA', 'Hca-PanxαB',
                  'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
     sim_scores = pd.read_csv("%sCteno_pannexins_subgroup_sim.scores" % hf.resource_path, index_col=False, header=None)
@@ -144,7 +144,7 @@ def test_cluster_get_best_hits(hf):
 
 
 def test_cluster_recursive_best_hits(hf):
-    cluster = rdmcl.Cluster(*hf.base_cluster_args())
+    cluster = rdmcl.Cluster(*hf.base_cluster_args(), collapse=True)
     global_best_hits = pd.DataFrame(columns=["seq1", "seq2", "score"])
     best_hits = cluster.recursive_best_hits('Bab-PanxαB', global_best_hits, ['Bab-PanxαB'])
     assert best_hits.to_csv() == """\
@@ -155,11 +155,14 @@ def test_cluster_recursive_best_hits(hf):
 """, print(best_hits.to_csv())
 
 
-def test_cluster_perterb(hf):
-    cluster = rdmcl.Cluster(*hf.base_cluster_args())
+def test_cluster_perturb(hf):
+    cluster = rdmcl.Cluster(*hf.base_cluster_args(), collapse=True)
     global_best_hits = pd.DataFrame(columns=["seq1", "seq2", "score"])
     best_hits = cluster.recursive_best_hits('Lcr-PanxαH', global_best_hits, ['Lcr-PanxαH'])
     assert best_hits.iloc[0].score == 0.9867858512031742
+
+    for indx, score in best_hits["score"].iteritems():
+        best_hits.set_value(indx, "score", 0.9867858512031742)
 
     best_hits = cluster.perturb(best_hits)
     assert best_hits.iloc[0].score != 0.9867858512031742
@@ -167,7 +170,7 @@ def test_cluster_perterb(hf):
 
 
 def test_cluster_get_base_cluster(hf):
-    parent = rdmcl.Cluster(*hf.base_cluster_args())
+    parent = rdmcl.Cluster(*hf.base_cluster_args(), collapse=True)
 
     # No paralogs
     child_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Edu-PanxαA', 'Hca-PanxαB',
@@ -396,7 +399,7 @@ def test_cluster_str(hf):
 
 
 def test_cluster2database(hf):
-    cluster = rdmcl.Cluster(*hf.base_cluster_args())
+    cluster = rdmcl.Cluster(*hf.base_cluster_args(), collapse=True)
     tmpdir = br.TempDir()
     broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
     broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
@@ -478,7 +481,7 @@ def test_orthogroup_caller(hf):
     rdmcl.Sb.pull_recs(seqbuddy, "^%s$" % "$|^".join(seq_ids))
 
     cluster = rdmcl.Cluster([rec.id for rec in seqbuddy.records],
-                            hf.get_db_graph("ec5f4340bd57eb9db6819802598457c7", broker))
+                            hf.get_db_graph("ec5f4340bd57eb9db6819802598457c7", broker), collapse=True)
 
     cluster_list = []
     outdir = br.TempDir()
@@ -518,7 +521,7 @@ def test_orthogroup_caller(hf):
 
 # #########  Miscellaneous  ########## #
 def test_progress(hf):
-    cluster = rdmcl.Cluster(*hf.base_cluster_args())
+    cluster = rdmcl.Cluster(*hf.base_cluster_args(), collapse=True)
     tmpdir = br.TempDir()
     progress = rdmcl.Progress(tmpdir.path, cluster)
     assert progress.outdir == tmpdir.path
@@ -679,7 +682,7 @@ def test_mcmcmc_mcl(hf):
     sql_broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
     sql_broker.start_broker()
     
-    cluster = rdmcl.Cluster(cluster_ids, hf.get_db_graph("3c15516819aa19b069b0e8858444f876", sql_broker))
+    cluster = rdmcl.Cluster(cluster_ids, hf.get_db_graph("3c15516819aa19b069b0e8858444f876", sql_broker), collapse=True)
     psi_pred_ss2_dfs = OrderedDict()
     for rec in seqbuddy.records:
         psi_pred_ss2_dfs[rec.id] = rdmcl.read_ss2_file("%spsi_pred%s%s.ss2" % (hf.resource_path, os.sep, rec.id))
@@ -687,7 +690,7 @@ def test_mcmcmc_mcl(hf):
     progress = rdmcl.Progress(os.path.join(ext_tmp_dir.path, "progress"), cluster)
 
     args = (6.372011782427792, 0.901221218627, 1)  # inflation, gq, r_seed
-    params = [ext_tmp_dir.path, seqbuddy, cluster, taxa_sep, sql_broker, psi_pred_ss2_dfs, progress]
+    params = [ext_tmp_dir.path, seqbuddy, cluster, taxa_sep, sql_broker, psi_pred_ss2_dfs, progress, 3]
 
     assert rdmcl.mcmcmc_mcl(args, params) == 18.307692307692307
     with open(os.path.join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
@@ -711,13 +714,7 @@ def test_mcmcmc_mcl(hf):
     assert rdmcl.mcmcmc_mcl(args, params) == 24.153846153846153
     with open(os.path.join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
         output = ifile.read()
-        assert output == "6b39ebc4f5fe7dfef786d8ee3e1594ed,cb23cf3b4d355140e525a1158af5102d," \
-                         "8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9," \
-                         "09cac4f034df8a2805171e1e61cc8666\n" \
-                         "76d0cf67bbdd773b2676a2bab2e0c1c8,cb23cf3b4d355140e525a1158af5102d," \
-                         "8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9," \
-                         "3dee08bfba869d1128cedd1680dfefe6,09cac4f034df8a2805171e1e61cc8666\n" \
-                         "af97327b21920e6d2b2fb31e181ce7f4,a06adee8cc3631773890bb5842bf8df9", print(output)
+        assert output == "", print(output)
 
     with open(os.path.join(ext_tmp_dir.path, "best_group"), "r") as ifile:
         output = ifile.read()
