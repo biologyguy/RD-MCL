@@ -894,31 +894,35 @@ def mcmcmc_mcl(args, params):
         with open(os.path.join(exter_tmp_dir, "max.txt"), "w") as ofile:
             ofile.write("\n".join(results))
 
-        if len(results) == MCMC_CHAINS:
-            best_score = None
-            best_clusters = []  # Hopefully just find a single best set of cluster, but could be more
-            for clusters in results:
-                score_sum = 0
-                cluster_ids = []
-                for cluster in clusters.split(","):
-                    sql_query = sql_broker.query("SELECT seq_ids, graph FROM data_table WHERE hash='%s'" % cluster)
-                    seq_ids = sql_query[0][0].split(", ")
-                    cluster_ids.append(sql_query[0][0])
-                    if len(seq_ids) > 1:  # Prevent crash if pulling a cluster with a single sequence
-                        sim_scores = pd.read_csv(StringIO(sql_query[0][1]), index_col=False, header=None)
-                        cluster = Cluster(seq_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
-                                          r_seed=rand_gen.randint(1, 999999999999))
-                        score_sum += cluster.score()
+    if len(results) == MCMC_CHAINS:
+        best_score = None
+        best_clusters = []  # Hopefully just find a single best set of cluster, but could be more
+        for clusters in results:
+            score_sum = 0
+            cluster_ids = []
+            for cluster in clusters.split(","):
+                sql_query = sql_broker.query("SELECT seq_ids, graph FROM data_table WHERE hash='%s'" % cluster)
+                seq_ids = sql_query[0][0].split(", ")
+                cluster_ids.append(sql_query[0][0])
+                if len(seq_ids) > 1:  # Prevent crash if pulling a cluster with a single sequence
+                    sim_scores = pd.read_csv(StringIO(sql_query[0][1]), index_col=False, header=None)
+                    cluster = Cluster(seq_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
+                                      r_seed=rand_gen.randint(1, 999999999999))
+                    score_sum += cluster.score()
 
-                if score_sum == best_score:
-                    best_clusters.append(cluster_ids)
-                elif best_score is None or score_sum > best_score:
-                    best_clusters = [cluster_ids]
-                    best_score = score_sum
+            if score_sum == best_score:
+                best_clusters.append(cluster_ids)
+            elif best_score is None or score_sum > best_score:
+                best_clusters = [cluster_ids]
+                best_score = score_sum
 
-            best_clusters = [cluster.replace(', ', '\t') for cluster in best_clusters[0]]
+        best_clusters = [cluster.replace(', ', '\t') for cluster in best_clusters[0]]
+        with LOCK:
             with open(os.path.join(exter_tmp_dir, "best_group"), "w") as ofile:
                 ofile.write('\n'.join(best_clusters))
+            open(os.path.join(exter_tmp_dir, "max.txt"), "w").close()
+    elif len(results) > MCMC_CHAINS:
+        raise ValueError("More results written to max.txt than MCMC_CHAINS")
     return score
 
 
