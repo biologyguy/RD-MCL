@@ -111,7 +111,7 @@ for aa in ambiguous_X:
 
 # ToDo: Maybe remove support for taxa_sep. It's complicating my life, so just impose the '-' on users?
 class Cluster(object):
-    def __init__(self, seq_ids, sim_scores, taxa_sep="-", parent=None, collapse=True, r_seed=None):
+    def __init__(self, seq_ids, sim_scores, taxa_sep="-", parent=None, collapse=False, r_seed=None):
         """
         - Note that reciprocal best hits between paralogs are collapsed when instantiating group_0, so
           no problem strongly penalizing all paralogs in the scoring algorithm
@@ -159,13 +159,12 @@ class Cluster(object):
         else:
             self.max_genes_in_a_taxa = max([len(self.taxa[taxa]) for taxa in self.taxa])
             self._name = "group_0"
-            # This next bit collapses all paralog reciprocal best-hit cliques so they don't gum up MCL
-            # Set the full cluster score first though, in case it's needed
+            # This next bit can collapse all paralog reciprocal best-hit cliques so they don't gum up MCL
             self.seq_ids = seq_ids
             if collapse:
                 self.collapse()
 
-        self.seq_ids_str = str(", ".join(seq_ids))
+        self.seq_ids_str = str(", ".join(self.seq_ids))
         self.seq_id_hash = helpers.md5_hash(self.seq_ids_str)
 
     def reset_seq_ids(self, seq_ids):
@@ -1034,7 +1033,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
     if len(seqbuddy) == 1:
         sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
         alignment = Alb.AlignBuddy(str(seqbuddy))
-        cluster2database(Cluster(seq_ids, sim_scores, collapse=False), sql_broker, alignment)
+        cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
         return sim_scores, alignment
 
     # Grab from the database first, if the data exists there already
@@ -1149,7 +1148,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                 alignment = Alb.AlignBuddy(StringIO(complete_check[1]))
                 sim_scores = pd.read_csv(StringIO(complete_check[2]), index_col=False, header=None)
                 sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
-                cluster2database(Cluster(seq_ids, sim_scores, collapse=False), sql_broker, alignment)
+                cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
                 heartbeat.end()
                 return sim_scores, alignment
 
@@ -1223,7 +1222,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
 
     # ToDo: Experiment testing these magic number weights...
     sim_scores['score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
-    cluster2database(Cluster(seq_ids, sim_scores, collapse=False), sql_broker, alignment)
+    cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
     return sim_scores, alignment
 
 
@@ -1340,7 +1339,7 @@ class Orphans(object):
         Sb.pull_recs(seqbuddy, regex)
 
         sim_scores, alb_obj = create_all_by_all_scores(seqbuddy, self.psi_pred_ss2_dfs, self.sql_broker, quiet=True)
-        cluster2database(Cluster(seq_ids, sim_scores, collapse=False), self.sql_broker, alb_obj)
+        cluster2database(Cluster(seq_ids, sim_scores), self.sql_broker, alb_obj)
         return sim_scores
 
     def _check_orphan(self, small_cluster):
@@ -1803,12 +1802,13 @@ Continue? y/[n] """ % len(sequences)
 
     # First prepare the really raw first alignment in the database, without any collapsing.
     uncollapsed_group_0 = Cluster([rec.id for rec in sequences.records], scores_data,
-                                  taxa_sep=in_args.taxa_sep, collapse=False, r_seed=in_args.r_seed)
+                                  taxa_sep=in_args.taxa_sep, r_seed=in_args.r_seed)
+    cluster2database(uncollapsed_group_0, broker, alignbuddy)
 
     # Then prepare the 'real' group_0 cluster
     if not in_args.suppress_paralog_collapse:
         group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data,
-                                  taxa_sep=in_args.taxa_sep, r_seed=in_args.r_seed)
+                                  taxa_sep=in_args.taxa_sep, collapse=True, r_seed=in_args.r_seed)
     else:
         group_0_cluster = uncollapsed_group_0
 
