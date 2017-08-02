@@ -28,13 +28,13 @@ class Variable:
 
         # select a random start value
         self.rand_gen = random.Random(r_seed)
-        self.current_value = self.rand_gen.random() * _range + _min
+        self.current_value = round(self.rand_gen.random() * _range + _min, 12)
         self.draw_value = self.current_value
         self.history = OrderedDict([("draws", [self.draw_value]), ("accepts", [])])
 
     def draw_new_value(self, heat):
         #  NOTE: Might need to tune heat if the acceptance rate is to low or high.
-        draw_val = self.rand_gen.gauss(self.current_value, ((self.max - self.min) * heat))
+        draw_val = round(self.rand_gen.gauss(self.current_value, ((self.max - self.min) * heat)), 12)
         safety_check = 100
         while draw_val < self.min or draw_val > self.max:
             if draw_val < self.min:
@@ -55,7 +55,7 @@ class Variable:
         return
 
     def draw_random(self):
-        self.current_value = self.rand_gen.random() * (self.max - self.min) + self.min
+        self.current_value = round(self.rand_gen.random() * (self.max - self.min) + self.min, 12)
         self.draw_value = self.current_value
         return
 
