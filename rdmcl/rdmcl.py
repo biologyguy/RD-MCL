@@ -85,6 +85,7 @@ Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
 '''
 LOCK = Lock()
 MULTICORE_LOCK = Lock()
+PROGRESS_LOCK = Lock()
 CPUS = br.usable_cpu_count()
 TIMER = helpers.Timer()
 GAP_OPEN = -5
@@ -843,7 +844,7 @@ class Progress(object):
             json.dump(_progress, progress_file)
 
     def update(self, key, value):
-        with LOCK:
+        with PROGRESS_LOCK:
             with open(os.path.join(self.outdir, ".progress"), "r") as ifile:
                 _progress = json.load(ifile)
                 _progress[key] += value
@@ -852,7 +853,7 @@ class Progress(object):
         return
 
     def read(self):
-        with LOCK:
+        with PROGRESS_LOCK:
             with open(os.path.join(self.outdir, ".progress"), "r") as ifile:
                 return json.load(ifile)
 
