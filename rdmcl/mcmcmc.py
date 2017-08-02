@@ -74,17 +74,17 @@ class Variable:
 Name: {}
 Min: {}
 Max: {}
-Variance: {}
 Random: {}
 Current value: {}
 Draw value: {}
 History: {}
-""".format(self.name, self.min, self.max, self.variance, self.rand_gen.getstate(),
+""".format(self.name, self.min, self.max, self.rand_gen.getstate(),
            self.current_value, self.draw_value, self.history)
 
 
 class _Walker:
-    def __init__(self, variables, func, heat, params=None, quiet=False, r_seed=None, lava=False, ice=False):
+    def __init__(self, variables, func, heat, params=None, quiet=False,
+                 r_seed=None, lava=False, ice=False, min_max=()):
         self.variables = variables
         self.function = func
         self.params = params
@@ -100,27 +100,36 @@ class _Walker:
 
         # Sample `function` for starting min/max scores
         valve = 0
-        if not quiet:
-            print("Setting initial chain parameters:")
-        while len(self.score_history) < 2 or min(self.score_history) == max(self.score_history):
-            if valve == 30:
-                raise RuntimeError("Popped the safety valve while initializing chain.")
-            valve += 1
-
-            output = "\tStep %s:" % valve
-            func_args = []
-            for variable in self.variables:
-                variable.draw_random()
-                func_args.append(variable.draw_value)
-                output += " %s = %s," % (variable.name, variable.current_value)
-
-            func_args.append(self.rand_gen.randint(1, 999999999999999))  # Always add a new seed for the target function
-            score = self.function(func_args) if not self.params else self.function(func_args, self.params)
-            self.score_history.append(score)
-            output += " Score = %s" % score
-
+        if min_max:
+            if len(min_max) != 2 or type(min_max) not in [list, tuple] or min_max[0] == min_max[1]:
+                raise ValueError("min_max value passed into _Walker is not of type [num, different num]")
             if not quiet:
-                print(output)
+                print("User-defined initial chain parameters:")
+            self.score_history.append(float(min_max[0]))
+            self.score_history.append(float(min_max[1]))
+        else:
+            if not quiet:
+                print("Setting initial chain parameters:")
+            while len(self.score_history) < 2 or min(self.score_history) == max(self.score_history):
+                if valve == 30:
+                    raise RuntimeError("Popped the safety valve while initializing chain.")
+                valve += 1
+
+                output = "\tStep %s:" % valve
+                func_args = []
+                for variable in self.variables:
+                    variable.draw_random()
+                    func_args.append(variable.draw_value)
+                    output += " %s = %s," % (variable.name, variable.current_value)
+
+                # Always add a new seed for the target function
+                func_args.append(self.rand_gen.randint(1, 999999999999999))
+                score = self.function(func_args) if not self.params else self.function(func_args, self.params)
+                self.score_history.append(score)
+                output += " Score = %s" % score
+
+                if not quiet:
+                    print(output)
 
         for variable in self.variables:
             variable.draw_random()
@@ -225,7 +234,7 @@ class MCMCMC:
     """
     def __init__(self, variables, func, params=None, steps=0, sample_rate=1, num_walkers=3, num_chains=3, quiet=False,
                  include_lava=False, include_ice=False, outfiles='./chain', burn_in=100, r_seed=None, convergence=1.05,
-                 cold_heat=0.3, hot_heat=0.75):
+                 cold_heat=0.3, hot_heat=0.75, min_max=()):
         self.global_variables = variables
         # assert steps >= 100 or steps == 0
         self.steps = steps
@@ -241,7 +250,7 @@ class MCMCMC:
             walkers = []
             for j in range(num_walkers):
                 walker = _Walker(deepcopy(self.global_variables), func, self.hot_heat, params=params,
-                                 quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999))
+                                 quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999), min_max=min_max)
                 for variable in walker.variables:
                     variable.rand_gen.seed(self.rand_gen.randint(1, 999999999999999))
                 walkers.append(walker)
@@ -250,13 +259,13 @@ class MCMCMC:
 
             if include_lava:
                 walker = _Walker(deepcopy(self.global_variables), func, 1.0, params=params, lava=True,
-                                 quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999))
+                                 quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999), min_max=min_max)
                 for variable in walker.variables:
                     variable.rand_gen.seed(self.rand_gen.randint(1, 999999999999999))
                 walkers.append(walker)
             if include_ice:
                 walker = _Walker(deepcopy(self.global_variables), func, 0.05, params=params, ice=True,
-                                 quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999))
+                                 quiet=quiet, r_seed=self.rand_gen.randint(1, 999999999999999), min_max=min_max)
                 for variable in walker.variables:
                     variable.rand_gen.seed(self.rand_gen.randint(1, 999999999999999))
                 walkers.append(walker)
