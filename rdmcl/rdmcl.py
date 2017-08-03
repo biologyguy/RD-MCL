@@ -86,8 +86,10 @@ Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
 LOCK = Lock()
 MULTICORE_LOCK = Lock()
 LOGGING_LOCK = Lock()
+PROGRESS_LOCK = Lock()
 CPUS = br.usable_cpu_count()
 TIMER = helpers.Timer()
+MIN_SIZE_TO_WORKER = 15
 GAP_OPEN = -5
 GAP_EXTEND = 0
 BLOSUM62 = helpers.make_full_mat(SeqMat(MatrixInfo.blosum62))
@@ -113,7 +115,7 @@ for aa in ambiguous_X:
 
 # ToDo: Maybe remove support for taxa_sep. It's complicating my life, so just impose the '-' on users?
 class Cluster(object):
-    def __init__(self, seq_ids, sim_scores, taxa_sep="-", parent=None, collapse=True, r_seed=None):
+    def __init__(self, seq_ids, sim_scores, taxa_sep="-", parent=None, collapse=False, r_seed=None):
         """
         - Note that reciprocal best hits between paralogs are collapsed when instantiating group_0, so
           no problem strongly penalizing all paralogs in the scoring algorithm
@@ -162,13 +164,12 @@ class Cluster(object):
         else:
             self.max_genes_in_a_taxa = max([len(self.taxa[taxa]) for taxa in self.taxa])
             self._name = "group_0"
-            # This next bit collapses all paralog reciprocal best-hit cliques so they don't gum up MCL
-            # Set the full cluster score first though, in case it's needed
+            # This next bit can collapse all paralog reciprocal best-hit cliques so they don't gum up MCL
             self.seq_ids = seq_ids
             if collapse:
                 self.collapse()
 
-        self.seq_ids_str = str(", ".join(seq_ids))
+        self.seq_ids_str = str(", ".join(self.seq_ids))
         self.seq_id_hash = helpers.md5_hash(self.seq_ids_str)
         with LOGGING_LOCK:
             with open(RUNTIMELOG, "a") as ofile:
@@ -301,7 +302,7 @@ class Cluster(object):
         while scores[col_name].std() == 0:
             valve.step("Failed to perturb:\n%s" % scores)
             for indx, score in scores[col_name].iteritems():
-                scores.set_value(indx, col_name, self.rand_gen.gauss(score, (score * 0.0000001)))
+                scores.set_value(indx, col_name, round(self.rand_gen.gauss(score, (score * 0.0000001)), 12))
         return scores
 
     def get_base_cluster(self):
@@ -768,32 +769,15 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     inflation_var = mcmcmc.Variable("I", 1.1, 20, r_seed=rand_gen.randint(1, 999999999999999))
     gq_var = mcmcmc.Variable("gq", min(master_cluster.sim_scores.score), max(master_cluster.sim_scores.score),
                              r_seed=rand_gen.randint(1, 999999999999999))
-
-    try:
-        open(os.path.join(temp_dir.path, "max.txt"), "w").close()
-        mcmcmc_params = ["%s" % temp_dir.path, seqbuddy, master_cluster,
-                         taxa_sep, sql_broker, psi_pred_ss2_dfs, progress]
-        mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, quiet=quiet,
-                                       num_walkers=walkers, num_chains=chains, convergence=convergence,
-                                       outfiles=os.path.join(temp_dir.path, "mcmcmc_out"), params=mcmcmc_params,
-                                       include_lava=True, include_ice=True, r_seed=rand_gen.randint(1, 999999999999999))
-
-        with LOGGING_LOCK:
-            with open(RUNTIMELOG, "a") as ofile:
-                ofile.write("%s%s\tmcmcmc setup passes\n" % (log_data, time.time() - STARTTIME))
-    except RuntimeError:  # Happens when mcmcmc fails to find different initial chain parameters
-        save_cluster("MCMCMC failed to find parameters")
-        with LOGGING_LOCK:
-            with open(RUNTIMELOG, "a") as ofile:
-                ofile.write("%s%s\tmcmcmc setup fails\n" % (log_data, time.time() - STARTTIME))
-        return cluster_list
-
+    with LOGGING_LOCK:
+        with open(RUNTIMELOG, "a") as ofile:
+            ofile.write("%s%s\tmcmcmc setup\n" % (log_data, time.time() - STARTTIME))
     # I know what the best and worst possible scores are, so let MCMCMC know (better for calculating acceptance rates)
     # The worst score possible would be all genes in each taxa segregated.
-    worst_score = 0
+    worst_possible_score = 0
     for taxon, seq_ids in master_cluster.taxa.items():
         bad_clust = Cluster(seq_ids, master_cluster.pull_scores_subgraph(seq_ids), parent=master_cluster)
-        worst_score += bad_clust.score()
+        worst_possible_score += bad_clust.score()
 
     # The best score would be perfect separation of taxa
     log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
@@ -807,17 +791,25 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     with LOGGING_LOCK:
         with open(RUNTIMELOG, "a") as ofile:
             ofile.write("%s%s\tmake sub_clusters list\n" % (log_data, time.time() - STARTTIME))
-    best_score = 0
+    best_possible_score = 0
     for seq_ids in sub_clusters:
         subcluster = Cluster(seq_ids, master_cluster.pull_scores_subgraph(seq_ids), parent=master_cluster)
-        best_score += subcluster.score()
+        best_possible_score += subcluster.score()
 
-    for chain in mcmcmc_factory.chains:
-        for walker in chain.walkers:
-            walker.score_history += [worst_score, best_score]
+    if best_possible_score == worst_possible_score:
+        return cluster_list
 
-    mcmcmc_factory.reset_params(["%s" % temp_dir.path, seqbuddy, master_cluster,
-                                 taxa_sep, sql_broker, psi_pred_ss2_dfs, progress])
+    open(os.path.join(temp_dir.path, "max.txt"), "w").close()
+    mcmcmc_params = ["%s" % temp_dir.path, seqbuddy, master_cluster,
+                     taxa_sep, sql_broker, psi_pred_ss2_dfs, progress, chains * (walkers + 2)]
+    mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, quiet=quiet,
+                                   num_walkers=walkers, num_chains=chains, convergence=convergence,
+                                   outfiles=os.path.join(temp_dir.path, "mcmcmc_out"), params=mcmcmc_params,
+                                   include_lava=True, include_ice=True, r_seed=rand_gen.randint(1, 999999999999999),
+                                   min_max=(worst_possible_score, best_possible_score))
+
+    mcmcmc_factory.reset_params([temp_dir.path, seqbuddy, master_cluster,
+                                 taxa_sep, sql_broker, psi_pred_ss2_dfs, progress, chains * (walkers + 2)])
 
     log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
     mcmcmc_factory.run()
@@ -900,7 +892,7 @@ class Progress(object):
             json.dump(_progress, progress_file)
 
     def update(self, key, value):
-        with LOCK:
+        with PROGRESS_LOCK:
             with open(os.path.join(self.outdir, ".progress"), "r") as ifile:
                 _progress = json.load(ifile)
                 _progress[key] += value
@@ -909,7 +901,7 @@ class Progress(object):
         return
 
     def read(self):
-        with LOCK:
+        with PROGRESS_LOCK:
             with open(os.path.join(self.outdir, ".progress"), "r") as ifile:
                 return json.load(ifile)
 
@@ -927,7 +919,8 @@ def mcmcmc_mcl(args, params):
     :return:
     """
     inflation, gq, r_seed = args
-    exter_tmp_dir, seqbuddy, parent_cluster, taxa_sep, sql_broker, psi_pred_ss2_dfs, progress = params
+    exter_tmp_dir, seqbuddy, parent_cluster, taxa_sep, \
+        sql_broker, psi_pred_ss2_dfs, progress, expect_num_results = params
     rand_gen = Random(r_seed)
     log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
     mcl_obj = helpers.MarkovClustering(parent_cluster.sim_scores, inflation=inflation, edge_sim_threshold=gq)
@@ -939,21 +932,56 @@ def mcmcmc_mcl(args, params):
     log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
     progress.update('mcl_runs', 1)
     clusters = mcl_obj.clusters
+    # Order the clusters so the big jobs are queued up front.
+    clusters = sorted(clusters, key=lambda x: len(x), reverse=True)
     score = 0
+
+    child_list = OrderedDict()
     for indx, cluster_ids in enumerate(clusters):
         sb_copy = Sb.make_copy(seqbuddy)
         sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster_ids]))
-        sim_scores, alb_obj = create_all_by_all_scores(sb_copy, psi_pred_ss2_dfs, sql_broker, quiet=True)
-        cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
-                          r_seed=rand_gen.randint(1, 999999999999999))
-
-        clusters[indx] = cluster
-        score += cluster.score()
+        # Queue jobs if appropriate
+        if WORKER_DB and os.path.isfile(WORKER_DB) and len(cluster_ids) >= MIN_SIZE_TO_WORKER:
+            p = Process(target=mc_create_all_by_all_scores, args=(sb_copy, [psi_pred_ss2_dfs, sql_broker]))
+            p.start()
+            seq_ids = sorted([rec.id for rec in sb_copy.records])
+            seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
+            child_list[seq_id_hash] = [p, indx, cluster_ids]
+        else:
+            sim_scores, alb_obj = create_all_by_all_scores(sb_copy, psi_pred_ss2_dfs, sql_broker, quiet=True)
+            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
+                              r_seed=rand_gen.randint(1, 999999999999999))
+            clusters[indx] = cluster
+            score += cluster.score()
     with LOGGING_LOCK:
         with open(RUNTIMELOG, "a") as ofile:
             ofile.write("%s%s\tmcmcmc_mcl calc score\n" % (log_data, time.time() - STARTTIME))
 
     log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
+    # wait for remaining processes to complete
+    while len(child_list) > 0:
+        for _name, args in child_list.items():
+            child, indx, cluster_ids = args
+            if child.is_alive():
+                continue
+            else:
+                query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash='%s'" % _name)
+                if query and len(query[0]) == 2:
+                    sim_scores, alignment = query[0]
+                    alignment = Alb.AlignBuddy(alignment)
+                    if len(alignment.records()) == 1:
+                        sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
+                    else:
+                        sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None)
+                        sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+
+                    cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
+                                      r_seed=rand_gen.randint(1, 999999999999999))
+                    clusters[indx] = cluster
+                    score += cluster.score()
+                    del child_list[_name]
+                    break
+
     with LOCK:
         with LOGGING_LOCK:
             with open(RUNTIMELOG, "a") as ofile:
@@ -969,31 +997,37 @@ def mcmcmc_mcl(args, params):
         with open(os.path.join(exter_tmp_dir, "max.txt"), "w") as ofile:
             ofile.write("\n".join(results))
 
-        if len(results) == MCMC_CHAINS:
-            best_score = None
-            best_clusters = []  # Hopefully just find a single best set of cluster, but could be more
-            for clusters in results:
-                score_sum = 0
-                cluster_ids = []
-                for cluster in clusters.split(","):
-                    sql_query = sql_broker.query("SELECT seq_ids, graph FROM data_table WHERE hash='%s'" % cluster)
-                    seq_ids = sql_query[0][0].split(", ")
-                    cluster_ids.append(sql_query[0][0])
-                    if len(seq_ids) > 1:  # Prevent crash if pulling a cluster with a single sequence
-                        sim_scores = pd.read_csv(StringIO(sql_query[0][1]), index_col=False, header=None)
-                        cluster = Cluster(seq_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
-                                          r_seed=rand_gen.randint(1, 999999999999))
-                        score_sum += cluster.score()
+    if len(results) == expect_num_results:
+        best_score = None
+        best_clusters = []  # Hopefully just find a single best set of cluster, but could be more
+        for clusters in results:
+            score_sum = 0
+            cluster_ids = []
+            for cluster in clusters.split(","):
+                sql_query = sql_broker.query("SELECT seq_ids, graph FROM data_table WHERE hash='%s'" % cluster)
+                seq_ids = sql_query[0][0].split(", ")
+                cluster_ids.append(sql_query[0][0])
+                if len(seq_ids) == 1:
+                    sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
+                else:
+                    sim_scores = pd.read_csv(StringIO(sql_query[0][1]), index_col=False, header=None)
 
-                if score_sum == best_score:
-                    best_clusters.append(cluster_ids)
-                elif best_score is None or score_sum > best_score:
-                    best_clusters = [cluster_ids]
-                    best_score = score_sum
+                cluster = Cluster(seq_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
+                                  r_seed=rand_gen.randint(1, 999999999999))
+                score_sum += cluster.score()
+            if score_sum == best_score:
+                best_clusters.append(cluster_ids)
+            elif best_score is None or score_sum > best_score:
+                best_clusters = [cluster_ids]
+                best_score = score_sum
 
-            best_clusters = [cluster.replace(', ', '\t') for cluster in best_clusters[0]]
+        best_clusters = [cluster.replace(', ', '\t') for cluster in best_clusters[0]]
+        with LOCK:
             with open(os.path.join(exter_tmp_dir, "best_group"), "w") as ofile:
                 ofile.write('\n'.join(best_clusters))
+            open(os.path.join(exter_tmp_dir, "max.txt"), "w").close()
+    elif len(results) > expect_num_results:  # This should never be able to happen
+        raise ValueError("More results written to max.txt than expect_num_results")
     with LOGGING_LOCK:
         with open(RUNTIMELOG, "a") as ofile:
             ofile.write("%s%s\tmcmcmc_mcl release LOCK\n" % (log_data, time.time() - STARTTIME))
@@ -1111,6 +1145,12 @@ class HeartBeat(object):
 
 
 # ################ SCORING FUNCTIONS ################ #
+def mc_create_all_by_all_scores(seqbuddy, args):
+    psi_pred_ss2_dfs, sql_broker = args
+    create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, quiet=True)
+    return
+
+
 def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GAP_OPEN,
                              gap_extend=GAP_EXTEND, quiet=False):
     """
@@ -1130,7 +1170,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
     if len(seqbuddy) == 1:
         sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
         alignment = Alb.AlignBuddy(str(seqbuddy))
-        cluster2database(Cluster(seq_ids, sim_scores, collapse=False), sql_broker, alignment)
+        cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
         with LOGGING_LOCK:
             with open(RUNTIMELOG, "a") as ofile:
                 ofile.write("%s%s\tall_by_all len=1\n" % (log_data, time.time() - STARTTIME))
@@ -1148,7 +1188,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
         return sim_scores, Alb.AlignBuddy(alignment)
 
     # Try to feed the job to independent workers
-    if WORKER_DB and os.path.isfile(WORKER_DB) and len(seq_ids) > 15:
+    if WORKER_DB and os.path.isfile(WORKER_DB) and len(seq_ids) > MIN_SIZE_TO_WORKER:
         heartbeat = HeartBeat(HEARTBEAT_DB, MASTER_PULSE)
         heartbeat.start()
 
@@ -1264,7 +1304,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                 alignment = Alb.AlignBuddy(StringIO(complete_check[1]))
                 sim_scores = pd.read_csv(StringIO(complete_check[2]), index_col=False, header=None)
                 sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
-                cluster2database(Cluster(seq_ids, sim_scores, collapse=False), sql_broker, alignment)
+                cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
                 heartbeat.end()
                 with LOGGING_LOCK:
                     with open(RUNTIMELOG, "a") as ofile:
@@ -1342,7 +1382,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
 
     # ToDo: Experiment testing these magic number weights...
     sim_scores['score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
-    cluster2database(Cluster(seq_ids, sim_scores, collapse=False), sql_broker, alignment)
+    cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
     with LOGGING_LOCK:
         with open(RUNTIMELOG, "a") as ofile:
             ofile.write("%s%s\tall_by_all direct run\n" % (log_data, time.time() - STARTTIME))
@@ -1466,7 +1506,7 @@ class Orphans(object):
         Sb.pull_recs(seqbuddy, regex)
 
         sim_scores, alb_obj = create_all_by_all_scores(seqbuddy, self.psi_pred_ss2_dfs, self.sql_broker, quiet=True)
-        cluster2database(Cluster(seq_ids, sim_scores, collapse=False), self.sql_broker, alb_obj)
+        cluster2database(Cluster(seq_ids, sim_scores), self.sql_broker, alb_obj)
         return sim_scores
 
     def _check_orphan(self, small_cluster):
@@ -1879,7 +1919,7 @@ Continue? y/[n] """ % len(sequences)
     if in_args.psipred_dir and not os.path.isdir(in_args.psipred_dir):
         logging.warning("PSI-Pred directory indicated below does not exits:\n%s \tUsing default location instead."
                         % in_args.psipred_dir)
-        in_args.psipred_dir = False
+        in_args.psipred_dir = ""
 
     in_args.psipred_dir = "{0}{1}psi_pred".format(in_args.outdir, os.sep) if not in_args.psipred_dir \
         else in_args.psipred_dir
@@ -1947,12 +1987,13 @@ Continue? y/[n] """ % len(sequences)
 
     # First prepare the really raw first alignment in the database, without any collapsing.
     uncollapsed_group_0 = Cluster([rec.id for rec in sequences.records], scores_data,
-                                  taxa_sep=in_args.taxa_sep, collapse=False, r_seed=in_args.r_seed)
+                                  taxa_sep=in_args.taxa_sep, r_seed=in_args.r_seed)
+    cluster2database(uncollapsed_group_0, broker, alignbuddy)
 
     # Then prepare the 'real' group_0 cluster
     if not in_args.suppress_paralog_collapse:
         group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data,
-                                  taxa_sep=in_args.taxa_sep, r_seed=in_args.r_seed)
+                                  taxa_sep=in_args.taxa_sep, collapse=True, r_seed=in_args.r_seed)
     else:
         group_0_cluster = uncollapsed_group_0
 
