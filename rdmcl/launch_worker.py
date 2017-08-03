@@ -38,6 +38,8 @@ class Worker(object):
     def __init__(self, wrkdb_path, hbdb_path, heartrate=60, max_wait=120):
         self.wrkdb_path = wrkdb_path
         self.hbdb_path = hbdb_path
+        self.masterclear_path = os.path.split(self.wrkdb_path)[0]
+        self.masterclear_path = os.path.join(self.masterclear_path, "MasterClear")
         self.heartrate = heartrate
         self.last_heartbeat = self.heartrate + time.time()
         self.max_wait = max_wait
@@ -91,12 +93,25 @@ class Worker(object):
                             break
                         self.last_heartbeat_from_master = time.time()
 
+            max_wait = self.max_wait
+            with WORKERLOCK:
+                # Check MasterClear signal (file in working dir with # of second specified for master heartbeat)
+                if os.path.isfile(self.masterclear_path):
+                    with open(self.masterclear_path, "r") as ifile:
+                        try:
+                            max_wait = int(ifile.read())
+                        except ValueError:
+                            pass
+                    os.remove(self.masterclear_path)
+                else:
+                    pass
+
             # Check for and clean up dead threads and orphaned jobs every hundredth(ish) time through
             rand_check = random()
-            if rand_check > 0.99:
+            if rand_check > 0.99 or max_wait != self.max_wait:
                 with helpers.ExclusiveConnect(self.hbdb_path, "LN%s" % getframeinfo(currentframe()).lineno,
                                               "WorkerConnect.log") as cursor:
-                    wait_time = time.time() - self.max_wait - cursor.lag
+                    wait_time = time.time() - max_wait - cursor.lag
                     dead_masters = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
                                                   "AND pulse < %s" % wait_time).fetchall()
                     dead_workers = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='worker' "
