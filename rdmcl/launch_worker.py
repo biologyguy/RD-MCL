@@ -51,10 +51,12 @@ class Worker(object):
         self.split_time = 0
         self.idle = 1
         self.running = 1
+        self.last_heartbeat_from_master = 0
 
     def start(self):
         self.split_time = time.time()
         self.start_time = time.time()
+        self.last_heartbeat_from_master = time.time()
         printer.write("Starting Worker_%s" % self.id)
         printer.new_line(1)
         seqs, psipred_dir, master_id = ["", "", 0]  # Instantiate some variables
@@ -72,15 +74,18 @@ class Worker(object):
                 with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
                     cursor.execute('UPDATE heartbeat SET pulse=%s '
                                    'WHERE thread_id=%s' % (round(time.time() + cursor.lag), self.id))
-                    cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
-                                   "AND pulse>%s" % (time.time() - self.max_wait - cursor.lag))
-                    masters = cursor.fetchall()
-                    if not masters:
-                        printer.write("Terminating Worker_%s due to lack of activity by any master threads.\n"
-                                      "Spent %s%% of time idle." % (self.id, idle))
-                        printer.new_line(1)
-                        cursor.execute("DELETE FROM heartbeat WHERE thread_id=%s" % self.id)
-                        break
+
+                    if time.time() - self.last_heartbeat_from_master > self.max_wait:
+                        cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
+                                       "AND pulse>%s" % (time.time() - self.max_wait - cursor.lag))
+                        masters = cursor.fetchall()
+                        if not masters:
+                            printer.write("Terminating Worker_%s after %s of master inactivity.\n"
+                                          "Spent %s%% of time idle." % (self.id, br.pretty_time(self.max_wait), idle))
+                            printer.new_line(1)
+                            cursor.execute("DELETE FROM heartbeat WHERE thread_id=%s" % self.id)
+                            break
+                        self.last_heartbeat_from_master = time.time()
 
             # Check for and clean up dead threads and orphaned jobs every hundredth(ish) time through
             rand_check = random()
