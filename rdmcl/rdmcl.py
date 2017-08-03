@@ -88,6 +88,7 @@ MULTICORE_LOCK = Lock()
 PROGRESS_LOCK = Lock()
 CPUS = br.usable_cpu_count()
 TIMER = helpers.Timer()
+MIN_SIZE_TO_WORKER = 15
 GAP_OPEN = -5
 GAP_EXTEND = 0
 BLOSUM62 = helpers.make_full_mat(SeqMat(MatrixInfo.blosum62))
@@ -873,17 +874,51 @@ def mcmcmc_mcl(args, params):
     mcl_obj.run()
     progress.update('mcl_runs', 1)
     clusters = mcl_obj.clusters
+    # Order the clusters so the big jobs are queued up front.
+    clusters = sorted(clusters, key=lambda x: len(x), reverse=True)
     score = 0
 
+    child_list = OrderedDict()
     for indx, cluster_ids in enumerate(clusters):
         sb_copy = Sb.make_copy(seqbuddy)
         sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster_ids]))
-        sim_scores, alb_obj = create_all_by_all_scores(sb_copy, psi_pred_ss2_dfs, sql_broker, quiet=True)
-        cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
-                          r_seed=rand_gen.randint(1, 999999999999999))
+        # Queue jobs if appropriate
+        if WORKER_DB and os.path.isfile(WORKER_DB) and len(cluster_ids) >= MIN_SIZE_TO_WORKER:
+            p = Process(target=mc_create_all_by_all_scores, args=(sb_copy, [psi_pred_ss2_dfs, sql_broker]))
+            p.start()
+            seq_ids = sorted([rec.id for rec in sb_copy.records])
+            seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
+            child_list[seq_id_hash] = [p, indx, cluster_ids]
+        else:
+            sim_scores, alb_obj = create_all_by_all_scores(sb_copy, psi_pred_ss2_dfs, sql_broker, quiet=True)
+            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
+                              r_seed=rand_gen.randint(1, 999999999999999))
+            clusters[indx] = cluster
+            score += cluster.score()
 
-        clusters[indx] = cluster
-        score += cluster.score()
+    # wait for remaining processes to complete
+    while len(child_list) > 0:
+        for _name, args in child_list.items():
+            child, indx, cluster_ids = args
+            if child.is_alive():
+                continue
+            else:
+                query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash='%s'" % _name)
+                if query and len(query[0]) == 2:
+                    sim_scores, alignment = query[0]
+                    alignment = Alb.AlignBuddy(alignment)
+                    if len(alignment.records()) == 1:
+                        sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
+                    else:
+                        sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None)
+                        sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+
+                    cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
+                                      r_seed=rand_gen.randint(1, 999999999999999))
+                    clusters[indx] = cluster
+                    score += cluster.score()
+                    del child_list[_name]
+                    break
 
     with LOCK:
         with open(os.path.join(exter_tmp_dir, "max.txt"), "r") as ifile:
@@ -1018,6 +1053,12 @@ class HeartBeat(object):
 
 
 # ################ SCORING FUNCTIONS ################ #
+def mc_create_all_by_all_scores(seqbuddy, args):
+    psi_pred_ss2_dfs, sql_broker = args
+    create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, quiet=True)
+    return
+
+
 def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GAP_OPEN,
                              gap_extend=GAP_EXTEND, quiet=False):
     """
@@ -1048,7 +1089,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
         return sim_scores, Alb.AlignBuddy(alignment)
 
     # Try to feed the job to independent workers
-    if WORKER_DB and os.path.isfile(WORKER_DB) and len(seq_ids) > 15:
+    if WORKER_DB and os.path.isfile(WORKER_DB) and len(seq_ids) > MIN_SIZE_TO_WORKER:
         heartbeat = HeartBeat(HEARTBEAT_DB, MASTER_PULSE)
         heartbeat.start()
 
@@ -1744,7 +1785,7 @@ Continue? y/[n] """ % len(sequences)
     if in_args.psipred_dir and not os.path.isdir(in_args.psipred_dir):
         logging.warning("PSI-Pred directory indicated below does not exits:\n%s \tUsing default location instead."
                         % in_args.psipred_dir)
-        in_args.psipred_dir = False
+        in_args.psipred_dir = ""
 
     in_args.psipred_dir = "{0}{1}psi_pred".format(in_args.outdir, os.sep) if not in_args.psipred_dir \
         else in_args.psipred_dir
