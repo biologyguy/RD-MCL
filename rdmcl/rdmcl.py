@@ -72,8 +72,9 @@ try:
 except CalledProcessError:
     VERSION = "1.0.4"
 
-MAFFT = shutil.which("mafft") if shutil.which("mafft") \
-        else os.path.join(SCRIPT_PATH, "mafft", "bin", "mafft")
+ALIGNMETHOD = "clustalo"
+ALIGNPARAMS = ""
+
 NOTICE = '''\
 Public Domain Notice
 --------------------
@@ -1212,7 +1213,8 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
         heartbeat.end()
 
     # If the job is small or couldn't be pushed off on a worker, do it directly
-    alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), MAFFT, params="--globalpair --thread -1", quiet=True)
+    # alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), ALIGNMETHOD, params="--globalpair --thread -1", quiet=True)
+    alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), ALIGNMETHOD, ALIGNPARAMS, quiet=True)
 
     # Need to specify what columns the PsiPred files map to now that there are gaps.
     psi_pred_ss2_dfs = deepcopy(psi_pred_ss2_dfs)  # Don't modify in place...
@@ -1558,6 +1560,13 @@ class Orphans(object):
 
 
 def argparse_init():
+    # Catch any extra parameters passed into -algn_p so they play nice with argparse
+    if '--align_params' in sys.argv:
+        sys.argv[sys.argv.index('--generate_alignment')] = '-algn_p'
+    if '-algn_p' in sys.argv:
+        ga_indx = sys.argv.index('-algn_p')
+        sys.argv[ga_indx + 1] = " %s" % sys.argv[ga_indx + 1].rstrip()
+
     def fmt(prog):
         return br.CustomHelpFormatter(prog)
 
@@ -1621,6 +1630,10 @@ def argparse_init():
                               help="Penalty to extend a gap in pairwise alignment scoring (default=%s)" % GAP_EXTEND)
     parser_flags.add_argument("-wdb", "--workdb", action="store", default="",
                               help="Specify the directory that independent workers will be monitoring")
+    parser_flags.add_argument("-algn_m", "--align_method", action="store", default="clustalo",
+                              help="Specify which alignment algorithm to use (supply full path if not in $PATH)")
+    parser_flags.add_argument("-algn_p", "--align_params", action="store", default="",
+                              help="Supply alignment specific parameters")
     parser_flags.add_argument("-f", "--force", action="store_true",
                               help="Try to run no matter what.")
     parser_flags.add_argument("-q", "--quiet", action="store_true",
@@ -1696,13 +1709,25 @@ Please do so now:
     if not os.path.isdir(in_args.outdir):
         os.makedirs(in_args.outdir)
 
-    if not os.path.isfile(MAFFT):
-        logging.error("The 'MAFFT' program is not detected "
-                      "on your system. Please run \n\t$: %s -setup" % __file__)
+    if not shutil.which(in_args.align_method):
+        logging.error("The alignment program '%s' is not detected "
+                      "on your system." % in_args.align_method)
         sys.exit()
 
-    mafft = Popen("%s --version" % MAFFT, stderr=PIPE, shell=True).communicate()[1].decode()
-    logging.info("\nMAFFT version: %s" % mafft.strip())
+    sequences = Sb.SeqBuddy(in_args.sequences)
+    tmp_alb = Alb.generate_msa(Sb.SeqBuddy(deepcopy(sequences.records[:4])), in_args.align_method, quiet=True)
+
+    if tmp_alb.align_tool["tool"] == "MAFFT" and float(tmp_alb.align_tool["version"]) < 7.245:
+        logging.error("Your version of MAFFT (%s) is too old to work with RDMCL, please update it."
+                      % tmp_alb.align_tool["version"])
+        sys.exit()
+
+    global ALIGNMETHOD
+    ALIGNMETHOD = in_args.align_method
+    global ALIGNPARAMS
+    ALIGNPARAMS = in_args.align_params
+
+    logging.info("\nAlignment method: %s %s" % (tmp_alb.align_tool["tool"], tmp_alb.align_tool["version"]))
     logging.info("SeqBuddy version: %s.%s" % (Sb.VERSION.major, Sb.VERSION.minor))
     logging.info("AlignBuddy version: %s.%s" % (Alb.VERSION.major, Sb.VERSION.minor))
 
@@ -1714,7 +1739,6 @@ Please do so now:
     broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
                                        "graph TEXT", "cluster_score TEXT"])
     broker.start_broker()
-    sequences = Sb.SeqBuddy(in_args.sequences)
 
     global WORKER_DB
     global HEARTBEAT_DB
@@ -1835,18 +1859,6 @@ Continue? y/[n] """ % len(sequences)
     # Initial alignment
     logging.warning("\n** All-by-all graph **")
     logging.info("gap open penalty: %s\ngap extend penalty: %s" % (in_args.open_penalty, in_args.ext_penalty))
-
-    """
-    align_data = broker.query("SELECT (alignment) FROM data_table WHERE hash='{0}'".format(seq_ids_hash))
-    if align_data and align_data[0][0]:
-        logging.warning("RESUME: Initial multiple sequence alignment found")
-        alignbuddy = Alb.AlignBuddy(align_data[0][0])
-    else:
-        logging.warning("Generating initial multiple sequence alignment with MAFFT")
-        alignbuddy = generate_msa(sequences, broker)
-        alignbuddy.write(os.path.join(in_args.outdir, "alignments", "group_0.aln"))
-        logging.info("\t-- finished in %s --\n" % TIMER.split())
-    """
 
     num_comparisons = ((len(sequences) ** 2) - len(sequences)) / 2
     logging.warning("Generating initial all-by-all similarity graph (%s comparisons)" % int(num_comparisons))
@@ -2018,69 +2030,8 @@ Continue? y/[n] """ % len(sequences)
     broker.close()
 
 
-def check_mafft_version():
-    mafft_version = Popen("%s --version" % MAFFT, stdout=PIPE, stderr=PIPE, shell=True).communicate()
-    mafft_version = mafft_version[1].decode()
-    mafft_version = float(re.search("v([0-9]+\.[0-9]+)", mafft_version).group(1))
-    return mafft_version
-
-
 def setup():
-    global MAFFT
     sys.stdout.write("\033[1mWelcome to RD-MCL!\033[m\nConfirming installation...\n\n")
-
-    sys.stdout.write("\033[1mChecking for MAFFT:\033[m ")
-    try_install = False
-    if os.path.isfile(MAFFT):
-        ver = check_mafft_version()
-        if ver < 7.245:
-            sys.stdout.write("\033[91mVersion out of date (%s)\033[39m\n\n" % ver)
-            try_install = True
-    else:
-        sys.stdout.write("\033[91mMissing\033[39m\n\n")
-        try_install = True
-
-    if try_install:
-        if br.ask("Would you like the setup script to try and install MAFFT? [y]/n:"):
-            if shutil.which("conda"):
-                sys.stdout.write("\033[1mCalling conda...\033[m\n")
-                Popen("conda install -y -c biocore mafft", shell=True).wait()
-            elif shutil.which("wget") and shutil.which("make"):
-                if os.path.isdir("%s%smafft" % (SCRIPT_PATH, os.sep)):
-                    shutil.rmtree("%s%smafft" % (SCRIPT_PATH, os.sep))
-                os.makedirs("{0}{1}mafft".format(SCRIPT_PATH, os.sep))
-
-                cwd = os.getcwd()
-                tmp_dir = br.TempDir()
-                os.chdir(tmp_dir.path)
-                url = "http://mafft.cbrc.jp/alignment/software/mafft-7.309-without-extensions-src.tgz"
-                sys.stdout.write("\n\033[1mDownloading source code from %s\033[m\n\n" % url)
-                Popen("wget %s" % url, shell=True).wait()
-
-                sys.stdout.write("\n\033[1mUnpacking...\033[m\n")
-                Popen("tar -xzf mafft-7.309-without-extensions-src.tgz", shell=True).wait()
-
-                sys.stdout.write("\n\033[1mBuilding...\033[m\n")
-                os.chdir("mafft-7.309-without-extensions" + os.sep + "core")
-                with open("Makefile", "r") as ifile:
-                    makefile = ifile.read()
-
-                makefile = re.sub("PREFIX = /usr/local", "PREFIX = {0}{1}mafft".format(SCRIPT_PATH, os.sep),
-                                  makefile)
-                with open("Makefile", "w") as ofile:
-                    ofile.write(makefile)
-                Popen("make clean; make; make install", shell=True).wait()
-                os.chdir(cwd)
-
-        MAFFT = shutil.which("mafft") if shutil.which("mafft") \
-            else os.path.join(SCRIPT_PATH, "mafft", "bin", "mafft")
-
-        if not os.path.isfile(MAFFT) or check_mafft_version() < 7.245:
-            sys.stdout.write("\033[91mFailed to install MAFFT.\033[39m\nPlease install the software yourself from "
-                             "http://mafft.cbrc.jp/alignment/software/\n\n")
-            return
-    else:
-        sys.stdout.write("\033[92mFound\033[39m\n")
 
     sys.stdout.write("\033[1mChecking for PSIPRED:\033[m ")
     path_install = []

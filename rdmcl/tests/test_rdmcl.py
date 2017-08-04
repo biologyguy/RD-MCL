@@ -553,8 +553,7 @@ def test_check_sequences(hf, monkeypatch, capsys):
     assert "    134 sequences PASSED" in out
 
     rdmcl.Sb.rename(seqbuddy, "Mle-Panxα1", "Mle:Panxα1")
-    with pytest.raises(SystemExit):
-        rdmcl.check_sequences(seqbuddy, "-")
+    assert not rdmcl.check_sequences(seqbuddy, "-")
 
     out, err = capsys.readouterr()
     assert "Checking that the format of all sequence ids matches 'taxa-gene'" in out
@@ -657,6 +656,8 @@ def test_create_all_by_all_scores(hf):
                       for rec in seqbuddy.records]
     psi_pred_files = OrderedDict(psi_pred_files)
 
+    rdmcl.ALIGNMETHOD = "mafft"
+    rdmcl.ALIGNPARAMS = "--globalpair"
     sim_scores, alignbuddy = rdmcl.create_all_by_all_scores(seqbuddy, psi_pred_files, sql_broker)
     assert len(sim_scores.index) == 66  # This is for 12 starting sequences --> (a * (a - 1)) / 2
     compare = sim_scores.loc[:][(sim_scores['seq1'] == "Mle-Panxα2") & (sim_scores['seq2'] == "Mle-Panxα12")]
@@ -966,6 +967,10 @@ parser.add_argument("-lwt", "--lock_wait_time", type=int, default=1200, metavar=
                          " out (default=1200)")
 parser.add_argument("-wdb", "--workdb", action="store", default="",
                     help="Specify the location of a sqlite database monitored by workers")
+parser.add_argument("-algn_m", "--align_method", action="store", default="clustalo",
+                          help="Specify which alignment algorithm to use (supply full path if not in $PATH)")
+parser.add_argument("-algn_p", "--align_params", action="store", default="",
+                          help="Supply alignment specific parameters")
 parser.add_argument("-f", "--force", action="store_true",
                     help="Overwrite previous run")
 parser.add_argument("-q", "--quiet", action="store_true",
@@ -1070,16 +1075,3 @@ group_0_2\t7.0\tBOL-PanxαC\tMle-Panxα12\tVpa-PanxαG
 
     out, err = capsys.readouterr()
     assert "Generating initial all-by-all similarity graph (66 comparisons)" in err
-
-    # No supplied seed, make outdir, and no mafft
-    # open(os.path.join(out_dir.path, "rdmcl.log"), "w").close()
-    # shutil.move(os.path.join(out_dir.path, "rdmcl.log"), "rdmcl.log")
-    # test_in_args = deepcopy(in_args)
-    # test_in_args.sequences = os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa")
-    # test_in_args.outdir = os.path.join(out_dir.path, "inner_out_dir")
-    # monkeypatch.setattr(shutil, "which", lambda *_: False)
-    # with pytest.raises(SystemExit):
-    #    rdmcl.full_run(test_in_args)
-
-    # out, err = capsys.readouterr()
-    # assert "The 'MAFFT' program is not detected" in err
