@@ -129,10 +129,15 @@ class Cluster(object):
         :param r_seed: Set the random generator seed value
         """
         # Do an initial sanity check on the incoming graph and list of sequence ids
+        seq_ids = sorted(seq_ids)
         expected_num_edges = int(((len(seq_ids)**2) - len(seq_ids)) / 2)
         if len(sim_scores.index) != expected_num_edges:
+            seq_id_hash = helpers.md5_hash(str(", ".join(seq_ids)))
+            with open("%s.error" % seq_id_hash, "w") as ofile:
+                ofile.write("Parent: %s\nCollapse: %s\n\n%s\n\n%s" % (parent, collapse, seq_ids, sim_scores))
             raise ValueError("The number of incoming sequence ids (%s) does not match the expected graph size of %s"
-                             " rows (observed %s rows)." % (len(seq_ids), expected_num_edges, len(sim_scores.index)))
+                             " rows (observed %s rows).\nError report at %s.error" %
+                             (len(seq_ids), expected_num_edges, len(sim_scores.index), seq_id_hash))
 
         self.sim_scores = sim_scores
         self.taxa_sep = taxa_sep
@@ -143,9 +148,8 @@ class Cluster(object):
         self.collapsed_genes = OrderedDict()  # If paralogs are reciprocal best hits, collapse them
         self.rand_gen = Random(r_seed)
         self._name = None
-
         self.taxa = OrderedDict()  # key = taxa id. value = list of genes coming fom that taxa.
-        seq_ids = sorted(seq_ids)
+
         for next_seq_id in seq_ids:
             taxa = next_seq_id.split(taxa_sep)[0]
             self.taxa.setdefault(taxa, [])
