@@ -989,26 +989,30 @@ def check_sequences(seqbuddy, taxa_sep):
     if failures:
         logging.error("Malformed sequence id(s): '%s'\nThe taxa separator character is currently set to '%s',\n"
                       " which can be changed with the '-ts' flag" % (", ".join(failures), taxa_sep))
-        sys.exit()
+        return False
     else:
         logging.warning("    %s sequences PASSED" % len(seqbuddy))
-    return
+        return True
 
 
 class HeartBeat(object):
-    def __init__(self, hbdb_path, pulse_rate):
+    def __init__(self, hbdb_path, pulse_rate, dummy=False):
         self.hbdb_path = hbdb_path
         self.pulse_rate = pulse_rate
         self.master_id = None
         self.running_process = None
-        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-            try:
-                cursor.execute('CREATE TABLE heartbeat (thread_id INTEGER PRIMARY KEY AUTOINCREMENT, '
-                               'thread_type TEXT, pulse INTEGER)')
-            except sqlite3.OperationalError:
-                pass
+        self.dummy = dummy
+        if not dummy:
+            with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+                try:
+                    cursor.execute('CREATE TABLE heartbeat (thread_id INTEGER PRIMARY KEY AUTOINCREMENT, '
+                                   'thread_type TEXT, pulse INTEGER)')
+                except sqlite3.OperationalError:
+                    pass
 
     def _run(self, check_file_path):
+        if self.dummy:
+            return
         split_time = time.time()
         while True:
             with open("%s" % check_file_path, "r") as ifile:
@@ -1025,6 +1029,8 @@ class HeartBeat(object):
         return
 
     def start(self):
+        if self.dummy:
+            return
         if self.running_process:
             self.end()
         tmp_file = br.TempFile()
@@ -1040,6 +1046,8 @@ class HeartBeat(object):
         return
 
     def end(self):
+        if self.dummy:
+            return
         if not self.running_process:
             return
         self.running_process[0].clear()
@@ -1714,6 +1722,8 @@ Please do so now:
         HEARTBEAT_DB = os.path.join(in_args.workdb, "heartbeat_db.sqlite")
         heartbeat = HeartBeat(HEARTBEAT_DB, MASTER_PULSE)
         heartbeat.start()
+    else:
+        heartbeat = HeartBeat("", "", dummy=True)
 
     # Do a check for large data sets and confirm run
     if len(sequences) > 1000 and not in_args.force:
@@ -1727,12 +1737,15 @@ Continue? y/[n] """ % len(sequences)
 
         if not br.ask(msg, default="no", timeout=120):
             logging.warning("\nRun terminated. If you really do want to run this large job, use the -f flag.")
+            heartbeat.end()
             sys.exit()
         else:
             logging.warning("Proceeding with large run.\n")
 
     sequences = Sb.delete_metadata(sequences)
-    check_sequences(sequences, in_args.taxa_sep)
+    if not check_sequences(sequences, in_args.taxa_sep):
+        heartbeat.end()
+        sys.exit()
     seq_ids_str = ", ".join(sorted([rec.id for rec in sequences.records]))
     seq_ids_hash = helpers.md5_hash(seq_ids_str)
 
@@ -1997,8 +2010,7 @@ Continue? y/[n] """ % len(sequences)
                             " the inclusion of collapsed paralogs")
         logging.warning("Clusters written to: %s%sfinal_clusters.txt" % (in_args.outdir, os.sep))
 
-    if in_args.workdb:
-        heartbeat.end()
+    heartbeat.end()
     broker.close()
 
 
