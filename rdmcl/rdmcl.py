@@ -1728,7 +1728,18 @@ Please do so now:
     ALIGNPARAMS = in_args.align_params
 
     logging.info("\nAlignment method: %s %s" % (tmp_alb.align_tool["tool"], tmp_alb.align_tool["version"]))
+
+    # I'm pretty sure that SeqBuddy 1.2 is still fine, but Alb needs to be updated. Might as well just force the update.
+    if int(re.sub("[^0-9]", "", Sb.VERSION.minor)) < 3:
+        logging.error("Your version of SeqBuddy (%s.%s) is too old to work with RDMCL, please update it."
+                      % (Sb.VERSION.major, Sb.VERSION.minor))
+        sys.exit()
     logging.info("SeqBuddy version: %s.%s" % (Sb.VERSION.major, Sb.VERSION.minor))
+
+    if int(re.sub("[^0-9]", "", Alb.VERSION.minor)) < 3:
+        logging.error("Your version of AlignBuddy (%s.%s) is too old to work with RDMCL, please update it."
+                      % (Alb.VERSION.major, Alb.VERSION.minor))
+        sys.exit()
     logging.info("AlignBuddy version: %s.%s" % (Alb.VERSION.major, Sb.VERSION.minor))
 
     logging.warning("\nLaunching SQLite Daemons")
