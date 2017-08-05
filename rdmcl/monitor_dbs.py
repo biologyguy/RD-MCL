@@ -38,7 +38,7 @@ class Monitor(object):
                 break
 
             split_time = time()
-            if os.path.isfile(self.hbdb_path) and os.path.isfile(self.wdb_path):
+            try:
                 with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
                     heartbeat = cursor.execute("SELECT * FROM heartbeat").fetchall()
                 with helpers.ExclusiveConnect(self.wdb_path) as cursor:
@@ -68,7 +68,7 @@ class Monitor(object):
                 output = [str(x[0]).ljust(x[1]) for x in output]
 
                 printer.write("".join(output))
-            else:
+            except helpers.sqlite3.OperationalError:
                 printer.write("Worker databases not detected")
             sleep(0.5)
         return
