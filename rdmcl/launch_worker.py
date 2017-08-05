@@ -13,11 +13,15 @@ from buddysuite import buddy_resources as br
 from buddysuite import AlignBuddy as Alb
 from buddysuite import SeqBuddy as Sb
 import os
+import sys
+import re
 import time
-from random import randint, random
+from random import random
 from collections import OrderedDict
 from io import StringIO
 from copy import copy
+import traceback
+
 # My packages
 try:
     import helpers
@@ -438,7 +442,52 @@ def main():
     connection.close()
 
     wrkr = Worker(workdb, heartbeatdb, in_args.heart_rate, in_args.max_wait)
-    wrkr.start()
+    valve = br.SafetyValve(100)
+    while True:
+        try:
+            valve.step("Too many Worker crashes detected.")
+            wrkr.start()
+            break
+
+        except KeyboardInterrupt:
+            with helpers.ExclusiveConnect(wrkr.wrkdb_path) as cursor:
+                cursor.execute("DELETE FROM processing WHERE worker_id=%s" % wrkr.id)
+            with helpers.ExclusiveConnect(wrkr.hbdb_path) as cursor:
+                cursor.execute("DELETE FROM heartbeat WHERE thread_id=%s" % wrkr.id)
+            if os.path.isfile("Worker_%s" % wrkr.id):
+                os.remove("Worker_%s" % wrkr.id)
+            if os.path.isfile(wrkr.data_file):
+                os.remove(wrkr.data_file)
+            printer.write("Terminating Worker_%s because of KeyboardInterrupt." % wrkr.id)
+            printer.new_line(1)
+            break
+
+        except Exception as err:
+            with helpers.ExclusiveConnect(wrkr.wrkdb_path) as cursor:
+                cursor.execute("DELETE FROM processing WHERE worker_id=%s" % wrkr.id)
+
+            if "Too many Worker crashes detected" in str(err):
+                if os.path.isfile("Worker_%s" % wrkr.id):
+                    os.remove("Worker_%s" % wrkr.id)
+                if os.path.isfile(wrkr.data_file):
+                    os.remove(wrkr.data_file)
+
+                with helpers.ExclusiveConnect(wrkr.hbdb_path) as cursor:
+                    cursor.execute("DELETE FROM heartbeat WHERE thread_id=%s" % wrkr.id)
+
+                printer.write("Terminating Worker_%s because of too many Worker crashes." % wrkr.id)
+                printer.new_line(1)
+                break
+
+            tb = ""
+            for _line in traceback.format_tb(sys.exc_info()[2]):
+                if os.name == "nt":
+                    _line = re.sub('"(?:[A-Za-z]:)*\{0}.*\{0}(.*)?"'.format(os.sep), r'"\1"', _line)
+                else:
+                    _line = re.sub('"{0}.*{0}(.*)?"'.format(os.sep), r'"\1"', _line)
+                tb += _line
+            print("\nWorker_%s crashed!\n" % wrkr.id, tb)
+
 
 if __name__ == '__main__':
     main()
