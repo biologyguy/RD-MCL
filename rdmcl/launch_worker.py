@@ -78,8 +78,8 @@ class Worker(object):
                 # Make sure there are some masters still kicking around
                 self.last_heartbeat = self.heartrate + time.time()
                 with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-                    cursor.execute('UPDATE heartbeat SET pulse=%s '
-                                   'WHERE thread_id=%s' % (round(time.time() + cursor.lag), self.id))
+                    cursor.execute("INSERT OR REPLACE INTO heartbeat (thread_id, thread_type, pulse) "
+                                   "VALUES (%s, 'worker', %s) " % (self.id, round(time.time() + cursor.lag)))
 
                     if time.time() - self.last_heartbeat_from_master > self.max_wait:
                         cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
@@ -302,8 +302,8 @@ def score_sequences(data, func_args):
         # Occasionally update the heartbeat database so masters know there is still life
         if random() > 0.99:
             with helpers.ExclusiveConnect(hbdb_path) as cursor:
-                cursor.execute('UPDATE heartbeat SET pulse=%s '
-                               'WHERE thread_id=%s' % (round(time.time() + cursor.lag), worker_id))
+                cursor.execute("INSERT OR REPLACE INTO heartbeat (thread_id, thread_type, pulse) "
+                               "VALUES (%s, 'worker', %s) " % (worker_id, round(time.time() + cursor.lag)))
 
         # Calculate the best possible scores, and divide by the observed scores
         id_regex = "^%s$|^%s$" % (id1, id2)
