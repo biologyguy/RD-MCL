@@ -661,7 +661,9 @@ def test_create_all_by_all_scores(hf):
     sim_scores, alignbuddy = rdmcl.create_all_by_all_scores(seqbuddy, psi_pred_files, sql_broker)
     assert len(sim_scores.index) == 66  # This is for 12 starting sequences --> (a * (a - 1)) / 2
     compare = sim_scores.loc[:][(sim_scores['seq1'] == "Mle-Panxα2") & (sim_scores['seq2'] == "Mle-Panxα12")]
-    assert compare.iloc[0]['score'] == 0.41742091792119795
+    assert """\
+          seq1         seq2  subsmat      psi  raw_score    score
+42  Mle-Panxα2  Mle-Panxα12  0.31444  0.25294    0.50618  0.29599""" in str(compare)
     assert len(alignbuddy.records()) == 12
 
     rdmcl.Sb.pull_recs(seqbuddy, "Mle-Panxα2")

@@ -207,9 +207,16 @@ class Worker(object):
                         ss_counter += 1
                 psipred_dfs[rec.id] = ss_file
 
-            # Scores seem to be improved by removing gaps. ToDo: Need to test this explicitly for the paper
             printer.write("Trimal (%s seqs)" % len(seqbuddy))
-            alignment = Alb.trimal(alignment, threshold=0.9)
+            # Scores seem to be improved by removing gaps. ToDo: Need to test this explicitly for the paper
+            # Only remove columns up to a 50% reduction in average seq length and only if all sequences are retained
+            ave_seq_length = Sb.ave_seq_length(seqbuddy)
+            for threshold in ["all", 0.5, 0.75, 0.9, 0.95, "clean"]:
+                align_copy = Alb.trimal(Alb.make_copy(alignment), threshold=threshold)
+                cleaned_seq_lengths = Sb.ave_seq_length(Sb.clean_seq(Sb.SeqBuddy(str(align_copy))))
+                if len(align_copy.records()) == len(seqbuddy) and cleaned_seq_lengths / ave_seq_length >= 0.5:
+                    alignment = align_copy
+                    break
 
             # Re-update PsiPred files now that some columns, possibly including non-gap characters, are removed
             printer.write("Updating %s psipred dataframes" % len(seqbuddy))
