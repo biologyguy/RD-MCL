@@ -1071,8 +1071,8 @@ group_0_0_1\t3.75\tLcr-PanxαK\tMle-Panxα7A
         content = ifile.read()
         assert content == """\
 group_0_0\t12.2708\tBOL-PanxαA\tLcr-PanxαH\tMle-Panxα10A\tMle-Panxα9\tVpa-PanxαB
-group_0_1\t12.0\tBOL-PanxαF\tLcr-PanxαI\tMle-Panxα4\tVpa-PanxαA
-group_0_2\t7.0\tBOL-PanxαC\tMle-Panxα12\tVpa-PanxαG
+group_0_1\t11.3333\tBOL-PanxαF\tLcr-PanxαI\tMle-Panxα4\tVpa-PanxαA
+group_0_2\t6.4167\tBOL-PanxαC\tMle-Panxα12\tVpa-PanxαG
 """, print(content)
 
     out, err = capsys.readouterr()

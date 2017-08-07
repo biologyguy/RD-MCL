@@ -2005,6 +2005,7 @@ Continue? y/[n] """ % len(sequences)
 
     logging.warning("\nPlacing any collapsed paralogs into their respective clusters")
     for clust in final_clusters:
+        clust.parent = uncollapsed_group_0
         if clust.collapsed_genes:
             with open(os.path.join(in_args.outdir, "paralog_cliques"), "a") as outfile:
                 outfile.write("# %s\n" % clust.name())
