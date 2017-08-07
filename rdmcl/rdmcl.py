@@ -1259,12 +1259,15 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                 return sim_scores, Alb.AlignBuddy(alignment, in_format="fasta")
 
             ######################
-            finished = False
-            with helpers.ExclusiveConnect(WORKER_DB, "LN%s" % getframeinfo(currentframe()).lineno) as cursor:
-                complete_check = cursor.execute("SELECT * FROM complete WHERE hash='%s'" % seq_id_hash).fetchone()
-                if not complete_check:
-                    # Occasionally check to make sure the job is still active
-                    if random() > 0.75:
+
+            finished = True if os.path.isfile("%s/%s.graph" % (WORKER_OUT, seq_id_hash)) \
+                and os.path.isfile("%s/%s.align" % (WORKER_OUT, seq_id_hash)) else False
+
+            # Occasionally check to make sure the job is still active
+            if not finished and random() > 0.75:
+                with helpers.ExclusiveConnect(WORKER_DB, "LN%s" % getframeinfo(currentframe()).lineno) as cursor:
+                    complete_check = cursor.execute("SELECT * FROM complete WHERE hash='%s'" % seq_id_hash).fetchone()
+                    if not complete_check:
                         queue_check = cursor.execute("SELECT * FROM queue "
                                                      "WHERE hash='%s'" % seq_id_hash).fetchone()
                         processing_check = cursor.execute("SELECT * FROM processing "
@@ -1319,16 +1322,17 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                                            "VALUES ('%s', '%s', %s)" %
                                            (seq_id_hash, PSIPREDDIR, heartbeat.master_id))
 
-                else:
+                    else:
+                        finished = True
+
+            if finished:
+                with helpers.ExclusiveConnect(WORKER_DB, "LN%s" % getframeinfo(currentframe()).lineno) as cursor:
                     waiting_check = cursor.execute("SELECT * FROM waiting WHERE hash='%s'" % seq_id_hash).fetchall()
                     if len(waiting_check) <= 1:
                         cursor.execute("DELETE FROM complete WHERE hash='%s'" % seq_id_hash)
 
                     cursor.execute("DELETE FROM waiting WHERE hash='%s' AND master_id=%s"
                                    % (seq_id_hash, heartbeat.master_id))
-                    finished = True
-
-            if finished:
                 try:
                     alignment = Alb.AlignBuddy("%s/%s.aln" % (WORKER_OUT, complete_check[0]), in_format="fasta")
                     sim_scores = pd.read_csv("%s/%s.graph" % (WORKER_OUT, complete_check[0]),
