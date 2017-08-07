@@ -72,8 +72,9 @@ try:
 except CalledProcessError:
     VERSION = "1.0.4"
 
-MAFFT = shutil.which("mafft") if shutil.which("mafft") \
-        else os.path.join(SCRIPT_PATH, "mafft", "bin", "mafft")
+ALIGNMETHOD = "clustalo"
+ALIGNPARAMS = ""
+
 NOTICE = '''\
 Public Domain Notice
 --------------------
@@ -96,6 +97,7 @@ BLOSUM62 = helpers.make_full_mat(SeqMat(MatrixInfo.blosum62))
 MCMC_CHAINS = 3
 DR_BASE = 0.75
 GELMAN_RUBIN = 1.1
+WORKER_OUT = ""
 WORKER_DB = ""
 HEARTBEAT_DB = ""
 MAX_WORKER_WAIT = 120
@@ -131,11 +133,16 @@ class Cluster(object):
         :param r_seed: Set the random generator seed value
         """
         # Do an initial sanity check on the incoming graph and list of sequence ids
+        seq_ids = sorted(seq_ids)
         log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
         expected_num_edges = int(((len(seq_ids)**2) - len(seq_ids)) / 2)
         if len(sim_scores.index) != expected_num_edges:
+            seq_id_hash = helpers.md5_hash(str(", ".join(seq_ids)))
+            with open("%s.error" % seq_id_hash, "w") as ofile:
+                ofile.write("Parent: %s\nCollapse: %s\n\n%s\n\n%s" % (parent, collapse, seq_ids, sim_scores))
             raise ValueError("The number of incoming sequence ids (%s) does not match the expected graph size of %s"
-                             " rows (observed %s rows)." % (len(seq_ids), expected_num_edges, len(sim_scores.index)))
+                             " rows (observed %s rows).\nError report at %s.error" %
+                             (len(seq_ids), expected_num_edges, len(sim_scores.index), seq_id_hash))
 
         self.sim_scores = sim_scores
         self.taxa_sep = taxa_sep
@@ -146,9 +153,8 @@ class Cluster(object):
         self.collapsed_genes = OrderedDict()  # If paralogs are reciprocal best hits, collapse them
         self.rand_gen = Random(r_seed)
         self._name = None
-
         self.taxa = OrderedDict()  # key = taxa id. value = list of genes coming fom that taxa.
-        seq_ids = sorted(seq_ids)
+
         for next_seq_id in seq_ids:
             taxa = next_seq_id.split(taxa_sep)[0]
             self.taxa.setdefault(taxa, [])
@@ -968,7 +974,7 @@ def mcmcmc_mcl(args, params):
                 query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash='%s'" % _name)
                 if query and len(query[0]) == 2:
                     sim_scores, alignment = query[0]
-                    alignment = Alb.AlignBuddy(alignment)
+                    alignment = Alb.AlignBuddy(alignment, in_format="fasta")
                     if len(alignment.records()) == 1:
                         sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
                     else:
@@ -1061,32 +1067,36 @@ def check_sequences(seqbuddy, taxa_sep):
         rec_id = rec.id.split(taxa_sep)
         if len(rec_id) != 2:
             failures.append(rec.id)
+    with LOGGING_LOCK:
+        with open(RUNTIMELOG, "a") as ofile:
+            ofile.write("%s%s\tcheck_sequences()_True\n" % (log_data, time.time() - STARTTIME))
     if failures:
         logging.error("Malformed sequence id(s): '%s'\nThe taxa separator character is currently set to '%s',\n"
                       " which can be changed with the '-ts' flag" % (", ".join(failures), taxa_sep))
-        sys.exit()
+        return False
     else:
         logging.warning("    %s sequences PASSED" % len(seqbuddy))
-    with LOGGING_LOCK:
-        with open(RUNTIMELOG, "a") as ofile:
-            ofile.write("%s%s\tcheck_sequences()\n" % (log_data, time.time() - STARTTIME))
-    return
+        return True
 
 
 class HeartBeat(object):
-    def __init__(self, hbdb_path, pulse_rate):
+    def __init__(self, hbdb_path, pulse_rate, dummy=False):
         self.hbdb_path = hbdb_path
         self.pulse_rate = pulse_rate
         self.master_id = None
         self.running_process = None
-        with helpers.ExclusiveConnect(self.hbdb_path, "LN%s" % getframeinfo(currentframe()).lineno) as cursor:
-            try:
-                cursor.execute('CREATE TABLE heartbeat (thread_id INTEGER PRIMARY KEY AUTOINCREMENT, '
-                               'thread_type TEXT, pulse INTEGER)')
-            except sqlite3.OperationalError:
-                pass
+        self.dummy = dummy
+        if not dummy:
+            with helpers.ExclusiveConnect(self.hbdb_path, "LN%s" % getframeinfo(currentframe()).lineno) as cursor:
+                try:
+                    cursor.execute('CREATE TABLE heartbeat (thread_id INTEGER PRIMARY KEY AUTOINCREMENT, '
+                                   'thread_type TEXT, pulse INTEGER)')
+                except sqlite3.OperationalError:
+                    pass
 
     def _run(self, check_file_path):
+        if self.dummy:
+            return
         split_time = time.time()
         with helpers.ExclusiveConnect(self.hbdb_path, "LN%s" % getframeinfo(currentframe()).lineno) as cursor:
             cursor.execute("UPDATE heartbeat SET pulse=%s WHERE thread_id=%s" % (round(time.time()), self.master_id))
@@ -1109,6 +1119,8 @@ class HeartBeat(object):
         return
 
     def start(self):
+        if self.dummy:
+            return
         log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
         if self.running_process:
             self.end()
@@ -1128,6 +1140,8 @@ class HeartBeat(object):
         return
 
     def end(self):
+        if self.dummy:
+            return
         log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
         if not self.running_process:
             return
@@ -1169,7 +1183,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
 
     if len(seqbuddy) == 1:
         sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
-        alignment = Alb.AlignBuddy(str(seqbuddy))
+        alignment = Alb.AlignBuddy(str(seqbuddy), in_format="fasta")
         cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
         with LOGGING_LOCK:
             with open(RUNTIMELOG, "a") as ofile:
@@ -1185,7 +1199,8 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
         with LOGGING_LOCK:
             with open(RUNTIMELOG, "a") as ofile:
                 ofile.write("%s%s\tall_by_all from DB\n" % (log_data, time.time() - STARTTIME))
-        return sim_scores, Alb.AlignBuddy(alignment)
+
+        return sim_scores, Alb.AlignBuddy(alignment, in_format="fasta")
 
     # Try to feed the job to independent workers
     if WORKER_DB and os.path.isfile(WORKER_DB) and len(seq_ids) > MIN_SIZE_TO_WORKER:
@@ -1208,9 +1223,11 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                                                   % seq_id_hash).fetchone()
 
                 if not complete_check and not queue_check and not processing_check:
-                    cursor.execute("INSERT INTO queue (hash, seqs, psi_pred_dir, master_id) "
-                                   "VALUES ('%s', '%s', '%s', %s)" %
-                                   (seq_id_hash, str(seqbuddy), PSIPREDDIR, heartbeat.master_id))
+                    if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, seq_id_hash)):
+                        seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, seq_id_hash), out_format="fasta")
+                    cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id) "
+                                   "VALUES ('%s', '%s', %s)" %
+                                   (seq_id_hash, PSIPREDDIR, heartbeat.master_id))
 
                 cursor.execute("INSERT INTO waiting (hash, master_id) VALUES ('%s', %s)"
                                % (seq_id_hash, heartbeat.master_id))
@@ -1239,7 +1256,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                 with LOGGING_LOCK:
                     with open(RUNTIMELOG, "a") as ofile:
                         ofile.write("%s%s\tall_by_all run_worker\n" % (log_data, time.time() - STARTTIME))
-                return sim_scores, Alb.AlignBuddy(alignment)
+                return sim_scores, Alb.AlignBuddy(alignment, in_format="fasta")
 
             ######################
             finished = False
@@ -1265,6 +1282,10 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                             cursor.execute("DELETE FROM queue WHERE master_id=%s" % heartbeat.master_id)
                             cursor.execute("DELETE FROM processing WHERE master_id=%s" % heartbeat.master_id)
                             cursor.execute("DELETE FROM waiting WHERE master_id=%s" % heartbeat.master_id)
+                            try:
+                                os.remove("%s/%s.seqs" % (WORKER_OUT, seq_id_hash))
+                            except FileNotFoundError:
+                                pass
                             with LOGGING_LOCK:
                                 with open(RUNTIMELOG, "a") as ofile:
                                     ofile.write("%s%s\tall_by_all run_worker lost\n" % (log_data, time.time() - STARTTIME))
@@ -1277,9 +1298,12 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                             worker_id = processing_check[1]
                             if worker_id not in workers:
                                 # Doesn't look like it... Might as well queue it back up
-                                cursor.execute("INSERT INTO queue (hash, seqs, psi_pred_dir, master_id) "
-                                               "VALUES ('%s', '%s', '%s', %s)" %
-                                               (seq_id_hash, str(seqbuddy), PSIPREDDIR, heartbeat.master_id))
+                                if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, seq_id_hash)):
+                                    seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, seq_id_hash), out_format="fasta")
+
+                                cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id) "
+                                               "VALUES ('%s', '%s', %s)" %
+                                               (seq_id_hash, PSIPREDDIR, heartbeat.master_id))
                                 cursor.execute("DELETE FROM processing WHERE hash='%s'" % seq_id_hash)
 
                         elif queue_check:
@@ -1288,35 +1312,57 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                         else:
                             # Ummmm... Where'd the job go??? Queue it back up if it really seems to have vanished
                             print("We had a vanish!")
-                            cursor.execute("INSERT INTO queue (hash, seqs, psi_pred_dir, master_id) "
-                                           "VALUES ('%s', '%s', '%s', %s)" %
-                                           (seq_id_hash, str(seqbuddy), PSIPREDDIR, heartbeat.master_id))
+                            if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, seq_id_hash)):
+                                seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, seq_id_hash), out_format="fasta")
+
+                            cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id) "
+                                           "VALUES ('%s', '%s', %s)" %
+                                           (seq_id_hash, PSIPREDDIR, heartbeat.master_id))
 
                 else:
                     waiting_check = cursor.execute("SELECT * FROM waiting WHERE hash='%s'" % seq_id_hash).fetchall()
                     if len(waiting_check) <= 1:
                         cursor.execute("DELETE FROM complete WHERE hash='%s'" % seq_id_hash)
+
                     cursor.execute("DELETE FROM waiting WHERE hash='%s' AND master_id=%s"
                                    % (seq_id_hash, heartbeat.master_id))
                     finished = True
 
             if finished:
-                alignment = Alb.AlignBuddy(StringIO(complete_check[1]))
-                sim_scores = pd.read_csv(StringIO(complete_check[2]), index_col=False, header=None)
-                sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
-                cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
-                heartbeat.end()
-                with LOGGING_LOCK:
-                    with open(RUNTIMELOG, "a") as ofile:
-                        ofile.write("%s%s\tall_by_all run_worker\n" % (log_data, time.time() - STARTTIME))
-                return sim_scores, alignment
+                try:
+                    alignment = Alb.AlignBuddy("%s/%s.aln" % (WORKER_OUT, complete_check[0]), in_format="fasta")
+                    sim_scores = pd.read_csv("%s/%s.graph" % (WORKER_OUT, complete_check[0]),
+                                             index_col=False, header=None)
+                    sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+                    cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
+
+                    try:
+                        os.remove("%s/%s.aln" % (WORKER_OUT, complete_check[0]))
+                        os.remove("%s/%s.graph" % (WORKER_OUT, complete_check[0]))
+                        os.remove("%s/%s.seqs" % (WORKER_OUT, complete_check[0]))
+                    except FileNotFoundError:
+                        print("Couldn't delete the finished files for %s..." % seq_id_hash)
+
+                    heartbeat.end()
+                    with LOGGING_LOCK:
+                        with open(RUNTIMELOG, "a") as ofile:
+                            ofile.write("%s%s\tall_by_all run_worker\n" % (log_data, time.time() - STARTTIME))
+                    return sim_scores, alignment
+
+                except FileNotFoundError:
+                    # Ummmm... Where'd the job go??? Queue it back up.
+                    print("Couldn't find the finished files for %s..." % seq_id_hash)
+                    cursor.execute("INSERT INTO queue (hash, seqs, psi_pred_dir, master_id) "
+                                   "VALUES ('%s', '%s', '%s', %s)" %
+                                   (seq_id_hash, str(seqbuddy), PSIPREDDIR, heartbeat.master_id))
 
             time.sleep(5)  # Pause for five seconds to prevent spamming the database with requests
         heartbeat.end()
 
     log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
     # If the job is small or couldn't be pushed off on a worker, do it directly
-    alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), MAFFT, params="--globalpair --thread -1", quiet=True)
+    # alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), ALIGNMETHOD, params="--globalpair --thread -1", quiet=True)
+    alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), ALIGNMETHOD, ALIGNPARAMS, quiet=True)
 
     # Need to specify what columns the PsiPred files map to now that there are gaps.
     psi_pred_ss2_dfs = deepcopy(psi_pred_ss2_dfs)  # Don't modify in place...
@@ -1331,7 +1377,14 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
         psi_pred_ss2_dfs[rec.id] = ss_file
 
     # Scores seem to be improved by removing gaps. ToDo: Need to test this explicitly for the paper
-    alignment = Alb.trimal(alignment, threshold=0.9)
+    # Only remove columns up to a 50% reduction in average seq length and only if all sequences are retained
+    ave_seq_length = Sb.ave_seq_length(seqbuddy)
+    for threshold in ["all", 0.5, 0.75, 0.9, 0.95, "clean"]:
+        align_copy = Alb.trimal(Alb.make_copy(alignment), threshold=threshold)
+        cleaned_seq_lengths = Sb.ave_seq_length(Sb.clean_seq(Sb.SeqBuddy(str(align_copy))))
+        if len(align_copy.records()) == len(seqbuddy) and cleaned_seq_lengths / ave_seq_length >= 0.5:
+            alignment = align_copy
+            break
 
     # Re-update PsiPred files now that some columns, possibly including non-gap characters, are removed
     for rec in alignment.records_iter():
@@ -1673,6 +1726,13 @@ class Orphans(object):
 
 
 def argparse_init():
+    # Catch any extra parameters passed into -algn_p so they play nice with argparse
+    if '--align_params' in sys.argv:
+        sys.argv[sys.argv.index('--generate_alignment')] = '-algn_p'
+    if '-algn_p' in sys.argv:
+        ga_indx = sys.argv.index('-algn_p')
+        sys.argv[ga_indx + 1] = " %s" % sys.argv[ga_indx + 1].rstrip()
+
     def fmt(prog):
         return br.CustomHelpFormatter(prog)
 
@@ -1736,6 +1796,10 @@ def argparse_init():
                               help="Penalty to extend a gap in pairwise alignment scoring (default=%s)" % GAP_EXTEND)
     parser_flags.add_argument("-wdb", "--workdb", action="store", default="",
                               help="Specify the directory that independent workers will be monitoring")
+    parser_flags.add_argument("-algn_m", "--align_method", action="store", default="clustalo",
+                              help="Specify which alignment algorithm to use (supply full path if not in $PATH)")
+    parser_flags.add_argument("-algn_p", "--align_params", action="store", default="",
+                              help="Supply alignment specific parameters")
     parser_flags.add_argument("-f", "--force", action="store_true",
                               help="Try to run no matter what.")
     parser_flags.add_argument("-q", "--quiet", action="store_true",
@@ -1817,15 +1881,38 @@ Please do so now:
     with open(RUNTIMELOG, "a") as ofile:
         ofile.write("%s\t%s\t%s\tStart\n" % (os.getpid(), time.time() - STARTTIME, time.time() - STARTTIME))
 
-    if not os.path.isfile(MAFFT):
-        logging.error("The 'MAFFT' program is not detected "
-                      "on your system. Please run \n\t$: %s -setup" % __file__)
+    if not shutil.which(in_args.align_method):
+        logging.error("The alignment program '%s' is not detected "
+                      "on your system." % in_args.align_method)
         sys.exit()
 
-    mafft = Popen("%s --version" % MAFFT, stderr=PIPE, shell=True).communicate()[1].decode()
-    logging.info("\nMAFFT version: %s" % mafft.strip())
+    # I'm pretty sure that SeqBuddy 1.2 is still fine, but Alb needs to be updated. Might as well just force the update.
+    if int(re.search("([0-9]+)", Sb.VERSION.minor).group(1)) < 3:
+        logging.error("\nERROR: Your version of SeqBuddy (%s.%s) is too old to work with RDMCL, please update it."
+                      % (Sb.VERSION.major, Sb.VERSION.minor))
+        sys.exit()
     logging.info("SeqBuddy version: %s.%s" % (Sb.VERSION.major, Sb.VERSION.minor))
+
+    if int(re.search("([0-9]+)", Alb.VERSION.minor).group(1)) < 3:
+        logging.error("Your version of AlignBuddy (%s.%s) is too old to work with RDMCL, please update it."
+                      % (Alb.VERSION.major, Alb.VERSION.minor))
+        sys.exit()
     logging.info("AlignBuddy version: %s.%s" % (Alb.VERSION.major, Sb.VERSION.minor))
+
+    sequences = Sb.SeqBuddy(in_args.sequences)
+    tmp_alb = Alb.generate_msa(Sb.SeqBuddy(deepcopy(sequences.records[:4])), in_args.align_method, quiet=True)
+
+    if tmp_alb.align_tool["tool"] == "MAFFT" and float(tmp_alb.align_tool["version"]) < 7.245:
+        logging.error("\nERROR: Your version of MAFFT (%s) is too old to work with RDMCL, please update it."
+                      % tmp_alb.align_tool["version"])
+        sys.exit()
+
+    global ALIGNMETHOD
+    ALIGNMETHOD = in_args.align_method
+    global ALIGNPARAMS
+    ALIGNPARAMS = in_args.align_params
+
+    logging.info("\nAlignment method: %s %s" % (tmp_alb.align_tool["tool"], tmp_alb.align_tool["version"]))
 
     logging.warning("\nLaunching SQLite Daemons")
 
@@ -1835,18 +1922,21 @@ Please do so now:
     broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
                                        "graph TEXT", "cluster_score TEXT"])
     broker.start_broker()
-    sequences = Sb.SeqBuddy(in_args.sequences)
 
+    global WORKER_OUT
     global WORKER_DB
     global HEARTBEAT_DB
 
     if in_args.workdb:
         in_args.workdb = os.path.abspath(in_args.workdb)
+        WORKER_OUT = os.path.join(in_args.workdb, ".worker_output")
         WORKER_DB = os.path.join(in_args.workdb, "work_db.sqlite")
 
         HEARTBEAT_DB = os.path.join(in_args.workdb, "heartbeat_db.sqlite")
         heartbeat = HeartBeat(HEARTBEAT_DB, MASTER_PULSE)
         heartbeat.start()
+    else:
+        heartbeat = HeartBeat("", "", dummy=True)
 
     # Do a check for large data sets and confirm run
     if len(sequences) > 1000 and not in_args.force:
@@ -1860,12 +1950,15 @@ Continue? y/[n] """ % len(sequences)
 
         if not br.ask(msg, default="no", timeout=120):
             logging.warning("\nRun terminated. If you really do want to run this large job, use the -f flag.")
+            heartbeat.end()
             sys.exit()
         else:
             logging.warning("Proceeding with large run.\n")
 
     sequences = Sb.delete_metadata(sequences)
-    check_sequences(sequences, in_args.taxa_sep)
+    if not check_sequences(sequences, in_args.taxa_sep):
+        heartbeat.end()
+        sys.exit()
     seq_ids_str = ", ".join(sorted([rec.id for rec in sequences.records]))
     seq_ids_hash = helpers.md5_hash(seq_ids_str)
 
@@ -1955,18 +2048,6 @@ Continue? y/[n] """ % len(sequences)
     # Initial alignment
     logging.warning("\n** All-by-all graph **")
     logging.info("gap open penalty: %s\ngap extend penalty: %s" % (in_args.open_penalty, in_args.ext_penalty))
-
-    """
-    align_data = broker.query("SELECT (alignment) FROM data_table WHERE hash='{0}'".format(seq_ids_hash))
-    if align_data and align_data[0][0]:
-        logging.warning("RESUME: Initial multiple sequence alignment found")
-        alignbuddy = Alb.AlignBuddy(align_data[0][0])
-    else:
-        logging.warning("Generating initial multiple sequence alignment with MAFFT")
-        alignbuddy = generate_msa(sequences, broker)
-        alignbuddy.write(os.path.join(in_args.outdir, "alignments", "group_0.aln"))
-        logging.info("\t-- finished in %s --\n" % TIMER.split())
-    """
 
     num_comparisons = ((len(sequences) ** 2) - len(sequences)) / 2
     logging.warning("Generating initial all-by-all similarity graph (%s comparisons)" % int(num_comparisons))
@@ -2099,6 +2180,7 @@ Continue? y/[n] """ % len(sequences)
 
     logging.warning("\nPlacing any collapsed paralogs into their respective clusters")
     for clust in final_clusters:
+        clust.parent = uncollapsed_group_0
         if clust.collapsed_genes:
             with open(os.path.join(in_args.outdir, "paralog_cliques"), "a") as outfile:
                 outfile.write("# %s\n" % clust.name())
@@ -2138,74 +2220,12 @@ Continue? y/[n] """ % len(sequences)
                             " the inclusion of collapsed paralogs")
         logging.warning("Clusters written to: %s%sfinal_clusters.txt" % (in_args.outdir, os.sep))
 
-    if in_args.workdb:
-        heartbeat.end()
+    heartbeat.end()
     broker.close()
 
 
-def check_mafft_version():
-    mafft_version = Popen("%s --version" % MAFFT, stdout=PIPE, stderr=PIPE, shell=True).communicate()
-    mafft_version = mafft_version[1].decode()
-    mafft_version = float(re.search("v([0-9]+\.[0-9]+)", mafft_version).group(1))
-    return mafft_version
-
-
 def setup():
-    global MAFFT
     sys.stdout.write("\033[1mWelcome to RD-MCL!\033[m\nConfirming installation...\n\n")
-
-    sys.stdout.write("\033[1mChecking for MAFFT:\033[m ")
-    try_install = False
-    if os.path.isfile(MAFFT):
-        ver = check_mafft_version()
-        if ver < 7.245:
-            sys.stdout.write("\033[91mVersion out of date (%s)\033[39m\n\n" % ver)
-            try_install = True
-    else:
-        sys.stdout.write("\033[91mMissing\033[39m\n\n")
-        try_install = True
-
-    if try_install:
-        if br.ask("Would you like the setup script to try and install MAFFT? [y]/n:"):
-            if shutil.which("conda"):
-                sys.stdout.write("\033[1mCalling conda...\033[m\n")
-                Popen("conda install -y -c biocore mafft", shell=True).wait()
-            elif shutil.which("wget") and shutil.which("make"):
-                if os.path.isdir("%s%smafft" % (SCRIPT_PATH, os.sep)):
-                    shutil.rmtree("%s%smafft" % (SCRIPT_PATH, os.sep))
-                os.makedirs("{0}{1}mafft".format(SCRIPT_PATH, os.sep))
-
-                cwd = os.getcwd()
-                tmp_dir = br.TempDir()
-                os.chdir(tmp_dir.path)
-                url = "http://mafft.cbrc.jp/alignment/software/mafft-7.309-without-extensions-src.tgz"
-                sys.stdout.write("\n\033[1mDownloading source code from %s\033[m\n\n" % url)
-                Popen("wget %s" % url, shell=True).wait()
-
-                sys.stdout.write("\n\033[1mUnpacking...\033[m\n")
-                Popen("tar -xzf mafft-7.309-without-extensions-src.tgz", shell=True).wait()
-
-                sys.stdout.write("\n\033[1mBuilding...\033[m\n")
-                os.chdir("mafft-7.309-without-extensions" + os.sep + "core")
-                with open("Makefile", "r") as ifile:
-                    makefile = ifile.read()
-
-                makefile = re.sub("PREFIX = /usr/local", "PREFIX = {0}{1}mafft".format(SCRIPT_PATH, os.sep),
-                                  makefile)
-                with open("Makefile", "w") as ofile:
-                    ofile.write(makefile)
-                Popen("make clean; make; make install", shell=True).wait()
-                os.chdir(cwd)
-
-        MAFFT = shutil.which("mafft") if shutil.which("mafft") \
-            else os.path.join(SCRIPT_PATH, "mafft", "bin", "mafft")
-
-        if not os.path.isfile(MAFFT) or check_mafft_version() < 7.245:
-            sys.stdout.write("\033[91mFailed to install MAFFT.\033[39m\nPlease install the software yourself from "
-                             "http://mafft.cbrc.jp/alignment/software/\n\n")
-            return
-    else:
-        sys.stdout.write("\033[92mFound\033[39m\n")
 
     sys.stdout.write("\033[1mChecking for PSIPRED:\033[m ")
     path_install = []

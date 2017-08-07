@@ -13,12 +13,15 @@ from buddysuite import buddy_resources as br
 from buddysuite import AlignBuddy as Alb
 from buddysuite import SeqBuddy as Sb
 import os
+import sys
+import re
 import time
-from random import randint, random
+from random import random
 from collections import OrderedDict
 from io import StringIO
 from copy import copy
 from inspect import currentframe, getframeinfo
+import traceback
 
 # My packages
 try:
@@ -35,9 +38,11 @@ printer = br.DynamicPrint()
 
 
 class Worker(object):
-    def __init__(self, wrkdb_path, hbdb_path, heartrate=60, max_wait=120):
-        self.wrkdb_path = wrkdb_path
-        self.hbdb_path = hbdb_path
+    def __init__(self, location, heartrate=60, max_wait=120):
+        self.wrkdb_path = os.path.join(location, "work_db.sqlite")
+        self.hbdb_path = os.path.join(location, "heartbeat_db.sqlite")
+        self.output = os.path.join(location, ".worker_output")
+
         self.masterclear_path = os.path.split(self.wrkdb_path)[0]
         self.masterclear_path = os.path.join(self.masterclear_path, "MasterClear")
         self.heartrate = heartrate
@@ -78,8 +83,8 @@ class Worker(object):
                 self.last_heartbeat = self.heartrate + time.time()
                 with helpers.ExclusiveConnect(self.hbdb_path, "LN%s" % getframeinfo(currentframe()).lineno,
                                               "WorkerConnect.log") as cursor:
-                    cursor.execute('UPDATE heartbeat SET pulse=%s '
-                                   'WHERE thread_id=%s' % (round(time.time() + cursor.lag), self.id))
+                    cursor.execute("INSERT OR REPLACE INTO heartbeat (thread_id, thread_type, pulse) "
+                                   "VALUES (%s, 'worker', %s) " % (self.id, round(time.time() + cursor.lag)))
 
                     if time.time() - self.last_heartbeat_from_master > self.max_wait:
                         cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
@@ -158,7 +163,7 @@ class Worker(object):
                 cursor.execute('SELECT * FROM queue')
                 data = cursor.fetchone()
                 if data:
-                    id_hash, seqs, psipred_dir, master_id = data
+                    id_hash, psipred_dir, master_id = data
                     cursor.execute("INSERT INTO processing (hash, worker_id, master_id)"
                                    " VALUES ('%s', '%s', %s)" % (id_hash, self.id, master_id))
                     cursor.execute("DELETE FROM queue WHERE hash='%s'" % id_hash)
@@ -172,9 +177,9 @@ class Worker(object):
 
             idle_countdown = 1
             # Prepare alignment
-            seqbuddy = Sb.SeqBuddy(StringIO(seqs))
+            seqbuddy = Sb.SeqBuddy("%s/%s.seqs" % (self.output, id_hash), in_format="fasta")
             if len(seqbuddy) == 1:
-                alignment = Alb.AlignBuddy(str(seqbuddy))
+                alignment = Alb.AlignBuddy(str(seqbuddy), in_format="fasta")
             else:
                 printer.write("Creating MSA (%s seqs)" % len(seqbuddy))
                 alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft",
@@ -212,9 +217,16 @@ class Worker(object):
                         ss_counter += 1
                 psipred_dfs[rec.id] = ss_file
 
-            # Scores seem to be improved by removing gaps. ToDo: Need to test this explicitly for the paper
             printer.write("Trimal (%s seqs)" % len(seqbuddy))
-            alignment = Alb.trimal(alignment, threshold=0.9)
+            # Scores seem to be improved by removing gaps. ToDo: Need to test this explicitly for the paper
+            # Only remove columns up to a 50% reduction in average seq length and only if all sequences are retained
+            ave_seq_length = Sb.ave_seq_length(seqbuddy)
+            for threshold in ["all", 0.5, 0.75, 0.9, 0.95, "clean"]:
+                align_copy = Alb.trimal(Alb.make_copy(alignment), threshold=threshold)
+                cleaned_seq_lengths = Sb.ave_seq_length(Sb.clean_seq(Sb.SeqBuddy(str(align_copy))))
+                if len(align_copy.records()) == len(seqbuddy) and cleaned_seq_lengths / ave_seq_length >= 0.5:
+                    alignment = align_copy
+                    break
 
             # Re-update PsiPred files now that some columns, possibly including non-gap characters, are removed
             printer.write("Updating %s psipred dataframes" % len(seqbuddy))
@@ -271,14 +283,22 @@ class Worker(object):
 
             with helpers.ExclusiveConnect(self.wrkdb_path, "LN%s" % getframeinfo(currentframe()).lineno,
                                           "WorkerConnect.log") as cursor:
+                # Place these write commands in ExclusiveConnect to ensure a writing lock
+                if not os.path.isfile("%s/%s.graph" % (self.output, id_hash)):
+                    sim_scores.to_csv("%s/%s.graph" % (self.output, id_hash), header=None, index=False)
+                if not os.path.isfile("%s/%s.aln" % (self.output, id_hash)):
+                    alignment.write("%s/%s.aln" % (self.output, id_hash), out_format="fasta")
+
                 # Confirm that the job is still being waited on before adding to the `complete` table
                 waiting = cursor.execute("SELECT master_id FROM waiting WHERE hash='%s'" % id_hash)
 
                 if waiting:
-                    cursor.execute("INSERT INTO complete (hash, alignment, graph, worker_id, master_id) "
-                                   "VALUES ('%s', '%s', '%s', %s, %s)" % (id_hash, str(alignment),
-                                                                          sim_scores.to_csv(header=None, index=False),
-                                                                          self.id, master_id))
+                    cursor.execute("INSERT INTO complete (hash, worker_id, master_id) "
+                                   "VALUES ('%s', %s, %s)" % (id_hash, self.id, master_id))
+                else:
+                    os.remove("%s/%s.graph" % (self.output, id_hash))
+                    os.remove("%s/%s.aln" % (self.output, id_hash))
+                    os.remove("%s/%s.seqs" % (self.output, id_hash))
 
                 cursor.execute("DELETE FROM processing WHERE hash='%s'" % id_hash)
 
@@ -310,8 +330,8 @@ def score_sequences(data, func_args):
         if random() > 0.99:
             with helpers.ExclusiveConnect(hbdb_path, "LN%s" % getframeinfo(currentframe()).lineno,
                                           "WorkerConnect.log") as cursor:
-                cursor.execute('UPDATE heartbeat SET pulse=%s '
-                               'WHERE thread_id=%s' % (round(time.time() + cursor.lag), worker_id))
+                cursor.execute("INSERT OR REPLACE INTO heartbeat (thread_id, thread_type, pulse) "
+                               "VALUES (%s, 'worker', %s) " % (worker_id, round(time.time() + cursor.lag)))
 
         # Calculate the best possible scores, and divide by the observed scores
         id_regex = "^%s$|^%s$" % (id1, id2)
@@ -405,6 +425,7 @@ def main():
 
     workdb = os.path.join(in_args.workdb, "work_db.sqlite")
     heartbeatdb = os.path.join(in_args.workdb, "heartbeat_db.sqlite")
+    worker_output = os.path.join(in_args.workdb, ".worker_output")
 
     global printer
     if in_args.log:
@@ -425,10 +446,9 @@ def main():
 
     connection = sqlite3.connect(workdb)
     cur = connection.cursor()
-    for sql in ['CREATE TABLE queue (hash TEXT PRIMARY KEY, seqs TEXT, psi_pred_dir TEXT, master_id INTEGER)',
+    for sql in ['CREATE TABLE queue (hash TEXT PRIMARY KEY, psi_pred_dir TEXT, master_id INTEGER)',
                 'CREATE TABLE processing (hash TEXT PRIMARY KEY, worker_id INTEGER, master_id INTEGER)',
-                'CREATE TABLE complete   (hash TEXT PRIMARY KEY, alignment TEXT, graph TEXT, '
-                'worker_id INTEGER, master_id INTEGER)',
+                'CREATE TABLE complete   (hash TEXT PRIMARY KEY, worker_id INTEGER, master_id INTEGER)',
                 'CREATE TABLE waiting (hash TEXT, master_id INTEGER)']:
         try:
             cur.execute(sql)
@@ -449,8 +469,55 @@ def main():
     cur.close()
     connection.close()
 
-    wrkr = Worker(workdb, heartbeatdb, in_args.heart_rate, in_args.max_wait)
-    wrkr.start()
+    os.makedirs(worker_output, exist_ok=True)
+
+    wrkr = Worker(in_args.workdb, heartrate=in_args.heart_rate, max_wait=in_args.max_wait)
+    valve = br.SafetyValve(100)
+    while True:
+        try:
+            valve.step("Too many Worker crashes detected.")
+            wrkr.start()
+            break
+
+        except KeyboardInterrupt:
+            with helpers.ExclusiveConnect(wrkr.wrkdb_path) as cursor:
+                cursor.execute("DELETE FROM processing WHERE worker_id=%s" % wrkr.id)
+            with helpers.ExclusiveConnect(wrkr.hbdb_path) as cursor:
+                cursor.execute("DELETE FROM heartbeat WHERE thread_id=%s" % wrkr.id)
+            if os.path.isfile("Worker_%s" % wrkr.id):
+                os.remove("Worker_%s" % wrkr.id)
+            if os.path.isfile(wrkr.data_file):
+                os.remove(wrkr.data_file)
+            printer.write("Terminating Worker_%s because of KeyboardInterrupt." % wrkr.id)
+            printer.new_line(1)
+            break
+
+        except Exception as err:
+            with helpers.ExclusiveConnect(wrkr.wrkdb_path) as cursor:
+                cursor.execute("DELETE FROM processing WHERE worker_id=%s" % wrkr.id)
+
+            if "Too many Worker crashes detected" in str(err):
+                if os.path.isfile("Worker_%s" % wrkr.id):
+                    os.remove("Worker_%s" % wrkr.id)
+                if os.path.isfile(wrkr.data_file):
+                    os.remove(wrkr.data_file)
+
+                with helpers.ExclusiveConnect(wrkr.hbdb_path) as cursor:
+                    cursor.execute("DELETE FROM heartbeat WHERE thread_id=%s" % wrkr.id)
+
+                printer.write("Terminating Worker_%s because of too many Worker crashes." % wrkr.id)
+                printer.new_line(1)
+                break
+
+            tb = "%s: %s\n\n" % (type(err).__name__, err)
+            for _line in traceback.format_tb(sys.exc_info()[2]):
+                if os.name == "nt":
+                    _line = re.sub('"(?:[A-Za-z]:)*\{0}.*\{0}(.*)?"'.format(os.sep), r'"\1"', _line)
+                else:
+                    _line = re.sub('"{0}.*{0}(.*)?"'.format(os.sep), r'"\1"', _line)
+                tb += _line
+            print("\nWorker_%s crashed!\n" % wrkr.id, tb)
+
 
 if __name__ == '__main__':
     main()
