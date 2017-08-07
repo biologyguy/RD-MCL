@@ -157,7 +157,7 @@ class Worker(object):
                 cursor.execute('SELECT * FROM queue')
                 data = cursor.fetchone()
                 if data:
-                    id_hash, seqs, psipred_dir, master_id = data
+                    id_hash, psipred_dir, master_id = data
                     cursor.execute("INSERT INTO processing (hash, worker_id, master_id)"
                                    " VALUES ('%s', '%s', %s)" % (id_hash, self.id, master_id))
                     cursor.execute("DELETE FROM queue WHERE hash='%s'" % id_hash)
@@ -171,9 +171,9 @@ class Worker(object):
 
             idle_countdown = 1
             # Prepare alignment
-            seqbuddy = Sb.SeqBuddy(StringIO(seqs))
+            seqbuddy = Sb.SeqBuddy("%s/%s.seqs" % (self.output, id_hash), in_format="fasta")
             if len(seqbuddy) == 1:
-                alignment = Alb.AlignBuddy(str(seqbuddy))
+                alignment = Alb.AlignBuddy(str(seqbuddy), in_format="fasta")
             else:
                 printer.write("Creating MSA (%s seqs)" % len(seqbuddy))
                 alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft",
@@ -273,9 +273,13 @@ class Worker(object):
             # ToDo: Experiment testing these magic number weights...
             sim_scores['score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
 
-            sim_scores.to_csv("%s/%s.graph" % (self.output, id_hash), header=None, index=False)
-            alignment.write("%s/%s.aln" % (self.output, id_hash))
             with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+                # Place these write commands in ExclusiveConnect to ensure a writing lock
+                if not os.path.isfile("%s/%s.graph" % (self.output, id_hash)):
+                    sim_scores.to_csv("%s/%s.graph" % (self.output, id_hash), header=None, index=False)
+                if not os.path.isfile("%s/%s.aln" % (self.output, id_hash)):
+                    alignment.write("%s/%s.aln" % (self.output, id_hash), out_format="fasta")
+
                 # Confirm that the job is still being waited on before adding to the `complete` table
                 waiting = cursor.execute("SELECT master_id FROM waiting WHERE hash='%s'" % id_hash)
 
@@ -285,6 +289,7 @@ class Worker(object):
                 else:
                     os.remove("%s/%s.graph" % (self.output, id_hash))
                     os.remove("%s/%s.aln" % (self.output, id_hash))
+                    os.remove("%s/%s.seqs" % (self.output, id_hash))
 
                 cursor.execute("DELETE FROM processing WHERE hash='%s'" % id_hash)
 
@@ -430,7 +435,7 @@ def main():
 
     connection = sqlite3.connect(workdb)
     cur = connection.cursor()
-    for sql in ['CREATE TABLE queue (hash TEXT PRIMARY KEY, seqs TEXT, psi_pred_dir TEXT, master_id INTEGER)',
+    for sql in ['CREATE TABLE queue (hash TEXT PRIMARY KEY, psi_pred_dir TEXT, master_id INTEGER)',
                 'CREATE TABLE processing (hash TEXT PRIMARY KEY, worker_id INTEGER, master_id INTEGER)',
                 'CREATE TABLE complete   (hash TEXT PRIMARY KEY, worker_id INTEGER, master_id INTEGER)',
                 'CREATE TABLE waiting (hash TEXT, master_id INTEGER)']:
@@ -455,7 +460,7 @@ def main():
 
     os.makedirs(worker_output, exist_ok=True)
 
-    wrkr = Worker(in_args.workdb, in_args.max_wait)
+    wrkr = Worker(in_args.workdb, heartrate=in_args.heart_rate, max_wait=in_args.max_wait)
     valve = br.SafetyValve(100)
     while True:
         try:

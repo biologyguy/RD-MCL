@@ -912,7 +912,7 @@ def mcmcmc_mcl(args, params):
                 query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash='%s'" % _name)
                 if query and len(query[0]) == 2:
                     sim_scores, alignment = query[0]
-                    alignment = Alb.AlignBuddy(alignment)
+                    alignment = Alb.AlignBuddy(alignment, in_format="fasta")
                     if len(alignment.records()) == 1:
                         sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
                     else:
@@ -1090,7 +1090,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
 
     if len(seqbuddy) == 1:
         sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
-        alignment = Alb.AlignBuddy(str(seqbuddy))
+        alignment = Alb.AlignBuddy(str(seqbuddy), in_format="fasta")
         cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
         return sim_scores, alignment
 
@@ -1100,7 +1100,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
         sim_scores, alignment = query[0]
         sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None)
         sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
-        return sim_scores, Alb.AlignBuddy(alignment)
+        return sim_scores, Alb.AlignBuddy(alignment, in_format="fasta")
 
     # Try to feed the job to independent workers
     if WORKER_DB and os.path.isfile(WORKER_DB) and len(seq_ids) > MIN_SIZE_TO_WORKER:
@@ -1123,9 +1123,11 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                                                   % seq_id_hash).fetchone()
 
                 if not complete_check and not queue_check and not processing_check:
-                    cursor.execute("INSERT INTO queue (hash, seqs, psi_pred_dir, master_id) "
-                                   "VALUES ('%s', '%s', '%s', %s)" %
-                                   (seq_id_hash, str(seqbuddy), PSIPREDDIR, heartbeat.master_id))
+                    if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, seq_id_hash)):
+                        seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, seq_id_hash), out_format="fasta")
+                    cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id) "
+                                   "VALUES ('%s', '%s', %s)" %
+                                   (seq_id_hash, PSIPREDDIR, heartbeat.master_id))
 
                 cursor.execute("INSERT INTO waiting (hash, master_id) VALUES ('%s', %s)"
                                % (seq_id_hash, heartbeat.master_id))
@@ -1145,7 +1147,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                     cursor.execute("DELETE FROM waiting WHERE hash='%s' AND master_id=%s"
                                    % (seq_id_hash, heartbeat.master_id))
                 heartbeat.end()
-                return sim_scores, Alb.AlignBuddy(alignment)
+                return sim_scores, Alb.AlignBuddy(alignment, in_format="fasta")
 
             ######################
             finished = False
@@ -1170,6 +1172,10 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                             cursor.execute("DELETE FROM queue WHERE master_id=%s" % heartbeat.master_id)
                             cursor.execute("DELETE FROM processing WHERE master_id=%s" % heartbeat.master_id)
                             cursor.execute("DELETE FROM waiting WHERE master_id=%s" % heartbeat.master_id)
+                            try:
+                                os.remove("%s/%s.seqs" % (WORKER_OUT, seq_id_hash))
+                            except FileNotFoundError:
+                                pass
                             break
 
                         if processing_check:
@@ -1179,9 +1185,12 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                             worker_id = processing_check[1]
                             if worker_id not in workers:
                                 # Doesn't look like it... Might as well queue it back up
-                                cursor.execute("INSERT INTO queue (hash, seqs, psi_pred_dir, master_id) "
-                                               "VALUES ('%s', '%s', '%s', %s)" %
-                                               (seq_id_hash, str(seqbuddy), PSIPREDDIR, heartbeat.master_id))
+                                if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, seq_id_hash)):
+                                    seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, seq_id_hash), out_format="fasta")
+
+                                cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id) "
+                                               "VALUES ('%s', '%s', %s)" %
+                                               (seq_id_hash, PSIPREDDIR, heartbeat.master_id))
                                 cursor.execute("DELETE FROM processing WHERE hash='%s'" % seq_id_hash)
 
                         elif queue_check:
@@ -1190,19 +1199,17 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                         else:
                             # Ummmm... Where'd the job go??? Queue it back up if it really seems to have vanished
                             print("We had a vanish!")
-                            cursor.execute("INSERT INTO queue (hash, seqs, psi_pred_dir, master_id) "
-                                           "VALUES ('%s', '%s', '%s', %s)" %
-                                           (seq_id_hash, str(seqbuddy), PSIPREDDIR, heartbeat.master_id))
+                            if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, seq_id_hash)):
+                                seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, seq_id_hash), out_format="fasta")
+
+                            cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id) "
+                                           "VALUES ('%s', '%s', %s)" %
+                                           (seq_id_hash, PSIPREDDIR, heartbeat.master_id))
 
                 else:
                     waiting_check = cursor.execute("SELECT * FROM waiting WHERE hash='%s'" % seq_id_hash).fetchall()
                     if len(waiting_check) <= 1:
                         cursor.execute("DELETE FROM complete WHERE hash='%s'" % seq_id_hash)
-                        try:
-                            os.remove("%s/%s.aln" % (WORKER_OUT, complete_check[0]))
-                            os.remove("%s/%s.graph" % (WORKER_OUT, complete_check[0]))
-                        except FileNotFoundError:
-                            print("Couldn't delete the finished files for %s..." % seq_id_hash)
 
                     cursor.execute("DELETE FROM waiting WHERE hash='%s' AND master_id=%s"
                                    % (seq_id_hash, heartbeat.master_id))
@@ -1210,10 +1217,19 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
 
             if finished:
                 try:
-                    alignment = Alb.AlignBuddy("%s/%s.aln" % (WORKER_OUT, complete_check[0]))
-                    sim_scores = pd.read_csv("%s/%s.graph" % (WORKER_OUT, complete_check[0]), index_col=False, header=None)
+                    alignment = Alb.AlignBuddy("%s/%s.aln" % (WORKER_OUT, complete_check[0]), in_format="fasta")
+                    sim_scores = pd.read_csv("%s/%s.graph" % (WORKER_OUT, complete_check[0]),
+                                             index_col=False, header=None)
                     sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
                     cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
+
+                    try:
+                        os.remove("%s/%s.aln" % (WORKER_OUT, complete_check[0]))
+                        os.remove("%s/%s.graph" % (WORKER_OUT, complete_check[0]))
+                        os.remove("%s/%s.seqs" % (WORKER_OUT, complete_check[0]))
+                    except FileNotFoundError:
+                        print("Couldn't delete the finished files for %s..." % seq_id_hash)
+
                     heartbeat.end()
                     return sim_scores, alignment
 
