@@ -89,13 +89,14 @@ MULTICORE_LOCK = Lock()
 PROGRESS_LOCK = Lock()
 CPUS = br.usable_cpu_count()
 TIMER = helpers.Timer()
-MIN_SIZE_TO_WORKER = 15
+MIN_SIZE_TO_WORKER = 5
 GAP_OPEN = -5
 GAP_EXTEND = 0
 BLOSUM62 = helpers.make_full_mat(SeqMat(MatrixInfo.blosum62))
 MCMC_CHAINS = 3
 DR_BASE = 0.75
 GELMAN_RUBIN = 1.1
+WORKER_OUT = ""
 WORKER_DB = ""
 HEARTBEAT_DB = ""
 MAX_WORKER_WAIT = 120
@@ -1197,17 +1198,31 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                     waiting_check = cursor.execute("SELECT * FROM waiting WHERE hash='%s'" % seq_id_hash).fetchall()
                     if len(waiting_check) <= 1:
                         cursor.execute("DELETE FROM complete WHERE hash='%s'" % seq_id_hash)
+                        try:
+                            os.remove("%s/%s.aln" % (WORKER_OUT, complete_check[0]))
+                            os.remove("%s/%s.graph" % (WORKER_OUT, complete_check[0]))
+                        except FileNotFoundError:
+                            print("Couldn't delete the finished files for %s..." % seq_id_hash)
+
                     cursor.execute("DELETE FROM waiting WHERE hash='%s' AND master_id=%s"
                                    % (seq_id_hash, heartbeat.master_id))
                     finished = True
 
             if finished:
-                alignment = Alb.AlignBuddy(StringIO(complete_check[1]))
-                sim_scores = pd.read_csv(StringIO(complete_check[2]), index_col=False, header=None)
-                sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
-                cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
-                heartbeat.end()
-                return sim_scores, alignment
+                try:
+                    alignment = Alb.AlignBuddy("%s/%s.aln" % (WORKER_OUT, complete_check[0]))
+                    sim_scores = pd.read_csv("%s/%s.graph" % (WORKER_OUT, complete_check[0]), index_col=False, header=None)
+                    sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+                    cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
+                    heartbeat.end()
+                    return sim_scores, alignment
+
+                except FileNotFoundError:
+                    # Ummmm... Where'd the job go??? Queue it back up.
+                    print("Couldn't find the finished files for %s..." % seq_id_hash)
+                    cursor.execute("INSERT INTO queue (hash, seqs, psi_pred_dir, master_id) "
+                                   "VALUES ('%s', '%s', '%s', %s)" %
+                                   (seq_id_hash, str(seqbuddy), PSIPREDDIR, heartbeat.master_id))
 
             time.sleep(5)  # Pause for five seconds to prevent spamming the database with requests
         heartbeat.end()
@@ -1721,11 +1736,24 @@ Please do so now:
                       "on your system." % in_args.align_method)
         sys.exit()
 
+    # I'm pretty sure that SeqBuddy 1.2 is still fine, but Alb needs to be updated. Might as well just force the update.
+    if int(re.search("([0-9]+)", Sb.VERSION.minor).group(1)) < 3:
+        logging.error("\nERROR: Your version of SeqBuddy (%s.%s) is too old to work with RDMCL, please update it."
+                      % (Sb.VERSION.major, Sb.VERSION.minor))
+        sys.exit()
+    logging.info("SeqBuddy version: %s.%s" % (Sb.VERSION.major, Sb.VERSION.minor))
+
+    if int(re.search("([0-9]+)", Alb.VERSION.minor).group(1)) < 3:
+        logging.error("Your version of AlignBuddy (%s.%s) is too old to work with RDMCL, please update it."
+                      % (Alb.VERSION.major, Alb.VERSION.minor))
+        sys.exit()
+    logging.info("AlignBuddy version: %s.%s" % (Alb.VERSION.major, Sb.VERSION.minor))
+
     sequences = Sb.SeqBuddy(in_args.sequences)
     tmp_alb = Alb.generate_msa(Sb.SeqBuddy(deepcopy(sequences.records[:4])), in_args.align_method, quiet=True)
 
     if tmp_alb.align_tool["tool"] == "MAFFT" and float(tmp_alb.align_tool["version"]) < 7.245:
-        logging.error("Your version of MAFFT (%s) is too old to work with RDMCL, please update it."
+        logging.error("\nERROR: Your version of MAFFT (%s) is too old to work with RDMCL, please update it."
                       % tmp_alb.align_tool["version"])
         sys.exit()
 
@@ -1736,19 +1764,6 @@ Please do so now:
 
     logging.info("\nAlignment method: %s %s" % (tmp_alb.align_tool["tool"], tmp_alb.align_tool["version"]))
 
-    # I'm pretty sure that SeqBuddy 1.2 is still fine, but Alb needs to be updated. Might as well just force the update.
-    if int(re.sub("[^0-9]", "", Sb.VERSION.minor)) < 3:
-        logging.error("Your version of SeqBuddy (%s.%s) is too old to work with RDMCL, please update it."
-                      % (Sb.VERSION.major, Sb.VERSION.minor))
-        sys.exit()
-    logging.info("SeqBuddy version: %s.%s" % (Sb.VERSION.major, Sb.VERSION.minor))
-
-    if int(re.sub("[^0-9]", "", Alb.VERSION.minor)) < 3:
-        logging.error("Your version of AlignBuddy (%s.%s) is too old to work with RDMCL, please update it."
-                      % (Alb.VERSION.major, Alb.VERSION.minor))
-        sys.exit()
-    logging.info("AlignBuddy version: %s.%s" % (Alb.VERSION.major, Sb.VERSION.minor))
-
     logging.warning("\nLaunching SQLite Daemons")
 
     sqlite_path = os.path.join(in_args.outdir, "sqlite_db.sqlite") if not in_args.sqlite_db \
@@ -1758,11 +1773,13 @@ Please do so now:
                                        "graph TEXT", "cluster_score TEXT"])
     broker.start_broker()
 
+    global WORKER_OUT
     global WORKER_DB
     global HEARTBEAT_DB
 
     if in_args.workdb:
         in_args.workdb = os.path.abspath(in_args.workdb)
+        WORKER_OUT = os.path.join(in_args.workdb, ".worker_output")
         WORKER_DB = os.path.join(in_args.workdb, "work_db.sqlite")
 
         HEARTBEAT_DB = os.path.join(in_args.workdb, "heartbeat_db.sqlite")
