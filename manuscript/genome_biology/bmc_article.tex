@@ -334,8 +334,48 @@ To test the effects of increasing the number of orthogroups and orthogroup size,
 \subsection{RD-MCL classification of known gene families}
 \lipsum[1]
 
-\subsubsection{Gene family 1}
-\lipsum[2]
+\subsubsection{Caspases}
+Used the human refseq caspases (isorform A or 1 of each, respectively) as seed sequences (NP\_150634, NP\_116764, NP\_004337, NP\_001216, NP\_004338, NP\_001217, NP\_001218, NP\_001219, NP\_001220, NP\_116759, NP\_001177945, NP\_036246). They were downloaded with DatabaseBuddy, aligned with the MAFFT EINSI algorithm via AlignBuddy (alb \textless{}seqs.gb\textgreater{} -ga einsi), the CASc domain was extracted from the alignment with AlignBuddy (alb \textless{}align.gb\textgreater{} -efs CASc). The CASc sequences were then used to query NR with mmseqs2:
+
+
+{\small
+\begin{verbatim}
+  mmseqs createdb Hosa_CASc.fa CASc
+  mmseqs createindex CASc CASc tmp
+  mmseqs search CASc nr CASc_NR_search tmp
+      --threads 30 --max-seqs 3000
+  mmseqs convertalis CASc nr CASc_NR_search
+      CASc_NR_search.m8
+\end{verbatim}
+}
+\smallskip
+
+Only RefSeq matches were retained.
+
+{\small
+\begin{verbatim}
+  awk '{print $2}' CASc_NR_search.m8 | sort |
+      uniq > unique_CASc_NR_search.txt
+  awk -i '/[NX]P_.*/' unique_CASc_NR_search.txt
+\end{verbatim}
+}
+\smallskip
+
+Fetched all of the records with DatabaseBuddy, and filtered some sequences out:
+
+{\small
+\begin{verbatim}
+  remove "LOW QUALITY PROTEIN"
+  remove "isoform (X1[0-9]|X[2-9])"
+  remove partial
+  remove (length>600)
+  remove (length<200)
+\end{verbatim}
+}
+\smallskip
+
+Retrieve non-vertebrate hits, align, pull out CASc, use to query NR again. Merging results with first search and repeat all filtering.
+
 
 \subsubsection{Gene family 2}
 \lipsum[1]
