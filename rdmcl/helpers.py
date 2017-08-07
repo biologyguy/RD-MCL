@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import sqlite3
 import json
 import logging
@@ -25,7 +26,7 @@ class ExclusiveConnect(object):
     def __init__(self, db_path, log_message=None, log_path="ExclusiveConnect.log"):
         self.db_path = db_path
         self.log_message = log_message
-        self.log_output = []
+        self.log_output = [os.getpid()]
         self.start_time = time()
         self.loop_counter = 0
         self.log_path = log_path
