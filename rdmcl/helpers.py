@@ -23,7 +23,7 @@ class AttrWrapper(object):
 
 
 class ExclusiveConnect(object):
-    def __init__(self, db_path, log_message=None, priority=False, log_path="ExclusiveConnect.log"):
+    def __init__(self, db_path, log_message=None, log_path="ExclusiveConnect.log", priority=False):
         self.db_path = db_path
         self.log_message = log_message
         self.log_output = [os.getpid()]
