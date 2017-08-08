@@ -153,7 +153,7 @@ class Worker(object):
                             orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in orphaned_jobs])
                             cursor.execute("DELETE FROM complete WHERE hash IN (%s)" % orphaned_job_hashes)
 
-            with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+            with helpers.ExclusiveConnect(self.wrkdb_path, priority=True) as cursor:
                 cursor.execute('SELECT * FROM queue')
                 data = cursor.fetchone()
                 if data:
