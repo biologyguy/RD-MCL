@@ -55,7 +55,7 @@ class ExclusiveConnect(object):
         self.connection.close()
         if self.log_message:
             self.log_output.append(round(time() - self.start_time, 4))
-            self.log_output.append(round(self.log_output[2] - self.log_output[0], 4))
+            self.log_output.append(round(self.log_output[3] - self.log_output[1], 4))
             self.log_output.append(self.log_message)
             log_output = "%s\n" % "\t".join([str(x) for x in self.log_output])
             with open(self.log_path, "a") as ofile:

@@ -961,7 +961,7 @@ def mcmcmc_mcl(args, params):
             score += cluster.score()
     with LOGGING_LOCK:
         with open(RUNTIMELOG, "a") as ofile:
-            ofile.write("%s%s\tmcmcmc_mcl calc score\n" % (log_data, time.time() - STARTTIME))
+            ofile.write("%s%s\tmcmcmc_mcl calc score local\n" % (log_data, time.time() - STARTTIME))
 
     log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
     # wait for remaining processes to complete
@@ -987,7 +987,11 @@ def mcmcmc_mcl(args, params):
                     score += cluster.score()
                     del child_list[_name]
                     break
+    with LOGGING_LOCK:
+        with open(RUNTIMELOG, "a") as ofile:
+            ofile.write("%s%s\twait child_list\n" % (log_data, time.time() - STARTTIME))
 
+    log_data = "%s\t%s\t" % (os.getpid(), time.time() - STARTTIME)
     with LOCK:
         with LOGGING_LOCK:
             with open(RUNTIMELOG, "a") as ofile:
