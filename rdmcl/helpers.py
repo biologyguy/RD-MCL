@@ -23,18 +23,20 @@ class AttrWrapper(object):
 
 
 class ExclusiveConnect(object):
-    def __init__(self, db_path, log_message=None, log_path="ExclusiveConnect.log"):
+    def __init__(self, db_path, log_message=None, priority=False, log_path="ExclusiveConnect.log"):
         self.db_path = db_path
         self.log_message = log_message
         self.log_output = [os.getpid()]
         self.start_time = time()
         self.loop_counter = 0
         self.log_path = log_path
+        self.priority = 0.5 if not priority else 1000
 
     def __enter__(self):
+        # Note that there is a pseudo-priority counter
         while True:
             try:
-                self.connection = sqlite3.connect(self.db_path, isolation_level=None)
+                self.connection = sqlite3.connect(self.db_path, isolation_level=None, timeout=self.priority)
                 self.connection.execute('BEGIN EXCLUSIVE')
                 if self.log_message:
                     self.log_output.append(round(time() - self.start_time, 4))
@@ -43,6 +45,8 @@ class ExclusiveConnect(object):
             except sqlite3.OperationalError as err:
                 if "database is locked" in str(err):
                     self.loop_counter += 1
+                    sleep(1 / self.priority)
+                    self.priority += 0.1
                     continue
                 else:
                     raise err

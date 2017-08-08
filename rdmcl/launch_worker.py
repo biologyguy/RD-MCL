@@ -159,7 +159,7 @@ class Worker(object):
                             cursor.execute("DELETE FROM complete WHERE hash IN (%s)" % orphaned_job_hashes)
 
             with helpers.ExclusiveConnect(self.wrkdb_path, "LN%s" % getframeinfo(currentframe()).lineno,
-                                          "WorkerConnect.log") as cursor:
+                                          "WorkerConnect.log", priority=True) as cursor:
                 cursor.execute('SELECT * FROM queue')
                 data = cursor.fetchone()
                 if data:

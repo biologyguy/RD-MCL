@@ -100,7 +100,7 @@ GELMAN_RUBIN = 1.1
 WORKER_OUT = ""
 WORKER_DB = ""
 HEARTBEAT_DB = ""
-MAX_WORKER_WAIT = 120
+MAX_WORKER_WAIT = 240
 MASTER_ID = None
 MASTER_PULSE = 60
 PSIPREDDIR = ""
@@ -1277,8 +1277,8 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                         processing_check = cursor.execute("SELECT * FROM processing "
                                                           "WHERE hash='%s'" % seq_id_hash).fetchone()
 
-                        with helpers.ExclusiveConnect(HEARTBEAT_DB, "LN%s" % getframeinfo(currentframe()).lineno) \
-                                as hb_cursor:
+                        with helpers.ExclusiveConnect(HEARTBEAT_DB, "LN%s" % getframeinfo(currentframe()).lineno,
+                                                      priority=True) as hb_cursor:
                             min_pulse = time.time() - (MAX_WORKER_WAIT * 3) - hb_cursor.lag
                             worker_heartbeat_check = hb_cursor.execute("SELECT * FROM heartbeat "
                                                                        "WHERE thread_type='worker' AND pulse>%s"
@@ -1338,16 +1338,16 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                     cursor.execute("DELETE FROM waiting WHERE hash='%s' AND master_id=%s"
                                    % (seq_id_hash, heartbeat.master_id))
                 try:
-                    alignment = Alb.AlignBuddy("%s/%s.aln" % (WORKER_OUT, complete_check[0]), in_format="fasta")
-                    sim_scores = pd.read_csv("%s/%s.graph" % (WORKER_OUT, complete_check[0]),
+                    alignment = Alb.AlignBuddy("%s/%s.aln" % (WORKER_OUT, seq_id_hash), in_format="fasta")
+                    sim_scores = pd.read_csv("%s/%s.graph" % (WORKER_OUT, seq_id_hash),
                                              index_col=False, header=None)
                     sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
                     cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
 
                     try:
-                        os.remove("%s/%s.aln" % (WORKER_OUT, complete_check[0]))
-                        os.remove("%s/%s.graph" % (WORKER_OUT, complete_check[0]))
-                        os.remove("%s/%s.seqs" % (WORKER_OUT, complete_check[0]))
+                        os.remove("%s/%s.aln" % (WORKER_OUT, seq_id_hash))
+                        os.remove("%s/%s.graph" % (WORKER_OUT, seq_id_hash))
+                        os.remove("%s/%s.seqs" % (WORKER_OUT, seq_id_hash))
                     except FileNotFoundError:
                         print("Couldn't delete the finished files for %s..." % seq_id_hash)
 
