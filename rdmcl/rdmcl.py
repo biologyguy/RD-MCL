@@ -89,7 +89,7 @@ MULTICORE_LOCK = Lock()
 PROGRESS_LOCK = Lock()
 CPUS = br.usable_cpu_count()
 TIMER = helpers.Timer()
-MIN_SIZE_TO_WORKER = 11  # (MIN_SIZE_TO_WORKER**2 - MIN_SIZE_TO_WORKER) / 2  =  55
+MIN_SIZE_TO_WORKER = 15  # (MIN_SIZE_TO_WORKER**2 - MIN_SIZE_TO_WORKER) / 2  =  105
 GAP_OPEN = -5
 GAP_EXTEND = 0
 BLOSUM62 = helpers.make_full_mat(SeqMat(MatrixInfo.blosum62))
@@ -682,7 +682,7 @@ def compare_psi_pred(psi1_df, psi2_df):
 # ################ END PSI-PRED FUNCTIONS ################ #
 
 
-def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progress, outdir, psi_pred_ss2_dfs,
+def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progress, outdir, psi_pred_ss2,
                       steps=1000, chains=3, walkers=2, quiet=True, taxa_sep="-", r_seed=None, convergence=None):
     """
     Run MCMCMC on MCL to find the best orthogroups
@@ -693,7 +693,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     :param sql_broker: Multithread SQL broker that can be queried
     :param progress: Progress class
     :param outdir: where are files being written to?
-    :param psi_pred_ss2_dfs: OrdredDict of all ss2 dataframes with record IDs as key
+    :param psi_pred_ss2: OrdredDict of all ss2 dataframes paths with record IDs as key
     :param steps: How many MCMCMC iterations to run TODO: calculate this on the fly
     :param chains: Number of MCMCMC chains to spin off
     :param walkers: Number of Metropolis-Hastings walkers per chain
@@ -714,7 +714,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
         if not os.path.isdir(os.path.join(outdir, "mcmcmc", master_cluster.name())):
             temp_dir.save(os.path.join(outdir, "mcmcmc", master_cluster.name()))
-        _, alignment = create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, quiet=True)
+        _, alignment = create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=True)
         alignment.write(os.path.join(outdir, "alignments", master_cluster.name()))
         master_cluster.sim_scores.to_csv(os.path.join(outdir, "sim_scores", "%s.scores" % master_cluster.name()),
                                          header=None, index=False, sep="\t")
@@ -765,7 +765,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
     open(os.path.join(temp_dir.path, "max.txt"), "w").close()
     mcmcmc_params = ["%s" % temp_dir.path, seqbuddy, master_cluster,
-                     taxa_sep, sql_broker, psi_pred_ss2_dfs, progress, chains * (walkers + 2)]
+                     taxa_sep, sql_broker, psi_pred_ss2, progress, chains * (walkers + 2)]
     mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, quiet=quiet,
                                    num_walkers=walkers, num_chains=chains, convergence=convergence,
                                    outfiles=os.path.join(temp_dir.path, "mcmcmc_out"), params=mcmcmc_params,
@@ -773,7 +773,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                                    min_max=(worst_possible_score, best_possible_score))
 
     mcmcmc_factory.reset_params([temp_dir.path, seqbuddy, master_cluster,
-                                 taxa_sep, sql_broker, psi_pred_ss2_dfs, progress, chains * (walkers + 2)])
+                                 taxa_sep, sql_broker, psi_pred_ss2, progress, chains * (walkers + 2)])
     mcmcmc_factory.run()
     best_score = pd.DataFrame()
     for indx in range(len(mcmcmc_factory.chains)):
@@ -832,7 +832,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, sql_broker=sql_broker,
                                          progress=progress, outdir=outdir, steps=steps, quiet=quiet, chains=chains,
                                          walkers=walkers, taxa_sep=taxa_sep, convergence=convergence,
-                                         r_seed=rand_gen.randint(1, 999999999999999), psi_pred_ss2_dfs=psi_pred_ss2_dfs)
+                                         r_seed=rand_gen.randint(1, 999999999999999), psi_pred_ss2=psi_pred_ss2)
 
     save_cluster("Sub clusters returned")
     return cluster_list
@@ -874,7 +874,7 @@ def mcmcmc_mcl(args, params):
     """
     inflation, gq, r_seed = args
     exter_tmp_dir, seqbuddy, parent_cluster, taxa_sep, \
-        sql_broker, psi_pred_ss2_dfs, progress, expect_num_results = params
+        sql_broker, psi_pred_ss2, progress, expect_num_results = params
     rand_gen = Random(r_seed)
     mcl_obj = helpers.MarkovClustering(parent_cluster.sim_scores, inflation=inflation, edge_sim_threshold=gq)
     mcl_obj.run()
@@ -890,13 +890,13 @@ def mcmcmc_mcl(args, params):
         sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster_ids]))
         # Queue jobs if appropriate
         if WORKER_DB and os.path.isfile(WORKER_DB) and len(cluster_ids) >= MIN_SIZE_TO_WORKER:
-            p = Process(target=mc_create_all_by_all_scores, args=(sb_copy, [psi_pred_ss2_dfs, sql_broker]))
+            p = Process(target=mc_create_all_by_all_scores, args=(sb_copy, [psi_pred_ss2, sql_broker]))
             p.start()
             seq_ids = sorted([rec.id for rec in sb_copy.records])
             seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
             child_list[seq_id_hash] = [p, indx, cluster_ids]
         else:
-            sim_scores, alb_obj = create_all_by_all_scores(sb_copy, psi_pred_ss2_dfs, sql_broker, quiet=True)
+            sim_scores, alb_obj = create_all_by_all_scores(sb_copy, psi_pred_ss2, sql_broker, quiet=True)
             cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
                               r_seed=rand_gen.randint(1, 999999999999999))
             clusters[indx] = cluster
@@ -1068,17 +1068,17 @@ class HeartBeat(object):
 
 # ################ SCORING FUNCTIONS ################ #
 def mc_create_all_by_all_scores(seqbuddy, args):
-    psi_pred_ss2_dfs, sql_broker = args
-    create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, quiet=True)
+    psi_pred_ss2, sql_broker = args
+    create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=True)
     return
 
 
-def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GAP_OPEN,
+def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OPEN,
                              gap_extend=GAP_EXTEND, quiet=False):
     """
     Generate a multiple sequence alignment and pull out all-by-all similarity graph
     :param seqbuddy: AlignBuddy object
-    :param psi_pred_ss2_dfs: OrderedDict of {seqID: ss2 dataframes}
+    :param psi_pred_ss2: OrderedDict of {seqID: ss2 dataframe path}
     :param sql_broker: Active broker object to search/update SQL database
     :param gap_open: Gap initiation penalty
     :param gap_extend: Gap extension penalty
@@ -1256,14 +1256,14 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
     alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), ALIGNMETHOD, ALIGNPARAMS, quiet=True)
 
     # Need to specify what columns the PsiPred files map to now that there are gaps.
-    psi_pred_ss2_dfs = deepcopy(psi_pred_ss2_dfs)  # Don't modify in place...
+    psi_pred_ss2_dfs = OrderedDict()
 
     for rec in seqbuddy.records:
-        ss_file = psi_pred_ss2_dfs[rec.id]
+        ss_file = read_ss2_file(psi_pred_ss2[rec.id])
         ss_counter = 0
         for indx, residue in enumerate(rec.seq):
             if residue != "-":
-                psi_pred_ss2_dfs[rec.id].set_value(ss_counter, "indx", indx)
+                ss_file.set_value(ss_counter, "indx", indx)
                 ss_counter += 1
         psi_pred_ss2_dfs[rec.id] = ss_file
 
@@ -1402,19 +1402,19 @@ def compare_pairwise_alignment(alb_obj, gap_open, gap_extend):
 
 
 class Orphans(object):
-    def __init__(self, seqbuddy, clusters, sql_broker, psi_pred_ss2_dfs, quiet=False):
+    def __init__(self, seqbuddy, clusters, sql_broker, psi_pred_ss2, quiet=False):
         """
         Organizes all of the orphan prediction/folding logic into a class
         :param seqbuddy: This should include all of the sequences in the entire population being tests
         :param clusters: List of all cluster objects the sequences have currently been grouped into
         :param sql_broker: Open SQLiteBroker object
-        :param psi_pred_ss2_dfs: OrderedDict of all PSI Pred graphs (seq_id: df)
+        :param psi_pred_ss2: OrderedDict of all PSI Pred graph paths (seq_id: df)
         :param quiet: Suppress any terminal output
         """
         self.seqbuddy = seqbuddy
         self.clusters = clusters
         self.sql_broker = sql_broker
-        self.psi_pred_ss2_dfs = psi_pred_ss2_dfs
+        self.psi_pred_ss2 = psi_pred_ss2
         self.num_orphans = 0
         self.small_clusters = OrderedDict()
         self.large_clusters = OrderedDict()
@@ -1442,7 +1442,7 @@ class Orphans(object):
         regex = "^%s$" % "$|^".join(seq_ids)
         Sb.pull_recs(seqbuddy, regex)
 
-        sim_scores, alb_obj = create_all_by_all_scores(seqbuddy, self.psi_pred_ss2_dfs, self.sql_broker, quiet=True)
+        sim_scores, alb_obj = create_all_by_all_scores(seqbuddy, self.psi_pred_ss2, self.sql_broker, quiet=True)
         cluster2database(Cluster(seq_ids, sim_scores), self.sql_broker, alb_obj)
         return sim_scores
 
@@ -1582,7 +1582,7 @@ class Orphans(object):
                 large_cluster.reset_seq_ids(small_cluster.seq_ids + large_cluster.seq_ids)
 
                 seqs = Sb.pull_recs(Sb.make_copy(self.seqbuddy), "^%s$" % "$|^".join(large_cluster.seq_ids))
-                sim_scores, alb_obj = create_all_by_all_scores(seqs, self.psi_pred_ss2_dfs,
+                sim_scores, alb_obj = create_all_by_all_scores(seqs, self.psi_pred_ss2,
                                                                self.sql_broker, quiet=True)
 
                 large_cluster.sim_scores = sim_scores
@@ -1911,7 +1911,7 @@ Continue? y/[n] """ % len(sequences)
 
     psi_pred_files = []
     for record in sequences.records:
-        psi_pred_files.append((record.id, read_ss2_file(os.path.join(in_args.psipred_dir, "%s.ss2" % record.id))))
+        psi_pred_files.append((record.id, os.path.join(in_args.psipred_dir, "%s.ss2" % record.id)))
 
     psi_pred_files = OrderedDict(psi_pred_files)
 
@@ -1992,7 +1992,7 @@ Continue? y/[n] """ % len(sequences)
     final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences, sql_broker=broker,
                                        progress=progress_tracker, outdir=in_args.outdir, steps=in_args.mcmc_steps,
                                        quiet=True, taxa_sep=in_args.taxa_sep, r_seed=in_args.r_seed,
-                                       psi_pred_ss2_dfs=psi_pred_files, chains=MCMC_CHAINS, walkers=in_args.walkers,
+                                       psi_pred_ss2=psi_pred_files, chains=MCMC_CHAINS, walkers=in_args.walkers,
                                        convergence=GELMAN_RUBIN)
     final_clusters = [cluster for cluster in final_clusters if cluster.subgroup_counter == 0]
     run_time.end()
@@ -2026,7 +2026,7 @@ Continue? y/[n] """ % len(sequences)
         # Fold singletons and doublets back into groups.
         if not in_args.suppress_singlet_folding:
             orphans = Orphans(seqbuddy=sequences, clusters=final_clusters,
-                              sql_broker=broker, psi_pred_ss2_dfs=psi_pred_files)
+                              sql_broker=broker, psi_pred_ss2=psi_pred_files)
             orphans.place_orphans()
             final_clusters = orphans.clusters
             with open(os.path.join(in_args.outdir, "orphans.log"), "a") as orphan_log_file:
