@@ -1231,19 +1231,24 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
                     if os.path.isfile(os.path.join(tmp_dir.path, "%s.aln" % seq_id_hash)) \
                     else os.path.join(WORKER_OUT, seq_id_hash)
 
-                alignment = Alb.AlignBuddy("%s.aln" % location, in_format="fasta")
-                sim_scores = pd.read_csv("%s.graph" % location, index_col=False, header=None)
-                sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
-                # Race condition here: a completed job may have been removed from the wrk_db, but still isn't in main db
-                # This could cause a worker to repeat a job, but it shouldn't break anything
-                cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
+                try:
+                    alignment = Alb.AlignBuddy("%s.aln" % location, in_format="fasta")
+                    sim_scores = pd.read_csv("%s.graph" % location, index_col=False, header=None)
+                    sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+                    # Race condition here: a completed job may have been removed from the wrk_db, but still isn't in
+                    # main db. This could cause a worker to repeat a job, but it shouldn't break anything
+                    cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
 
-                # Only remove the files if they have been sent to TempDir
-                if os.path.isfile(os.path.join(tmp_dir.path, "%s.aln" % seq_id_hash)):
-                    for del_file in [".aln", ".graph", ".seqs"]:
-                        os.remove(os.path.join(tmp_dir.path, "%s%s" % (seq_id_hash, del_file)))
-                heartbeat.end()
-                return sim_scores, alignment
+                    # Only remove the files if they have been sent to TempDir
+                    if os.path.isfile(os.path.join(tmp_dir.path, "%s.aln" % seq_id_hash)):
+                        for del_file in [".aln", ".graph", ".seqs"]:
+                            os.remove(os.path.join(tmp_dir.path, "%s%s" % (seq_id_hash, del_file)))
+                    heartbeat.end()
+                    return sim_scores, alignment
+                except FileNotFoundError:
+                    # The race condition hit us... Loop through again and pick up from the main database
+                    print("Lost a file, looping through again")
+                    pass
 
             # Pause for 1 sec up to one minutes, depending on queue size and lag
             # This is to prevent spamming database with requests
