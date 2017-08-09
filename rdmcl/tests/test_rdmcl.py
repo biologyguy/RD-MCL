@@ -652,7 +652,7 @@ def test_create_all_by_all_scores(hf):
 
     seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
     rdmcl.Sb.pull_recs(seqbuddy, "Mle")
-    psi_pred_files = [(rec.id, rdmcl.read_ss2_file("%spsi_pred%s%s.ss2" % (hf.resource_path, hf.sep, rec.id)))
+    psi_pred_files = [(rec.id, "%spsi_pred%s%s.ss2" % (hf.resource_path, hf.sep, rec.id))
                       for rec in seqbuddy.records]
     psi_pred_files = OrderedDict(psi_pred_files)
 
@@ -810,7 +810,7 @@ def test_instantiate_orphan(hf):
     assert orphans.seqbuddy == parent_sb
     assert orphans.clusters == clusters
     assert orphans.sql_broker == broker
-    assert orphans.psi_pred_ss2_dfs == psi_pred_ss2_dfs
+    assert orphans.psi_pred_ss2 == psi_pred_ss2_dfs
     assert orphans.num_orphans == 0
     small_clusters = [clust.seq_ids for clust_name, clust in orphans.small_clusters.items()]
     assert small_clusters == [cluster3.seq_ids, cluster4.seq_ids, cluster5.seq_ids]
