@@ -11,6 +11,7 @@ from copy import copy
 from hashlib import md5
 from multiprocessing import SimpleQueue, Process, Pipe
 from buddysuite.buddy_resources import pretty_time, SafetyValve
+import signal
 
 
 class AttrWrapper(object):
@@ -31,6 +32,9 @@ class ExclusiveConnect(object):
         self.log_path = log_path
         self.priority = 0.5 if not priority else 1000
 
+    def raise_timeout(self, *args):
+        raise EnvironmentError("ExclusiveConnect Lock held for over 60 seconds")
+
     def __enter__(self):
         # Note that there is a pseudo-priority counter
         while True:
@@ -49,8 +53,11 @@ class ExclusiveConnect(object):
                     continue
                 else:
                     raise err
+
         cursor = AttrWrapper(self.connection.cursor())
         cursor.lag = time() - self.start_time
+        signal.signal(signal.SIGALRM, self.raise_timeout)
+        signal.alarm(20)
         return cursor
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -63,6 +70,7 @@ class ExclusiveConnect(object):
             log_output = "%s\n" % "\t".join([str(x) for x in self.log_output])
             with open(self.log_path, "a") as ofile:
                 ofile.write(log_output)
+        signal.alarm(0)
 
 
 class SQLiteBroker(object):
