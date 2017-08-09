@@ -37,7 +37,7 @@ printer = br.DynamicPrint()
 
 
 class Worker(object):
-    def __init__(self, location, heartrate=60, max_wait=120):
+    def __init__(self, location, heartrate=60, max_wait=120, alignmethod="clustalo", alignparams=""):
         self.wrkdb_path = os.path.join(location, "work_db.sqlite")
         self.hbdb_path = os.path.join(location, "heartbeat_db.sqlite")
         self.output = os.path.join(location, ".worker_output")
@@ -60,6 +60,9 @@ class Worker(object):
         self.idle = 1
         self.running = 1
         self.last_heartbeat_from_master = 0
+
+        self.alignmethod = alignmethod
+        self.alignparams = alignparams
 
     def start(self):
         self.split_time = time.time()
@@ -176,8 +179,8 @@ class Worker(object):
                 alignment = Alb.AlignBuddy(str(seqbuddy), in_format="fasta")
             else:
                 printer.write("Creating MSA (%s seqs)" % len(seqbuddy))
-                alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), "mafft",
-                                             params="--globalpair --thread -1", quiet=True)
+                alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), self.alignmethod,
+                                             params=self.alignparams, quiet=True)
 
             # Prepare psipred dataframes
             psipred_dfs = OrderedDict()
@@ -407,6 +410,10 @@ def main():
                         help="Specify how often the worker should check in")
     parser.add_argument("-mw", "--max_wait", action="store", type=int, default=120,
                         help="Specify the maximum time a worker will stay alive without seeing a master")
+    parser.add_argument("-algn_m", "--align_method", action="store", default="clustalo",
+                        help="Specify which alignment algorithm to use (supply full path if not in $PATH)")
+    parser.add_argument("-algn_p", "--align_params", action="store", default="",
+                        help="Supply alignment specific parameters")
     parser.add_argument("-log", "--log", help="Stream log data one line at a time", action="store_true")
     parser.add_argument("-q", "--quiet", help="Suppress all output", action="store_true")
 
@@ -460,7 +467,8 @@ def main():
 
     os.makedirs(worker_output, exist_ok=True)
 
-    wrkr = Worker(in_args.workdb, heartrate=in_args.heart_rate, max_wait=in_args.max_wait)
+    wrkr = Worker(in_args.workdb, heartrate=in_args.heart_rate, max_wait=in_args.max_wait,
+                  alignmethod=in_args.align_method, alignparams=in_args.align_params)
     valve = br.SafetyValve(100)
     while True:
         try:
