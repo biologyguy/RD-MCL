@@ -1087,6 +1087,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
     """
     seq_ids = sorted([rec.id for rec in seqbuddy.records])
     seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
+    tmp_dir = br.TempDir()
 
     if len(seqbuddy) == 1:
         sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
@@ -1211,34 +1212,37 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                     if len(waiting_check) <= 1:
                         cursor.execute("DELETE FROM complete WHERE hash='%s'" % seq_id_hash)
 
+                        # Need to remove these files, but don't want to set up race condition. Store in TempDir for now
+                        for del_file in [".aln", ".graph", ".seqs"]:
+                            try:
+                                shutil.move(os.path.join(WORKER_OUT, "%s%s" % (seq_id_hash, del_file)),
+                                            os.path.join(tmp_dir.path, "%s%s" % (seq_id_hash, del_file)))
+                            except FileNotFoundError as err:
+                                print(err)
+
                     cursor.execute("DELETE FROM waiting WHERE hash='%s' AND master_id=%s"
                                    % (seq_id_hash, heartbeat.master_id))
+
                     finished = True
 
             if finished:
-                try:
-                    alignment = Alb.AlignBuddy("%s/%s.aln" % (WORKER_OUT, seq_id_hash), in_format="fasta")
-                    sim_scores = pd.read_csv("%s/%s.graph" % (WORKER_OUT, seq_id_hash),
-                                             index_col=False, header=None)
-                    sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
-                    cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
+                location = os.path.join(tmp_dir.path, seq_id_hash) \
+                    if os.path.isfile(os.path.join(tmp_dir.path, "%s.aln" % seq_id_hash)) \
+                    else os.path.join(WORKER_OUT, seq_id_hash)
 
-                    try:
-                        os.remove("%s/%s.aln" % (WORKER_OUT, seq_id_hash))
-                        os.remove("%s/%s.graph" % (WORKER_OUT, seq_id_hash))
-                        os.remove("%s/%s.seqs" % (WORKER_OUT, seq_id_hash))
-                    except FileNotFoundError:
-                        print("Couldn't delete the finished files for %s..." % seq_id_hash)
+                alignment = Alb.AlignBuddy("%s.aln" % location, in_format="fasta")
+                sim_scores = pd.read_csv("%s.graph" % location, index_col=False, header=None)
+                sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+                # Race condition here: a completed job may have been removed from the wrk_db, but still isn't in main db
+                # This could cause a worker to repeat a job, but it shouldn't break anything
+                cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
 
-                    heartbeat.end()
-                    return sim_scores, alignment
-
-                except FileNotFoundError:
-                    # Ummmm... Where'd the job go??? Queue it back up.
-                    print("Couldn't find the finished files for %s..." % seq_id_hash)
-                    cursor.execute("INSERT INTO queue (hash, seqs, psi_pred_dir, master_id) "
-                                   "VALUES ('%s', '%s', '%s', %s)" %
-                                   (seq_id_hash, str(seqbuddy), PSIPREDDIR, heartbeat.master_id))
+                # Only remove the files if they have been sent to TempDir
+                if os.path.isfile(os.path.join(tmp_dir.path, "%s.aln" % seq_id_hash)):
+                    for del_file in [".aln", ".graph", ".seqs"]:
+                        os.remove(os.path.join(tmp_dir.path, "%s%s" % (seq_id_hash, del_file)))
+                heartbeat.end()
+                return sim_scores, alignment
 
             time.sleep(5)  # Pause for five seconds to prevent spamming the database with requests
         heartbeat.end()
