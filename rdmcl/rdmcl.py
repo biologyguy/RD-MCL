@@ -89,7 +89,7 @@ MULTICORE_LOCK = Lock()
 PROGRESS_LOCK = Lock()
 CPUS = br.usable_cpu_count()
 TIMER = helpers.Timer()
-MIN_SIZE_TO_WORKER = 15
+MIN_SIZE_TO_WORKER = 11  # (MIN_SIZE_TO_WORKER**2 - MIN_SIZE_TO_WORKER) / 2  =  55
 GAP_OPEN = -5
 GAP_EXTEND = 0
 BLOSUM62 = helpers.make_full_mat(SeqMat(MatrixInfo.blosum62))
@@ -1154,6 +1154,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
             finished = False
             with helpers.ExclusiveConnect(WORKER_DB) as cursor:
                 complete_check = cursor.execute("SELECT * FROM complete WHERE hash='%s'" % seq_id_hash).fetchone()
+                queue_size = cursor.execute("SELECT COUNT(*) FROM queue").fetchone()[0]
                 if not complete_check:
                     # Occasionally check to make sure the job is still active
                     if random() > 0.75:
@@ -1244,7 +1245,10 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2_dfs, sql_broker, gap_open=GA
                 heartbeat.end()
                 return sim_scores, alignment
 
-            time.sleep(5)  # Pause for five seconds to prevent spamming the database with requests
+            # Pause for 1 sec up to one minutes, depending on queue size and lag
+            # This is to prevent spamming database with requests
+            pause_time = 1 + (60 * ((cursor.lag + queue_size) / (60 + cursor.lag + queue_size)))
+            time.sleep(pause_time)
         heartbeat.end()
 
     # If the job is small or couldn't be pushed off on a worker, do it directly
