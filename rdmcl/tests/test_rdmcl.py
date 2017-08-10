@@ -417,7 +417,7 @@ def test_cluster2database(hf):
     assert 'BOL-PanxαA, BOL-PanxαB, BOL-PanxαC, BOL-PanxαD' in response[0][1]   # seq_ids
     assert response[0][2] == '>Seq1\nMPQQCS-SS\n>Seq2\nMPQICMAAS'               # alignment
     assert 'Hca-PanxαG,Lla-PanxαC,0.291912106162889' in response[0][3]          # graph
-    assert response[0][4] == '264.57969700077973'                               # score
+    assert response[0][4] == '264.57969700078'                                  # score
     connect.close()
 
 
@@ -833,6 +833,7 @@ def test_instantiate_orphan(hf):
     assert len(orphans.lrg_cluster_sim_scores) == 20
     broker.close()
 
+
 # ToDo: Broken!
 def test_place_orphans(hf):
     broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
@@ -968,9 +969,11 @@ parser.add_argument("-lwt", "--lock_wait_time", type=int, default=1200, metavar=
 parser.add_argument("-wdb", "--workdb", action="store", default="",
                     help="Specify the location of a sqlite database monitored by workers")
 parser.add_argument("-algn_m", "--align_method", action="store", default="clustalo",
-                          help="Specify which alignment algorithm to use (supply full path if not in $PATH)")
+                    help="Specify which alignment algorithm to use (supply full path if not in $PATH)")
 parser.add_argument("-algn_p", "--align_params", action="store", default="",
-                          help="Supply alignment specific parameters")
+                    help="Supply alignment specific parameters")
+parser.add_argument("-trm", "--trimal", action="append", nargs="+",
+                    help="Specify a list of trimal thresholds to apply (move from more strict to less)")
 parser.add_argument("-f", "--force", action="store_true",
                     help="Overwrite previous run")
 parser.add_argument("-q", "--quiet", action="store_true",

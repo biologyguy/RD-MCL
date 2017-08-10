@@ -610,9 +610,9 @@ def cluster2database(cluster, sql_broker, alignment):
     :return:
     """
     sql_broker.query("""INSERT OR IGNORE INTO data_table (hash, seq_ids, alignment, graph, cluster_score)
-                        VALUES ('{0}', '{1}', '{2}', '{3}', '{4}')
-                        """.format(cluster.seq_id_hash, cluster.seq_ids_str, str(alignment),
-                                   cluster.sim_scores.to_csv(header=None, index=False), cluster.score()))
+                        VALUES (?, ?, ?, ?, ?)
+                        """, (cluster.seq_id_hash, cluster.seq_ids_str, str(alignment),
+                              cluster.sim_scores.to_csv(header=None, index=False), cluster.score(),))
     return
 
 
@@ -805,7 +805,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
             sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
         else:
             # All mcl sub clusters are written to database in mcmcmc_mcl(), so no need to check if exists
-            graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash='{0}'".format(cluster_ids_hash))[0][0]
+            graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash=?", (cluster_ids_hash,))[0][0]
             sim_scores = pd.read_csv(StringIO(graph), index_col=False, header=None)
             sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
 
@@ -909,7 +909,7 @@ def mcmcmc_mcl(args, params):
             if child.is_alive():
                 continue
             else:
-                query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash='%s'" % _name)
+                query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash=?", (_name,))
                 if query and len(query[0]) == 2:
                     sim_scores, alignment = query[0]
                     alignment = Alb.AlignBuddy(alignment, in_format="fasta")
@@ -943,7 +943,7 @@ def mcmcmc_mcl(args, params):
             score_sum = 0
             cluster_ids = []
             for cluster in clusters.split(","):
-                sql_query = sql_broker.query("SELECT seq_ids, graph FROM data_table WHERE hash='%s'" % cluster)
+                sql_query = sql_broker.query("SELECT seq_ids, graph FROM data_table WHERE hash=?", (cluster,))
                 seq_ids = sql_query[0][0].split(", ")
                 cluster_ids.append(sql_query[0][0])
                 if len(seq_ids) == 1:
@@ -1028,8 +1028,8 @@ class HeartBeat(object):
 
             if split_time < time.time() - self.pulse_rate:
                 with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-                    cursor.execute("UPDATE heartbeat SET pulse=%s "
-                                   "WHERE thread_id=%s" % (round(time.time() + cursor.lag), self.master_id))
+                    cursor.execute("UPDATE heartbeat SET pulse=? "
+                                   "WHERE thread_id=?", (round(time.time() + cursor.lag), self.master_id,))
                 split_time = time.time()
             time.sleep(random())
         return
@@ -1043,7 +1043,7 @@ class HeartBeat(object):
         tmp_file.write("Running")
         with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
             cursor.execute("INSERT INTO heartbeat (thread_type, pulse) "
-                           "VALUES ('master', %s)" % round(time.time()))
+                           "VALUES ('master', ?)", (round(time.time()),))
             self.master_id = cursor.lastrowid
         p = Process(target=self._run, args=(tmp_file.path,))
         p.daemon = 1
@@ -1061,7 +1061,7 @@ class HeartBeat(object):
             continue
         self.running_process = None
         with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-            cursor.execute("DELETE FROM heartbeat WHERE thread_id=%s" % self.master_id)
+            cursor.execute("DELETE FROM heartbeat WHERE thread_id=?", (self.master_id,))
         self.master_id = None
         return
 
@@ -1096,7 +1096,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
         return sim_scores, alignment
 
     # Grab from the database first, if the data exists there already
-    query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash='%s'" % seq_id_hash)
+    query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash=?", (seq_id_hash,))
     if query and len(query[0]) == 2:
         sim_scores, alignment = query[0]
         sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None)
@@ -1105,6 +1105,9 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
 
     # Try to feed the job to independent workers
     if WORKER_DB and os.path.isfile(WORKER_DB) and len(seq_ids) > MIN_SIZE_TO_WORKER:
+        # Job id can't be the same as seq_id_hash, because different alignment options may be involved
+        job_id = "".join([str(x) for x in [seq_id_hash, gap_open, gap_extend, ALIGNMETHOD, ALIGNPARAMS, TRIMAL]])
+        job_id = helpers.md5_hash(job_id)
         heartbeat = HeartBeat(HEARTBEAT_DB, MASTER_PULSE)
         heartbeat.start()
 
@@ -1118,50 +1121,48 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
         if workers:
             with helpers.ExclusiveConnect(WORKER_DB) as cursor:
                 # Make sure the job hasn't already been submitted or completed)
-                complete_check = cursor.execute("SELECT hash FROM complete WHERE hash='%s'" % seq_id_hash).fetchone()
-                queue_check = cursor.execute("SELECT hash FROM queue WHERE hash='%s'" % seq_id_hash).fetchone()
-                processing_check = cursor.execute("SELECT hash FROM processing WHERE hash='%s'"
-                                                  % seq_id_hash).fetchone()
+                complete_check = cursor.execute("SELECT hash FROM complete WHERE hash=?", (job_id,)).fetchone()
+                queue_check = cursor.execute("SELECT hash FROM queue WHERE hash=?", (job_id,)).fetchone()
+                processing_check = cursor.execute("SELECT hash FROM processing WHERE hash=?", (job_id,)).fetchone()
 
                 if not complete_check and not queue_check and not processing_check:
-                    if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, seq_id_hash)):
-                        seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, seq_id_hash), out_format="fasta")
-                    cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id) "
-                                   "VALUES ('%s', '%s', %s)" %
-                                   (seq_id_hash, PSIPREDDIR, heartbeat.master_id))
+                    if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, job_id)):
+                        seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, job_id), out_format="fasta")
+                    cursor.execute("INSERT INTO queue "
+                                   "(hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
+                                   "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                   (job_id, PSIPREDDIR, heartbeat.master_id,
+                                    ALIGNMETHOD, ALIGNPARAMS, " ".join([str(x) for x in TRIMAL]),
+                                    GAP_OPEN, GAP_EXTEND,))
 
-                cursor.execute("INSERT INTO waiting (hash, master_id) VALUES ('%s', %s)"
-                               % (seq_id_hash, heartbeat.master_id))
+                cursor.execute("INSERT INTO waiting (hash, master_id) VALUES (?, ?)", (job_id, heartbeat.master_id,))
         else:
             run_worker = False
 
         while run_worker:
-            query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash='%s'" % seq_id_hash)
+            query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash=?", (job_id,))
             if query and len(query[0]) == 2:
                 sim_scores, alignment = query[0]
                 sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None)
                 sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
                 with helpers.ExclusiveConnect(WORKER_DB) as cursor:
-                    waiting_check = cursor.execute("SELECT * FROM waiting WHERE hash='%s'" % seq_id_hash).fetchall()
+                    waiting_check = cursor.execute("SELECT * FROM waiting WHERE hash=?", (job_id,)).fetchall()
                     if len(waiting_check) <= 1:
-                        cursor.execute("DELETE FROM complete WHERE hash='%s'" % seq_id_hash)
-                    cursor.execute("DELETE FROM waiting WHERE hash='%s' AND master_id=%s"
-                                   % (seq_id_hash, heartbeat.master_id))
+                        cursor.execute("DELETE FROM complete WHERE hash=?", (job_id,))
+                    cursor.execute("DELETE FROM waiting WHERE hash=? AND master_id=?", (job_id, heartbeat.master_id,))
                 heartbeat.end()
                 return sim_scores, Alb.AlignBuddy(alignment, in_format="fasta")
 
             ######################
             finished = False
             with helpers.ExclusiveConnect(WORKER_DB) as cursor:
-                complete_check = cursor.execute("SELECT * FROM complete WHERE hash='%s'" % seq_id_hash).fetchone()
+                complete_check = cursor.execute("SELECT * FROM complete WHERE hash=?", (job_id,)).fetchone()
                 queue_size = cursor.execute("SELECT COUNT(*) FROM queue").fetchone()[0]
                 if not complete_check:
                     # Occasionally check to make sure the job is still active
                     if random() > 0.75:
-                        queue_check = cursor.execute("SELECT * FROM queue "
-                                                     "WHERE hash='%s'" % seq_id_hash).fetchone()
-                        processing_check = cursor.execute("SELECT * FROM processing "
-                                                          "WHERE hash='%s'" % seq_id_hash).fetchone()
+                        queue_check = cursor.execute("SELECT * FROM queue WHERE hash=?", (job_id,)).fetchone()
+                        processing_check = cursor.execute("SELECT * FROM processing WHERE hash=?", (job_id,)).fetchone()
 
                         with helpers.ExclusiveConnect(HEARTBEAT_DB, priority=True) as hb_cursor:
                             min_pulse = time.time() - (MAX_WORKER_WAIT * 3) - hb_cursor.lag
@@ -1171,11 +1172,11 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
 
                         # No workers are still around. Time to kill everything and move on serially
                         if not worker_heartbeat_check:
-                            cursor.execute("DELETE FROM queue WHERE master_id=%s" % heartbeat.master_id)
-                            cursor.execute("DELETE FROM processing WHERE master_id=%s" % heartbeat.master_id)
-                            cursor.execute("DELETE FROM waiting WHERE master_id=%s" % heartbeat.master_id)
+                            cursor.execute("DELETE FROM queue WHERE master_id=?", (heartbeat.master_id,))
+                            cursor.execute("DELETE FROM processing WHERE master_id=?", (heartbeat.master_id,))
+                            cursor.execute("DELETE FROM waiting WHERE master_id=?", (heartbeat.master_id,))
                             try:
-                                os.remove("%s/%s.seqs" % (WORKER_OUT, seq_id_hash))
+                                os.remove("%s/%s.seqs" % (WORKER_OUT, job_id))
                             except FileNotFoundError:
                                 pass
                             break
@@ -1187,13 +1188,14 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
                             worker_id = processing_check[1]
                             if worker_id not in workers:
                                 # Doesn't look like it... Might as well queue it back up
-                                if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, seq_id_hash)):
-                                    seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, seq_id_hash), out_format="fasta")
+                                if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, job_id)):
+                                    seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, job_id), out_format="fasta")
 
-                                cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id) "
-                                               "VALUES ('%s', '%s', %s)" %
-                                               (seq_id_hash, PSIPREDDIR, heartbeat.master_id))
-                                cursor.execute("DELETE FROM processing WHERE hash='%s'" % seq_id_hash)
+                                cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id, align_m, align_p,"
+                                               " trimal, gap_open, gap_extend) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                               (job_id, PSIPREDDIR, heartbeat.master_id, ALIGNMETHOD, ALIGNPARAMS,
+                                                " ".join([str(x) for x in TRIMAL]), GAP_OPEN, GAP_EXTEND,))
+                                cursor.execute("DELETE FROM processing WHERE hash=?", (job_id,))
 
                         elif queue_check:
                             pass
@@ -1201,35 +1203,33 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
                         else:
                             # Ummmm... Where'd the job go??? Queue it back up if it really seems to have vanished
                             print("We had a vanish!")
-                            if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, seq_id_hash)):
-                                seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, seq_id_hash), out_format="fasta")
+                            if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, job_id)):
+                                seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, job_id), out_format="fasta")
 
                             cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id) "
-                                           "VALUES ('%s', '%s', %s)" %
-                                           (seq_id_hash, PSIPREDDIR, heartbeat.master_id))
+                                           "VALUES (?, ?, ?)", (job_id, PSIPREDDIR, heartbeat.master_id,))
 
                 else:
-                    waiting_check = cursor.execute("SELECT * FROM waiting WHERE hash='%s'" % seq_id_hash).fetchall()
+                    waiting_check = cursor.execute("SELECT * FROM waiting WHERE hash=?", (job_id,)).fetchall()
                     if len(waiting_check) <= 1:
-                        cursor.execute("DELETE FROM complete WHERE hash='%s'" % seq_id_hash)
+                        cursor.execute("DELETE FROM complete WHERE hash=?", (job_id,))
 
                         # Need to remove these files, but don't want to set up race condition. Store in TempDir for now
                         for del_file in [".aln", ".graph", ".seqs"]:
                             try:
-                                shutil.move(os.path.join(WORKER_OUT, "%s%s" % (seq_id_hash, del_file)),
-                                            os.path.join(tmp_dir.path, "%s%s" % (seq_id_hash, del_file)))
+                                shutil.move(os.path.join(WORKER_OUT, "%s%s" % (job_id, del_file)),
+                                            os.path.join(tmp_dir.path, "%s%s" % (job_id, del_file)))
                             except FileNotFoundError as err:
                                 print(err)
 
-                    cursor.execute("DELETE FROM waiting WHERE hash='%s' AND master_id=%s"
-                                   % (seq_id_hash, heartbeat.master_id))
+                    cursor.execute("DELETE FROM waiting WHERE hash=? AND master_id=?", (job_id, heartbeat.master_id,))
 
                     finished = True
 
             if finished:
-                location = os.path.join(tmp_dir.path, seq_id_hash) \
-                    if os.path.isfile(os.path.join(tmp_dir.path, "%s.aln" % seq_id_hash)) \
-                    else os.path.join(WORKER_OUT, seq_id_hash)
+                location = os.path.join(tmp_dir.path, job_id) \
+                    if os.path.isfile(os.path.join(tmp_dir.path, "%s.aln" % job_id)) \
+                    else os.path.join(WORKER_OUT, job_id)
 
                 try:
                     alignment = Alb.AlignBuddy("%s.aln" % location, in_format="fasta")
@@ -1240,9 +1240,9 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
                     cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
 
                     # Only remove the files if they have been sent to TempDir
-                    if os.path.isfile(os.path.join(tmp_dir.path, "%s.aln" % seq_id_hash)):
+                    if os.path.isfile(os.path.join(tmp_dir.path, "%s.aln" % job_id)):
                         for del_file in [".aln", ".graph", ".seqs"]:
-                            os.remove(os.path.join(tmp_dir.path, "%s%s" % (seq_id_hash, del_file)))
+                            os.remove(os.path.join(tmp_dir.path, "%s%s" % (job_id, del_file)))
                     heartbeat.end()
                     return sim_scores, alignment
                 except FileNotFoundError:
@@ -1844,7 +1844,7 @@ Continue? y/[n] """ % len(sequences)
     seq_ids_hash = helpers.md5_hash(seq_ids_str)
 
     # Check if job has been run already
-    if broker.query("SELECT (hash) FROM data_table WHERE hash='{0}'".format(seq_ids_hash)) == seq_ids_hash:
+    if broker.query("SELECT (hash) FROM data_table WHERE hash=?", (seq_ids_hash,)) == seq_ids_hash:
         logging.warning("RESUME: This output directory was previous used for an identical RD-MCL run.\n"
                         "        All cached resources will be reused.")
 
