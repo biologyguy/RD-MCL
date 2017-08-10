@@ -103,7 +103,7 @@ MAX_WORKER_WAIT = 240
 MASTER_ID = None
 MASTER_PULSE = 60
 PSIPREDDIR = ""
-
+TRIMAL = ["all", 0.5, 0.75, 0.9, 0.95, "clean"]
 
 ambiguous_X = {"A": 0, "R": -1, "N": -1, "D": -1, "C": -2, "Q": -1, "E": -1, "G": -1, "H": -1, "I": -1, "L": -1,
                "K": -1, "M": -1, "F": -1, "P": -2, "S": 0, "T": 0, "W": -2, "Y": -1, "V": -1}
@@ -1275,7 +1275,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
     # Scores seem to be improved by removing gaps. ToDo: Need to test this explicitly for the paper
     # Only remove columns up to a 50% reduction in average seq length and only if all sequences are retained
     ave_seq_length = Sb.ave_seq_length(seqbuddy)
-    for threshold in ["all", 0.5, 0.75, 0.9, 0.95, "clean"]:
+    for threshold in TRIMAL:
         align_copy = Alb.trimal(Alb.make_copy(alignment), threshold=threshold)
         cleaned_seq_lengths = Sb.ave_seq_length(Sb.clean_seq(Sb.SeqBuddy(str(align_copy))))
         if len(align_copy.records()) == len(seqbuddy) and cleaned_seq_lengths / ave_seq_length >= 0.5:
@@ -1702,6 +1702,8 @@ def argparse_init():
                            help="Do not check for or merge singlets")
     dev_flags.add_argument("-sit", "--suppress_iteration", action="store_true",
                            help="Only check for cliques and orphans once")
+    dev_flags.add_argument("-trm", "--trimal", action="append", nargs="+",
+                           help="Specify a list of trimal thresholds to apply (move from more strict to less)")
 
     # Misc
     misc = parser.add_argument_group(title="\033[1mMisc options\033[m")
@@ -1919,6 +1921,17 @@ Continue? y/[n] """ % len(sequences)
         psi_pred_files.append((record.id, os.path.join(in_args.psipred_dir, "%s.ss2" % record.id)))
 
     psi_pred_files = OrderedDict(psi_pred_files)
+
+    global TRIMAL
+    if in_args.trimal:
+        in_args.trimal = in_args.trimal[0]
+        for indx, arg in enumerate(in_args.trimal):
+            try:
+                in_args.trimal[indx] = float(in_args.trimal[indx])
+            except ValueError:
+                pass
+        TRIMAL = in_args.trimal
+        logging.info("\nOverriding TRIMAL values: %s" % TRIMAL)
 
     # Initial alignment
     logging.warning("\n** All-by-all graph **")
