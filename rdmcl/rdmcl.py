@@ -1265,7 +1265,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
     # Need to specify what columns the PsiPred files map to now that there are gaps.
     psi_pred_ss2_dfs = OrderedDict()
 
-    for rec in seqbuddy.records:
+    for rec in alignment.records_iter():
         ss_file = read_ss2_file(psi_pred_ss2[rec.id])
         ss_counter = 0
         for indx, residue in enumerate(rec.seq):
@@ -1279,8 +1279,9 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
     ave_seq_length = Sb.ave_seq_length(seqbuddy)
     for threshold in TRIMAL:
         align_copy = Alb.trimal(Alb.make_copy(alignment), threshold=threshold)
-        cleaned_seq_lengths = Sb.ave_seq_length(Sb.clean_seq(Sb.SeqBuddy(str(align_copy))))
-        if len(align_copy.records()) == len(seqbuddy) and cleaned_seq_lengths / ave_seq_length >= 0.5:
+        cleaned_seqs = Sb.clean_seq(Sb.SeqBuddy(str(align_copy)))
+        cleaned_seqs = Sb.delete_small(cleaned_seqs, 1)
+        if len(alignment.records()) == len(cleaned_seqs) and Sb.ave_seq_length(cleaned_seqs) / ave_seq_length >= 0.5:
             alignment = align_copy
             break
 
