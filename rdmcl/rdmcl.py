@@ -1206,8 +1206,10 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
                             if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, job_id)):
                                 seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, job_id), out_format="fasta")
 
-                            cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id) "
-                                           "VALUES (?, ?, ?)", (job_id, PSIPREDDIR, heartbeat.master_id,))
+                            cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id, align_m, align_p,"
+                                           " trimal, gap_open, gap_extend) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                           (job_id, PSIPREDDIR, heartbeat.master_id, ALIGNMETHOD, ALIGNPARAMS,
+                                            " ".join([str(x) for x in TRIMAL]), GAP_OPEN, GAP_EXTEND,))
 
                 else:
                     waiting_check = cursor.execute("SELECT * FROM waiting WHERE hash=?", (job_id,)).fetchall()
@@ -1336,7 +1338,9 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
 
 
 def mc_score_sequences(seq_pairs, args):
-    # Calculate the best possible scores, and divide by the observed scores
+    # ##################################################################### #
+    # Calculate the best possible scores, and divide by the observed scores #
+    # ##################################################################### #
     alb_obj, psi_pred_ss2_dfs, output_dir, gap_open, gap_extend = args
     file_name = helpers.md5_hash(str(seq_pairs))
     ofile = open(os.path.join(output_dir, file_name), "w")
@@ -1350,10 +1354,6 @@ def mc_score_sequences(seq_pairs, args):
         subs_mat_score = compare_pairwise_alignment(alb_copy, gap_open, gap_extend)
 
         # PSI PRED comparison
-        alb_copy = Sb.SeqBuddy(alb_copy.records())
-        Sb.clean_seq(alb_copy)
-        # assert len(psi_pred_ss2_dfs[id1]) == len(alb_copy.records[0].seq)
-        # assert len(psi_pred_ss2_dfs[id2]) == len(alb_copy.records[1].seq)
         ss_score = compare_psi_pred(psi_pred_ss2_dfs[id1], psi_pred_ss2_dfs[id2])
         ofile.write("\n%s,%s,%s,%s" % (id1, id2, subs_mat_score, ss_score))
     ofile.close()
