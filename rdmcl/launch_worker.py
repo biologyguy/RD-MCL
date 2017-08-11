@@ -81,6 +81,7 @@ class Worker(object):
             if time.time() > self.last_heartbeat:
                 # Make sure there are some masters still kicking around
                 self.last_heartbeat = self.heartrate + time.time()
+                terminate = False
                 with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
                     cursor.execute("INSERT OR REPLACE INTO heartbeat (thread_id, thread_type, pulse) "
                                    "VALUES (?, 'worker', ?)", (self.id, round(time.time() + cursor.lag),))
@@ -90,13 +91,11 @@ class Worker(object):
                                        "AND pulse>?", (time.time() - self.max_wait - cursor.lag,))
                         masters = cursor.fetchall()
                         if not masters:
-                            printer.write("Terminating Worker_%s after %s of master inactivity.\n"
-                                          "Spent %s%% of time idle." % (self.id, br.pretty_time(self.max_wait), idle))
-                            printer.new_line(1)
-                            cursor.execute("DELETE FROM heartbeat WHERE thread_id=?", (self.id,))
-                            break
+                            terminate = True
                         self.last_heartbeat_from_master = time.time()
-
+                if terminate:
+                    self.terminate("%s of maser inactivity (spent %s%% time idle)" %
+                                   (br.pretty_time(self.max_wait), idle))
             max_wait = self.max_wait
             with WORKERLOCK:
                 # Check MasterClear signal (file in working dir with # of second specified for master heartbeat)
@@ -195,13 +194,7 @@ class Worker(object):
             for rec in alignment.records_iter():
                 psipred_file = "%s/%s.ss2" % (psipred_dir, rec.id)
                 if not os.path.isfile(psipred_file):
-                    printer.write("Terminating Worker_%s because psi file %s not found." % (self.id, psipred_file))
-                    printer.new_line(1)
-                    with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-                        cursor.execute('DELETE FROM heartbeat WHERE thread_id=?', (self.id,))
-
-                    with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
-                        cursor.execute("DELETE FROM processing WHERE hash=?", (id_hash,))
+                    self.terminate("missing psi ss2 file (%s)" % psipred_file)
                     breakout = True
                     break
                 psipred_dfs[rec.id] = rdmcl.read_ss2_file(psipred_file)
@@ -314,11 +307,21 @@ class Worker(object):
         if os.path.isfile("Worker_%s" % self.id):
             os.remove("Worker_%s" % self.id)
         else:
-            printer.write("Terminating Worker_%s because check file was deleted." % self.id)
-            printer.new_line(1)
-            with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-                cursor.execute('DELETE FROM heartbeat WHERE thread_id=?', (self.id,))
+            self.terminate("deleted check file")
         return
+
+    def terminate(self, message):
+        printer.write("Terminating Worker_%s because of %s." % (self.id, message))
+        printer.new_line(1)
+        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+            cursor.execute('DELETE FROM heartbeat WHERE thread_id=?', (self.id,))
+        with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+            cursor.execute("DELETE FROM processing WHERE worker_id=?", (self.id,))
+        if os.path.isfile(self.data_file):
+            os.remove(self.data_file)
+        if os.path.isfile("Worker_%s" % self.id):
+            os.remove("Worker_%s" % self.id)
+        sys.exit()
 
 
 def score_sequences(data, func_args):
@@ -430,16 +433,7 @@ def main():
             break
 
         except KeyboardInterrupt:
-            with helpers.ExclusiveConnect(wrkr.wrkdb_path) as cursor:
-                cursor.execute("DELETE FROM processing WHERE worker_id=?", (wrkr.id,))
-            with helpers.ExclusiveConnect(wrkr.hbdb_path) as cursor:
-                cursor.execute("DELETE FROM heartbeat WHERE thread_id=?", (wrkr.id,))
-            if os.path.isfile("Worker_%s" % wrkr.id):
-                os.remove("Worker_%s" % wrkr.id)
-            if os.path.isfile(wrkr.data_file):
-                os.remove(wrkr.data_file)
-            printer.write("Terminating Worker_%s because of KeyboardInterrupt." % wrkr.id)
-            printer.new_line(1)
+            wrkr.terminate("KeyboardInterrupt")
             break
 
         except Exception as err:
@@ -447,16 +441,7 @@ def main():
                 cursor.execute("DELETE FROM processing WHERE worker_id=?", (wrkr.id,))
 
             if "Too many Worker crashes detected" in str(err):
-                if os.path.isfile("Worker_%s" % wrkr.id):
-                    os.remove("Worker_%s" % wrkr.id)
-                if os.path.isfile(wrkr.data_file):
-                    os.remove(wrkr.data_file)
-
-                with helpers.ExclusiveConnect(wrkr.hbdb_path) as cursor:
-                    cursor.execute("DELETE FROM heartbeat WHERE thread_id=?", (wrkr.id))
-
-                printer.write("Terminating Worker_%s because of too many Worker crashes." % wrkr.id)
-                printer.new_line(1)
+                wrkr.terminate("too many Worker crashes")
                 break
 
             tb = "%s: %s\n\n" % (type(err).__name__, err)
