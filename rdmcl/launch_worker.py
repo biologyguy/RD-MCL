@@ -320,10 +320,14 @@ class Worker(object):
 
 
 def score_sequences(data, func_args):
+    # ##################################################################### #
+    # Calculate the best possible scores, and divide by the observed scores #
+    # ##################################################################### #
+
     results = ["" for _ in data]
     alb_obj, gap_open, gap_extend, output_file, worker_id, hbdb_path = func_args
     for indx, recs in enumerate(data):
-        align = Alb.make_copy(alb_obj)
+        alb_obj_copy = Alb.make_copy(alb_obj)
         id1, id2, psi1_df, psi2_df = recs
 
         # Occasionally update the heartbeat database so masters know there is still life
@@ -332,71 +336,15 @@ def score_sequences(data, func_args):
                 cursor.execute("INSERT OR REPLACE INTO heartbeat (thread_id, thread_type, pulse) "
                                "VALUES (?, 'worker', ?)", (worker_id, round(time.time() + cursor.lag),))
 
-        # Calculate the best possible scores, and divide by the observed scores
         id_regex = "^%s$|^%s$" % (id1, id2)
 
         # Alignment comparison
-        Alb.pull_records(align, id_regex)
+        alb_obj_copy = Alb.pull_records(alb_obj_copy, id_regex)
 
-        observed_score = 0
-        observed_len = align.lengths()[0]
-        seq1_best = 0
-        seq1_len = 0
-        seq2_best = 0
-        seq2_len = 0
-        seq1, seq2 = align.records()
-        prev_aa1 = "-"
-        prev_aa2 = "-"
-
-        for aa_pos in range(observed_len):
-            aa1 = seq1.seq[aa_pos]
-            aa2 = seq2.seq[aa_pos]
-
-            if aa1 != "-":
-                seq1_best += rdmcl.BLOSUM62[aa1, aa1]
-                seq1_len += 1
-            if aa2 != "-":
-                seq2_best += rdmcl.BLOSUM62[aa2, aa2]
-                seq2_len += 1
-            if aa1 == "-" or aa2 == "-":
-                if prev_aa1 == "-" or prev_aa2 == "-":
-                    observed_score += gap_extend
-                else:
-                    observed_score += gap_open
-            else:
-                observed_score += rdmcl.BLOSUM62[aa1, aa2]
-            prev_aa1 = str(aa1)
-            prev_aa2 = str(aa2)
-
-        # Calculate average per-residue log-odds ratios for both best possible alignments and observed
-        # Note: The best score range is 4 to 11. Possible observed range is -4 to 11.
-        observed_score = (observed_score / observed_len)
-
-        seq1_best = (seq1_best / seq1_len)
-        seq1_score = observed_score / seq1_best
-
-        seq2_best = (seq2_best / seq2_len)
-        seq2_score = observed_score / seq2_best
-
-        subs_mat_score = (seq1_score + seq2_score) / 2
+        subs_mat_score = rdmcl.compare_pairwise_alignment(alb_obj_copy, gap_open, gap_extend)
 
         # PSI PRED comparison
-        align = Sb.SeqBuddy(align.records())
-        Sb.clean_seq(align)
-        num_gaps = 0
-        ss_score = 0
-        for row1 in psi1_df.itertuples():
-            row2 = psi2_df.loc[psi2_df["indx"] == row1.indx]
-            if not row2.empty:
-                row_score = 0
-                row_score += 1 - abs(float(row1.coil_prob) - float(row2.coil_prob))
-                row_score += 1 - abs(float(row1.helix_prob) - float(row2.helix_prob))
-                row_score += 1 - abs(float(row1.sheet_prob) - float(row2.sheet_prob))
-                ss_score += row_score / 3
-            else:
-                num_gaps += 1
-        align_len = len(psi2_df) + num_gaps
-        ss_score /= align_len
+        ss_score = rdmcl.compare_psi_pred(psi1_df, psi2_df)
         results[indx] = "\n%s,%s,%s,%s" % (id1, id2, subs_mat_score, ss_score)
 
     with WORKERLOCK:

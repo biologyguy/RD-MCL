@@ -1083,7 +1083,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
     :param gap_open: Gap initiation penalty
     :param gap_extend: Gap extension penalty
     :param quiet: Supress multicore output
-    :return:
+    :return: sim_scores, Alb.AlignBuddy
     """
     seq_ids = sorted([rec.id for rec in seqbuddy.records])
     seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
