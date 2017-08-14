@@ -135,7 +135,7 @@ class Worker(object):
 
                         complete_jobs = cursor.execute("SELECT hash FROM complete").fetchall()
                         for job_hash in complete_jobs:
-                            if not cursor.execute("SELECT hash FROM waiting WHERE hash=?", (job_hash,)).fetchall():
+                            if not cursor.execute("SELECT hash FROM waiting WHERE hash=?", (job_hash[0],)).fetchall():
                                 cursor.execute("DELETE FROM complete WHERE hash=?", (job_hash,))
 
                     if master_ids:
@@ -430,7 +430,7 @@ def main():
 
         except Exception as err:
             with helpers.ExclusiveConnect(wrkr.wrkdb_path) as cursor:
-                cursor.execute("DELETE FROM processing WHERE worker_id=?", (wrkr.id,))
+                cursor.execute("DELETE FROM processing WHERE worker_id=?", (wrkr.heartbeat.id,))
 
             if "Too many Worker crashes detected" in str(err):
                 wrkr.terminate("too many Worker crashes")
@@ -443,7 +443,7 @@ def main():
                 else:
                     _line = re.sub('"{0}.*{0}(.*)?"'.format(os.sep), r'"\1"', _line)
                 tb += _line
-            print("\nWorker_%s crashed!\n" % wrkr.id, tb)
+            print("\nWorker_%s crashed!\n" % wrkr.heartbeat.id, tb)
 
 
 if __name__ == '__main__':
