@@ -35,7 +35,7 @@ import argparse
 import sqlite3
 from io import StringIO
 from subprocess import Popen, PIPE, check_output, CalledProcessError
-from multiprocessing import Lock, Pipe, Process
+from multiprocessing import Lock, Process
 from random import choice, Random, randint, random
 from math import ceil, log2
 from collections import OrderedDict
@@ -509,7 +509,7 @@ class Cluster(object):
                 outer_scores = outer_scores[((outer_scores.seq1.isin(clique_ids))
                                              & (outer_scores.seq2.isin(clique_ids) == False)) |  # Note the == must stay
                                             ((outer_scores.seq2.isin(clique_ids))
-                                             & (outer_scores.seq1.isin(clique_ids) == False))]  # Note the == must stay
+                                             & (outer_scores.seq1.isin(clique_ids) == False))]   # Note the == must stay
 
                 # if all sim scores in a group are identical, we can't get a KDE. Fix by perturbing the scores a little.
                 clique_scores = self.perturb(clique_scores)
@@ -1030,8 +1030,8 @@ class HeartBeat(object):
 
                 if split_time < time.time() - self.pulse_rate:
                     with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-                        cursor.execute("INSERT or REPLACE INTO heartbeat (thread_id, thread_type, pulse) "
-                                       "VALUES (?, ?, ?)", (self.id, self.thread_type, round(time.time() + cursor.lag),))
+                        cursor.execute("INSERT or REPLACE INTO heartbeat (thread_id, thread_type, pulse) VALUES"
+                                       " (?, ?, ?)", (self.id, self.thread_type, round(time.time() + cursor.lag),))
                     split_time = time.time()
                 time.sleep(random())
         except KeyboardInterrupt:
@@ -1081,7 +1081,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
                              gap_extend=GAP_EXTEND, quiet=False):
     """
     Generate a multiple sequence alignment and pull out all-by-all similarity graph
-    :param seqbuddy: AlignBuddy object
+    :param seqbuddy: SeqBuddy object
     :param psi_pred_ss2: OrderedDict of {seqID: ss2 dataframe path}
     :param sql_broker: Active broker object to search/update SQL database
     :param gap_open: Gap initiation penalty
