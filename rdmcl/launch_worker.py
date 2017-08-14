@@ -45,16 +45,10 @@ class Worker(object):
         self.masterclear_path = os.path.split(self.wrkdb_path)[0]
         self.masterclear_path = os.path.join(self.masterclear_path, "MasterClear")
         self.heartrate = heartrate
-        self.last_heartbeat = self.heartrate + time.time()
+        self.heartbeat = rdmcl.HeartBeat(self.hbdb_path, self.heartrate, thread_type="worker")
         self.max_wait = max_wait
-        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-            cursor.execute("INSERT INTO heartbeat (thread_type, pulse) "
-                           "VALUES ('worker', ?)", (round(time.time() + cursor.lag),))
-            self.id = cursor.lastrowid
-        with open("Worker_%s" % self.id, "w") as ofile:
-            ofile.write("To terminate this Worker, simply delete this file.")
         self.cpus = br.cpu_count() - 1
-        self.data_file = ".Worker_%s.dat" % self.id
+        self.data_file = None
         self.start_time = time.time()
         self.split_time = 0
         self.idle = 1
@@ -64,47 +58,52 @@ class Worker(object):
     def start(self):
         self.split_time = time.time()
         self.start_time = time.time()
+
+        self.heartbeat.start()
+        with open("Worker_%s" % self.heartbeat.id, "w") as ofile:
+            ofile.write("To terminate this Worker, simply delete this file.")
+        self.data_file = ".Worker_%s.dat" % self.heartbeat.id
+
         self.last_heartbeat_from_master = time.time()
-        printer.write("Starting Worker_%s" % self.id)
+        printer.write("Starting Worker_%s" % self.heartbeat.id)
         printer.new_line(1)
 
         # Instantiate some variables
         seqs, psipred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend = ["", "", 0, "", "", "", 0, 0]
 
         idle_countdown = 1
-        while os.path.isfile("Worker_%s" % self.id):
+        while os.path.isfile("Worker_%s" % self.heartbeat.id):
             idle = round(100 * self.idle / (self.idle + self.running), 2)
             if not idle_countdown:
                 printer.write("Idle %s%%" % idle)
                 idle_countdown = 5
 
-            if time.time() > self.last_heartbeat:
-                # Make sure there are some masters still kicking around
-                self.last_heartbeat = self.heartrate + time.time()
+            # Make sure there are some masters still kicking around
+            if time.time() - self.last_heartbeat_from_master > self.max_wait:
                 terminate = False
                 with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-                    cursor.execute("INSERT OR REPLACE INTO heartbeat (thread_id, thread_type, pulse) "
-                                   "VALUES (?, 'worker', ?)", (self.id, round(time.time() + cursor.lag),))
-
-                    if time.time() - self.last_heartbeat_from_master > self.max_wait:
-                        cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
-                                       "AND pulse>?", (time.time() - self.max_wait - cursor.lag,))
-                        masters = cursor.fetchall()
-                        if not masters:
-                            terminate = True
-                        self.last_heartbeat_from_master = time.time()
+                    cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
+                                   "AND pulse>?", (time.time() - self.max_wait - cursor.lag,))
+                    masters = cursor.fetchall()
+                    if not masters:
+                        terminate = True
+                    self.last_heartbeat_from_master = time.time()
                 if terminate:
                     self.terminate("%s of maser inactivity (spent %s%% time idle)" %
                                    (br.pretty_time(self.max_wait), idle))
-            max_wait = self.max_wait
+
+            max_wait = int(self.max_wait)
             with WORKERLOCK:
                 # Check MasterClear signal (file in working dir with # of second specified for master heartbeat)
                 if os.path.isfile(self.masterclear_path):
                     with open(self.masterclear_path, "r") as ifile:
                         try:
                             max_wait = int(ifile.read())
-                        except ValueError:
-                            pass
+                            printer.write("MasterClear signal %s" % max_wait)
+                            printer.new_line(1)
+                        except ValueError as err:
+                            printer.write(str(err))
+                            printer.new_line(1)
                     os.remove(self.masterclear_path)
                 else:
                     pass
@@ -121,38 +120,38 @@ class Worker(object):
                     if dead_masters:
                         dead_masters = [str(x[0]) for x in dead_masters]
                         dead_masters = ", ".join(dead_masters)
-                        cursor.execute("DELETE FROM heartbeat WHERE thread_id IN (?)", (dead_masters,))
+                        cursor.execute("DELETE FROM heartbeat WHERE thread_id IN (%s)" % dead_masters)
                     if dead_workers:
                         dead_workers = [str(x[0]) for x in dead_workers]
                         dead_workers = ", ".join(dead_workers)
-                        cursor.execute("DELETE FROM heartbeat WHERE thread_id IN (?)", (dead_workers,))
+                        cursor.execute("DELETE FROM heartbeat WHERE thread_id IN (%s)" % dead_workers)
 
                     master_ids = cursor.execute("SELECT thread_id FROM heartbeat WHERE thread_type='master'").fetchall()
 
                 with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
                     if dead_masters:
-                        cursor.execute("DELETE FROM queue WHERE master_id IN (?)", (dead_masters,))
-                        cursor.execute("DELETE FROM waiting WHERE master_id IN (?)", (dead_masters,))
+                        cursor.execute("DELETE FROM queue WHERE master_id IN (%s)" % dead_masters)
+                        cursor.execute("DELETE FROM waiting WHERE master_id IN (%s)" % dead_masters)
 
                         complete_jobs = cursor.execute("SELECT hash FROM complete").fetchall()
                         for job_hash in complete_jobs:
-                            if not cursor.execute("SELECT hash FROM waiting WHERE hash=?", (job_hash)).fetchall():
+                            if not cursor.execute("SELECT hash FROM waiting WHERE hash=?", (job_hash,)).fetchall():
                                 cursor.execute("DELETE FROM complete WHERE hash=?", (job_hash,))
 
                     if master_ids:
                         master_ids = ", ".join([str(x[0]) for x in master_ids])
                         orphaned_jobs = cursor.execute("SELECT hash FROM complete "
-                                                       "WHERE master_id NOT IN (?)", (master_ids,)).fetchall()
+                                                       "WHERE master_id NOT IN (%s)" % master_ids).fetchall()
                         if orphaned_jobs:
                             orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in orphaned_jobs])
 
                             waiting = cursor.execute("SELECT hash FROM waiting "
-                                                     "WHERE hash IN (?)", (orphaned_job_hashes,)).fetchall()
+                                                     "WHERE hash IN (%s)" % orphaned_job_hashes).fetchall()
                             orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in waiting])
                             orphaned_jobs = cursor.execute("SELECT hash FROM complete "
-                                                           "WHERE hash NOT IN (?)", (orphaned_job_hashes,)).fetchall()
+                                                           "WHERE hash NOT IN (%s)" % orphaned_job_hashes).fetchall()
                             orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in orphaned_jobs])
-                            cursor.execute("DELETE FROM complete WHERE hash IN (?)", (orphaned_job_hashes,))
+                            cursor.execute("DELETE FROM complete WHERE hash IN (%s)" % orphaned_job_hashes)
 
             with helpers.ExclusiveConnect(self.wrkdb_path, priority=True) as cursor:
                 cursor.execute('SELECT * FROM queue')
@@ -167,7 +166,7 @@ class Worker(object):
                             pass
 
                     cursor.execute("INSERT INTO processing (hash, worker_id, master_id)"
-                                   " VALUES (?, ?, ?)", (id_hash, self.id, master_id,))
+                                   " VALUES (?, ?, ?)", (id_hash, self.heartbeat.id, master_id,))
                     cursor.execute("DELETE FROM queue WHERE hash=?", (id_hash,))
 
             self.idle += time.time() - self.split_time
@@ -178,8 +177,9 @@ class Worker(object):
                 continue
 
             idle_countdown = 1
-            # Prepare alignment
             seqbuddy = Sb.SeqBuddy("%s/%s.seqs" % (self.output, id_hash), in_format="fasta")
+
+            # Prepare alignment
             if len(seqbuddy) == 1:
                 alignment = Alb.AlignBuddy(str(seqbuddy), in_format="fasta")
             else:
@@ -255,15 +255,14 @@ class Worker(object):
             data = [data[i:i + n] for i in range(0, len(data), n)]
             # Launch multicore
             printer.write("Running all-by-all data (%s comparisons)" % data_len)
-            with open(".Worker_%s.dat" % self.id, "w") as ofile:
+            with open(".Worker_%s.dat" % self.heartbeat.id, "w") as ofile:
                 ofile.write("seq1,seq2,subsmat,psi")
 
             br.run_multicore_function(data, score_sequences, quiet=True, max_processes=self.cpus,
-                                      func_args=[alignment, gap_open, gap_extend,
-                                                 ".Worker_%s.dat" % self.id, self.id, self.hbdb_path])
+                                      func_args=[alignment, gap_open, gap_extend, ".Worker_%s.dat" % self.heartbeat.id])
 
             printer.write("Processing final results")
-            with open(".Worker_%s.dat" % self.id, "r") as ifile:
+            with open(".Worker_%s.dat" % self.heartbeat.id, "r") as ifile:
                 sim_scores = pd.read_csv(ifile, index_col=False)
 
             # Set raw score, which is used by Orphan placement
@@ -290,7 +289,7 @@ class Worker(object):
 
                 if waiting:
                     cursor.execute("INSERT INTO complete (hash, worker_id, master_id) "
-                                   "VALUES (?, ?, ?)", (id_hash, self.id, master_id,))
+                                   "VALUES (?, ?, ?)", (id_hash, self.heartbeat.id, master_id,))
                 else:
                     os.remove("%s/%s.graph" % (self.output, id_hash))
                     os.remove("%s/%s.aln" % (self.output, id_hash))
@@ -304,23 +303,22 @@ class Worker(object):
         if os.path.isfile(self.data_file):
             os.remove(self.data_file)
 
-        if os.path.isfile("Worker_%s" % self.id):
-            os.remove("Worker_%s" % self.id)
+        if os.path.isfile("Worker_%s" % self.heartbeat.id):
+            os.remove("Worker_%s" % self.heartbeat.id)
         else:
             self.terminate("deleted check file")
         return
 
     def terminate(self, message):
-        printer.write("Terminating Worker_%s because of %s." % (self.id, message))
+        printer.write("Terminating Worker_%s because of %s." % (self.heartbeat.id, message))
         printer.new_line(1)
-        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-            cursor.execute('DELETE FROM heartbeat WHERE thread_id=?', (self.id,))
         with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
-            cursor.execute("DELETE FROM processing WHERE worker_id=?", (self.id,))
+            cursor.execute("DELETE FROM processing WHERE worker_id=?", (self.heartbeat.id,))
         if os.path.isfile(self.data_file):
             os.remove(self.data_file)
-        if os.path.isfile("Worker_%s" % self.id):
-            os.remove("Worker_%s" % self.id)
+        if os.path.isfile("Worker_%s" % self.heartbeat.id):
+            os.remove("Worker_%s" % self.heartbeat.id)
+        self.heartbeat.end()
         sys.exit()
 
 
@@ -330,16 +328,10 @@ def score_sequences(data, func_args):
     # ##################################################################### #
 
     results = ["" for _ in data]
-    alb_obj, gap_open, gap_extend, output_file, worker_id, hbdb_path = func_args
+    alb_obj, gap_open, gap_extend, output_file = func_args
     for indx, recs in enumerate(data):
         alb_obj_copy = Alb.make_copy(alb_obj)
         id1, id2, psi1_df, psi2_df = recs
-
-        # Occasionally update the heartbeat database so masters know there is still life
-        if random() > 0.99:
-            with helpers.ExclusiveConnect(hbdb_path) as cursor:
-                cursor.execute("INSERT OR REPLACE INTO heartbeat (thread_id, thread_type, pulse) "
-                               "VALUES (?, 'worker', ?)", (worker_id, round(time.time() + cursor.lag),))
 
         id_regex = "^%s$|^%s$" % (id1, id2)
 

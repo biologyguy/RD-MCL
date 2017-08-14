@@ -1002,12 +1002,13 @@ def check_sequences(seqbuddy, taxa_sep):
 
 
 class HeartBeat(object):
-    def __init__(self, hbdb_path, pulse_rate, dummy=False):
+    def __init__(self, hbdb_path, pulse_rate, thread_type='master', dummy=False):
         self.hbdb_path = hbdb_path
         self.pulse_rate = pulse_rate
-        self.master_id = None
+        self.id = None
         self.running_process = None
-        self.dummy = dummy
+        self.thread_type = thread_type
+        self.dummy = dummy  # This allows an object with start() and end() methods that won't spin off a daemon
         if not dummy:
             with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
                 try:
@@ -1020,18 +1021,21 @@ class HeartBeat(object):
         if self.dummy:
             return
         split_time = time.time()
-        while True:
-            with open("%s" % check_file_path, "r") as ifile:
-                ifile_content = ifile.read()
-            if ifile_content != "Running":
-                break
+        try:
+            while True:
+                with open("%s" % check_file_path, "r") as ifile:
+                    ifile_content = ifile.read()
+                if ifile_content != "Running":
+                    break
 
-            if split_time < time.time() - self.pulse_rate:
-                with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-                    cursor.execute("UPDATE heartbeat SET pulse=? "
-                                   "WHERE thread_id=?", (round(time.time() + cursor.lag), self.master_id,))
-                split_time = time.time()
-            time.sleep(random())
+                if split_time < time.time() - self.pulse_rate:
+                    with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+                        cursor.execute("INSERT or REPLACE INTO heartbeat (thread_id, thread_type, pulse) "
+                                       "VALUES (?, ?, ?)", (self.id, self.thread_type, round(time.time() + cursor.lag),))
+                    split_time = time.time()
+                time.sleep(random())
+        except KeyboardInterrupt:
+            pass
         return
 
     def start(self):
@@ -1043,8 +1047,8 @@ class HeartBeat(object):
         tmp_file.write("Running")
         with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
             cursor.execute("INSERT INTO heartbeat (thread_type, pulse) "
-                           "VALUES ('master', ?)", (round(time.time()),))
-            self.master_id = cursor.lastrowid
+                           "VALUES (?, ?)", (self.thread_type, round(time.time()),))
+            self.id = cursor.lastrowid
         p = Process(target=self._run, args=(tmp_file.path,))
         p.daemon = 1
         p.start()
@@ -1061,8 +1065,8 @@ class HeartBeat(object):
             continue
         self.running_process = None
         with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-            cursor.execute("DELETE FROM heartbeat WHERE thread_id=?", (self.master_id,))
-        self.master_id = None
+            cursor.execute("DELETE FROM heartbeat WHERE thread_id=?", (self.id,))
+        self.id = None
         return
 
 
@@ -1131,11 +1135,11 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
                     cursor.execute("INSERT INTO queue "
                                    "(hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
                                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                                   (job_id, PSIPREDDIR, heartbeat.master_id,
+                                   (job_id, PSIPREDDIR, heartbeat.id,
                                     ALIGNMETHOD, ALIGNPARAMS, " ".join([str(x) for x in TRIMAL]),
                                     GAP_OPEN, GAP_EXTEND,))
 
-                cursor.execute("INSERT INTO waiting (hash, master_id) VALUES (?, ?)", (job_id, heartbeat.master_id,))
+                cursor.execute("INSERT INTO waiting (hash, master_id) VALUES (?, ?)", (job_id, heartbeat.id,))
         else:
             run_worker = False
 
@@ -1149,7 +1153,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
                     waiting_check = cursor.execute("SELECT * FROM waiting WHERE hash=?", (job_id,)).fetchall()
                     if len(waiting_check) <= 1:
                         cursor.execute("DELETE FROM complete WHERE hash=?", (job_id,))
-                    cursor.execute("DELETE FROM waiting WHERE hash=? AND master_id=?", (job_id, heartbeat.master_id,))
+                    cursor.execute("DELETE FROM waiting WHERE hash=? AND master_id=?", (job_id, heartbeat.id,))
                 heartbeat.end()
                 return sim_scores, Alb.AlignBuddy(alignment, in_format="fasta")
 
@@ -1165,16 +1169,16 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
                         processing_check = cursor.execute("SELECT * FROM processing WHERE hash=?", (job_id,)).fetchone()
 
                         with helpers.ExclusiveConnect(HEARTBEAT_DB, priority=True) as hb_cursor:
-                            min_pulse = time.time() - (MAX_WORKER_WAIT * 3) - hb_cursor.lag
+                            min_pulse = time.time() - MAX_WORKER_WAIT - hb_cursor.lag
                             worker_heartbeat_check = hb_cursor.execute("SELECT * FROM heartbeat "
                                                                        "WHERE thread_type='worker' AND pulse>%s"
                                                                        % min_pulse).fetchall()
 
                         # No workers are still around. Time to kill everything and move on serially
                         if not worker_heartbeat_check:
-                            cursor.execute("DELETE FROM queue WHERE master_id=?", (heartbeat.master_id,))
-                            cursor.execute("DELETE FROM processing WHERE master_id=?", (heartbeat.master_id,))
-                            cursor.execute("DELETE FROM waiting WHERE master_id=?", (heartbeat.master_id,))
+                            cursor.execute("DELETE FROM queue WHERE master_id=?", (heartbeat.id,))
+                            cursor.execute("DELETE FROM processing WHERE master_id=?", (heartbeat.id,))
+                            cursor.execute("DELETE FROM waiting WHERE master_id=?", (heartbeat.id,))
                             try:
                                 os.remove("%s/%s.seqs" % (WORKER_OUT, job_id))
                             except FileNotFoundError:
@@ -1193,7 +1197,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
 
                                 cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id, align_m, align_p,"
                                                " trimal, gap_open, gap_extend) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                                               (job_id, PSIPREDDIR, heartbeat.master_id, ALIGNMETHOD, ALIGNPARAMS,
+                                               (job_id, PSIPREDDIR, heartbeat.id, ALIGNMETHOD, ALIGNPARAMS,
                                                 " ".join([str(x) for x in TRIMAL]), GAP_OPEN, GAP_EXTEND,))
                                 cursor.execute("DELETE FROM processing WHERE hash=?", (job_id,))
 
@@ -1208,7 +1212,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
 
                             cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id, align_m, align_p,"
                                            " trimal, gap_open, gap_extend) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                                           (job_id, PSIPREDDIR, heartbeat.master_id, ALIGNMETHOD, ALIGNPARAMS,
+                                           (job_id, PSIPREDDIR, heartbeat.id, ALIGNMETHOD, ALIGNPARAMS,
                                             " ".join([str(x) for x in TRIMAL]), GAP_OPEN, GAP_EXTEND,))
 
                 else:
@@ -1224,7 +1228,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
                             except FileNotFoundError as err:
                                 print(err)
 
-                    cursor.execute("DELETE FROM waiting WHERE hash=? AND master_id=?", (job_id, heartbeat.master_id,))
+                    cursor.execute("DELETE FROM waiting WHERE hash=? AND master_id=?", (job_id, heartbeat.id,))
 
                     finished = True
 
