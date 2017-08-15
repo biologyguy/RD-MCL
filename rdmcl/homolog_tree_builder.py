@@ -9,6 +9,8 @@ try:
     from rdmcl.compare_homolog_groups import prepare_clusters
 except ImportError:
     from compare_homolog_groups import prepare_clusters
+from collections import OrderedDict
+from random import random
 
 
 class Nexus(object):
@@ -110,6 +112,57 @@ def hex_string(value):
     return output[2:]
 
 
+def purturb_rgb(rgb, degree=10):
+    new_rgb = []
+    for code in rgb:
+        degree = round(random() * degree)
+        degree = degree * -1 if random() < 0.5 else degree
+        while degree != 0:
+            code += degree
+            if code > 255:
+                degree = 255 - code
+                code = 255
+            elif code < 0:
+                degree = abs(code)
+                code = 0
+            else:
+                degree = 0
+        new_rgb.append(code)
+    return new_rgb[0], new_rgb[1], new_rgb[2]
+
+
+class KellysColors(object):
+    def __init__(self):
+        self.kelly_colors = OrderedDict(deep_yellowish_brown=(89, 51, 21),
+                                        strong_reddish_brown=(127, 24, 13),
+                                        strong_purplish_red=(179, 40, 81),
+                                        strong_purplish_pink=(246, 118, 142),
+                                        vivid_red=(193, 0, 32),
+                                        vivid_reddish_orange=(241, 58, 19),
+                                        vivid_orange=(255, 104, 0),
+                                        strong_yellowish_pink=(255, 122, 92),
+                                        vivid_orange_yellow=(255, 142, 0),
+                                        vivid_yellow=(255, 179, 0),
+                                        vivid_greenish_yellow=(244, 200, 0),
+                                        grayish_yellow=(206, 162, 98),
+                                        vivid_yellowish_green=(147, 170, 0),
+                                        vivid_green=(0, 125, 52),
+                                        dark_olive_green=(35, 44, 22),
+                                        very_light_blue=(166, 189, 215),
+                                        strong_blue=(0, 83, 138),
+                                        strong_violet=(83, 55, 122),
+                                        strong_purple=(128, 62, 117),
+                                        medium_gray=(129, 112, 102))
+
+    def color_iter(self):
+        degree = 0
+        while True:
+            for color, rgb in self.kelly_colors.items():
+                rgb = purturb_rgb(rgb, degree)
+                yield rgb
+            degree += 10
+
+
 class CtenoColors(object):
     def __init__(self):
         panx1 = ["Bab-PanxαC", "Bch-PanxαD", "Bfo-PanxαC", "Bfr-PanxαB", "BOL-PanxαE", "Cfu-PanxαA", "Cfu-PanxαB",
@@ -185,6 +238,11 @@ def main():
 
     positional.add_argument("cluster_file", help="Specify a cluster file (like 'final_clusters.txt' following RD-MCL)")
 
+    # Optional commands
+    parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
+    parser_flags.add_argument("-ts", "--taxa_sep", action="store", default="-", metavar="",
+                              help="Specify the string that separates taxa ids from gene names (default='-')")
+
     # Developer testing
     dev_flags = parser.add_argument_group(title="\033[1mDeveloper commands\033[m")
     dev_flags.add_argument("-panx", "--ctenos_panxs", action="store_true", help="Add color to Ctenophore pannexins.")
@@ -197,6 +255,14 @@ def main():
     ctenos = CtenoColors()
     cluster_file = prepare_clusters(in_args.cluster_file, hierarchy=True)
 
+    colors = KellysColors().color_iter()
+    taxa_color_map = {}
+    for rank, node in cluster_file.items():
+        for leaf in node:
+            taxa = leaf.split(in_args.taxa_sep)[0]
+            if taxa not in taxa_color_map:
+                taxa_color_map[taxa] = next(colors)
+
     nodes = []
     for rank, node in cluster_file.items():
         leaves = []
@@ -204,7 +270,8 @@ def main():
             if in_args.ctenos_panxs:
                 leaves.append(Leaf(leaf, 1.0, ctenos.get_color(leaf)))
             else:
-                leaves.append(Leaf(leaf, 1.0))
+                taxa = leaf.split(in_args.taxa_sep)[0]
+                leaves.append(Leaf(leaf, 1.0, taxa_color_map[taxa]))
 
         nodes.append(Node(leaves, rank=rank, ave_support=0,
                           std_support=0))
