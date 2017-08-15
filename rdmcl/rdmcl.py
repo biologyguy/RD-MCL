@@ -826,8 +826,6 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         seqbuddy_copy = Sb.make_copy(seqbuddy)
         seqbuddy_copy = Sb.pull_recs(seqbuddy_copy, ["^%s$" % rec_id for rec_id in sub_cluster.seq_ids])
 
-        sub_cluster.collapse()
-
         # Recursion... Reassign cluster_list, as all clusters are returned at the end of a call to orthogroup_caller
         cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, sql_broker=sql_broker,
                                          progress=progress, outdir=outdir, steps=steps, quiet=quiet, chains=chains,
