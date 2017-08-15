@@ -57,7 +57,7 @@ class ExclusiveConnect(object):
         cursor = AttrWrapper(self.connection.cursor())
         cursor.lag = time() - self.start_time
         signal.signal(signal.SIGALRM, self.raise_timeout)
-        signal.alarm(20)
+        signal.alarm(60)
         return cursor
 
     def __exit__(self, exc_type, exc_val, exc_tb):
