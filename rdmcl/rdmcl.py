@@ -1965,6 +1965,12 @@ Continue? y/[n] """ % len(sequences)
     else:
         group_0_cluster = uncollapsed_group_0
 
+    if group_0_cluster.collapsed_genes:
+        with open(os.path.join(in_args.outdir, "paralog_cliques"), "a") as outfile:
+            outfile.write("# group_0\n")
+            json.dump(group_0_cluster.collapsed_genes, outfile)
+            outfile.write("\n\n")
+
     cluster2database(group_0_cluster, broker, alignbuddy)
 
     # Base cluster score
@@ -2066,6 +2072,12 @@ Continue? y/[n] """ % len(sequences)
         logging.warning("\t-- finished in %s --" % TIMER.split())
 
     logging.warning("\nPlacing any collapsed paralogs into their respective clusters")
+    if group_0_cluster.collapsed_genes:
+        with open(os.path.join(in_args.outdir, "paralog_cliques"), "a") as outfile:
+            outfile.write("###########################################################\n"
+                          "#  Paralogs were expanded back into the following groups  #\n"
+                          "###########################################################\n\n")
+
     for clust in final_clusters:
         clust.parent = uncollapsed_group_0
         if clust.collapsed_genes:
