@@ -103,7 +103,7 @@ MAX_WORKER_WAIT = 240
 MASTER_ID = None
 MASTER_PULSE = 60
 PSIPREDDIR = ""
-TRIMAL = ["all", 0.5, 0.75, 0.9, 0.95, "clean"]
+TRIMAL = ["gappyout", 0.5, 0.75, 0.9, 0.95, "clean"]
 
 ambiguous_X = {"A": 0, "R": -1, "N": -1, "D": -1, "C": -2, "Q": -1, "E": -1, "G": -1, "H": -1, "I": -1, "L": -1,
                "K": -1, "M": -1, "F": -1, "P": -2, "S": 0, "T": 0, "W": -2, "Y": -1, "V": -1}
