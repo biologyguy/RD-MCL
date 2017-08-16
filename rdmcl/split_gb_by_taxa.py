@@ -40,7 +40,8 @@ def main():
     parser = argparse.ArgumentParser(prog="split_gb_by_taxa", description="",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument("gb_file", action="store", help="Path to input file (ensure that taxonomy is annotated)")
+    parser.add_argument("gb_file", nargs="?", default=sys.stdin,
+                        help="Path to input file (ensure that taxonomy is annotated)")
     parser.add_argument("-l", "--level", action="store", default=5, type=int,
                         help="Specify how deeply to print output")
     parser.add_argument("-ids", "--print_ids", action="store_true", help="Output the sequence ids")
