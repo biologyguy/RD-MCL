@@ -23,7 +23,7 @@ class AttrWrapper(object):
 
 
 class ExclusiveConnect(object):
-    def __init__(self, db_path, log_message=None, priority=False, log_path="ExclusiveConnect.log"):
+    def __init__(self, db_path, log_message=None, priority=False, log_path="ExclusiveConnect.log", max_lock=60):
         self.db_path = db_path
         self.log_message = log_message
         self.log_output = []
@@ -31,6 +31,7 @@ class ExclusiveConnect(object):
         self.loop_counter = 0
         self.log_path = log_path
         self.priority = 0.5 if not priority else 1000
+        self.max_lock = max_lock
 
     def raise_timeout(self, *args):
         raise EnvironmentError("ExclusiveConnect Lock held for over 60 seconds")
@@ -57,7 +58,7 @@ class ExclusiveConnect(object):
         cursor = AttrWrapper(self.connection.cursor())
         cursor.lag = time() - self.start_time
         signal.signal(signal.SIGALRM, self.raise_timeout)
-        signal.alarm(60)
+        signal.alarm(self.max_lock)
         return cursor
 
     def __exit__(self, exc_type, exc_val, exc_tb):
