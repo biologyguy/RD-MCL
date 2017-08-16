@@ -153,8 +153,7 @@ class Worker(object):
                             cursor.execute("DELETE FROM complete WHERE hash IN (%s)" % orphaned_job_hashes)
 
             with helpers.ExclusiveConnect(self.wrkdb_path, priority=True) as cursor:
-                cursor.execute('SELECT * FROM queue')
-                data = cursor.fetchone()
+                data = cursor.execute('SELECT * FROM queue').fetchone()
                 if data:
                     id_hash, psipred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend = data
                     trimal = trimal.split()
@@ -276,15 +275,16 @@ class Worker(object):
             # ToDo: Experiment testing these magic number weights...
             sim_scores['score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
 
-            with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+            with helpers.ExclusiveConnect(os.path.join(self.output, "write.lock"), max_lock=0):
                 # Place these write commands in ExclusiveConnect to ensure a writing lock
                 if not os.path.isfile("%s/%s.graph" % (self.output, id_hash)):
                     sim_scores.to_csv("%s/%s.graph" % (self.output, id_hash), header=None, index=False)
                 if not os.path.isfile("%s/%s.aln" % (self.output, id_hash)):
                     alignment.write("%s/%s.aln" % (self.output, id_hash), out_format="fasta")
 
+            with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
                 # Confirm that the job is still being waited on before adding to the `complete` table
-                waiting = cursor.execute("SELECT master_id FROM waiting WHERE hash=?", (id_hash,))
+                waiting = cursor.execute("SELECT master_id FROM waiting WHERE hash=?", (id_hash,)).fetchall()
 
                 if waiting:
                     cursor.execute("INSERT INTO complete (hash, worker_id, master_id) "
