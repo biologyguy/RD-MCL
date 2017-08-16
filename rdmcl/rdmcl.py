@@ -1160,60 +1160,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
             with helpers.ExclusiveConnect(WORKER_DB) as cursor:
                 complete_check = cursor.execute("SELECT * FROM complete WHERE hash=?", (job_id,)).fetchone()
                 queue_size = cursor.execute("SELECT COUNT(*) FROM queue").fetchone()[0]
-                if not complete_check:
-                    # Occasionally check to make sure the job is still active
-                    if random() > 0.75:
-                        queue_check = cursor.execute("SELECT * FROM queue WHERE hash=?", (job_id,)).fetchone()
-                        processing_check = cursor.execute("SELECT * FROM processing WHERE hash=?", (job_id,)).fetchone()
-
-                        with helpers.ExclusiveConnect(HEARTBEAT_DB, priority=True) as hb_cursor:
-                            min_pulse = time.time() - MAX_WORKER_WAIT - hb_cursor.lag
-                            worker_heartbeat_check = hb_cursor.execute("SELECT * FROM heartbeat "
-                                                                       "WHERE thread_type='worker' AND pulse>%s"
-                                                                       % min_pulse).fetchall()
-
-                        # No workers are still around. Time to kill everything and move on serially
-                        if not worker_heartbeat_check:
-                            cursor.execute("DELETE FROM queue WHERE master_id=?", (heartbeat.id,))
-                            cursor.execute("DELETE FROM processing WHERE master_id=?", (heartbeat.id,))
-                            cursor.execute("DELETE FROM waiting WHERE master_id=?", (heartbeat.id,))
-                            try:
-                                os.remove("%s/%s.seqs" % (WORKER_OUT, job_id))
-                            except FileNotFoundError:
-                                pass
-                            break
-
-                        if processing_check:
-                            # Make sure the respective worker is still alive to finish processing this job
-                            workers = [(thread_id, pulse) for thread_id, thread_type, pulse in worker_heartbeat_check]
-                            workers = OrderedDict(workers)
-                            worker_id = processing_check[1]
-                            if worker_id not in workers:
-                                # Doesn't look like it... Might as well queue it back up
-                                if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, job_id)):
-                                    seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, job_id), out_format="fasta")
-
-                                cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id, align_m, align_p,"
-                                               " trimal, gap_open, gap_extend) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                                               (job_id, PSIPREDDIR, heartbeat.id, ALIGNMETHOD, ALIGNPARAMS,
-                                                " ".join([str(x) for x in TRIMAL]), GAP_OPEN, GAP_EXTEND,))
-                                cursor.execute("DELETE FROM processing WHERE hash=?", (job_id,))
-
-                        elif queue_check:
-                            pass
-
-                        else:
-                            # Ummmm... Where'd the job go??? Queue it back up if it really seems to have vanished
-                            print("We had a vanish!")
-                            if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, job_id)):
-                                seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, job_id), out_format="fasta")
-
-                            cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id, align_m, align_p,"
-                                           " trimal, gap_open, gap_extend) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                                           (job_id, PSIPREDDIR, heartbeat.id, ALIGNMETHOD, ALIGNPARAMS,
-                                            " ".join([str(x) for x in TRIMAL]), GAP_OPEN, GAP_EXTEND,))
-
-                else:
+                if complete_check:
                     waiting_check = cursor.execute("SELECT * FROM waiting WHERE hash=?", (job_id,)).fetchall()
                     if len(waiting_check) <= 1:
                         cursor.execute("DELETE FROM complete WHERE hash=?", (job_id,))
@@ -1227,7 +1174,6 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
                                 print(err)
 
                     cursor.execute("DELETE FROM waiting WHERE hash=? AND master_id=?", (job_id, heartbeat.id,))
-
                     finished = True
 
             if finished:
@@ -1253,6 +1199,61 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
                     # The race condition hit us... Loop through again and pick up from the main database
                     print("Lost a file, looping through again")
                     pass
+
+            elif random() > 0.75:  # Occasionally check to make sure the job is still active
+                with helpers.ExclusiveConnect(HEARTBEAT_DB, priority=True) as hb_cursor:
+                    min_pulse = time.time() - MAX_WORKER_WAIT - hb_cursor.lag
+                    worker_heartbeat_check = hb_cursor.execute("SELECT * FROM heartbeat "
+                                                               "WHERE thread_type='worker' AND pulse>%s"
+                                                               % min_pulse).fetchall()
+
+                with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+                    if not worker_heartbeat_check:
+                        # No workers are still around. Time to kill everything and move on serially
+                        cursor.execute("DELETE FROM queue WHERE master_id=?", (heartbeat.id,))
+                        cursor.execute("DELETE FROM processing WHERE master_id=?", (heartbeat.id,))
+                        cursor.execute("DELETE FROM waiting WHERE master_id=?", (heartbeat.id,))
+                        try:
+                            os.remove("%s/%s.seqs" % (WORKER_OUT, job_id))
+                        except FileNotFoundError:
+                            pass
+                        break
+
+                    queue_check = cursor.execute("SELECT * FROM queue WHERE hash=?", (job_id,)).fetchone()
+                    processing_check = cursor.execute("SELECT * FROM processing WHERE hash=?", (job_id,)).fetchone()
+                    complete_check = cursor.execute("SELECT * FROM complete WHERE hash=?", (job_id,)).fetchone()
+
+                if processing_check:
+                    # Make sure the respective worker is still alive to finish processing this job
+                    workers = [(thread_id, pulse) for thread_id, thread_type, pulse in worker_heartbeat_check]
+                    workers = OrderedDict(workers)
+                    worker_id = processing_check[1]
+                    if worker_id not in workers:
+                        # Doesn't look like it... Might as well queue it back up
+                        if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, job_id)):
+                            seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, job_id), out_format="fasta")
+
+                        with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+                            cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id, align_m, align_p,"
+                                           " trimal, gap_open, gap_extend) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                           (job_id, PSIPREDDIR, heartbeat.id, ALIGNMETHOD, ALIGNPARAMS,
+                                            " ".join([str(x) for x in TRIMAL]), GAP_OPEN, GAP_EXTEND,))
+                            cursor.execute("DELETE FROM processing WHERE hash=?", (job_id,))
+
+                elif queue_check or complete_check:
+                    pass
+
+                else:
+                    # Ummmm... Where'd the job go??? Queue it back up if it really seems to have vanished
+                    print("We had a vanish!")
+                    if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, job_id)):
+                        seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, job_id), out_format="fasta")
+
+                    with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+                        cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id, align_m, align_p,"
+                                       " trimal, gap_open, gap_extend) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                       (job_id, PSIPREDDIR, heartbeat.id, ALIGNMETHOD, ALIGNPARAMS,
+                                        " ".join([str(x) for x in TRIMAL]), GAP_OPEN, GAP_EXTEND,))
 
             # Pause for 1 sec up to one minutes, depending on queue size and lag
             # This is to prevent spamming database with requests
