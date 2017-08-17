@@ -68,7 +68,7 @@ class Worker(object):
         printer.new_line(1)
 
         # Instantiate some variables
-        seqs, psipred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend = ["", "", 0, "", "", "", 0, 0]
+        # seqs, psipred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend = ["", "", 0, "", "", "", 0, 0]
 
         idle_countdown = 1
         while os.path.isfile("Worker_%s" % self.heartbeat.id):
@@ -78,98 +78,24 @@ class Worker(object):
                 idle_countdown = 5
 
             # Make sure there are some masters still kicking around
-            if time.time() - self.last_heartbeat_from_master > self.max_wait:
-                terminate = False
-                with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-                    cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
-                                   "AND pulse>?", (time.time() - self.max_wait - cursor.lag,))
-                    masters = cursor.fetchall()
-                    if not masters:
-                        terminate = True
-                    self.last_heartbeat_from_master = time.time()
-                if terminate:
-                    self.terminate("%s of maser inactivity (spent %s%% time idle)" %
-                                   (br.pretty_time(self.max_wait), idle))
+            self.check_masters(idle)
 
-            max_wait = int(self.max_wait)
-            with WORKERLOCK:
-                # Check MasterClear signal (file in working dir with # of second specified for master heartbeat)
-                if os.path.isfile(self.masterclear_path):
-                    with open(self.masterclear_path, "r") as ifile:
-                        try:
-                            max_wait = int(ifile.read())
-                            printer.write("MasterClear signal %s" % max_wait)
-                            printer.new_line(1)
-                        except ValueError as err:
-                            printer.write(str(err))
-                            printer.new_line(1)
-                    os.remove(self.masterclear_path)
-                else:
-                    pass
+            # Check for MasterClear override (file with a number in it, specifying how many seconds is considered dead)
+            max_wait = self.masterclear()
 
             # Check for and clean up dead threads and orphaned jobs every hundredth(ish) time through
             rand_check = random()
             if rand_check > 0.99 or max_wait != self.max_wait:
-                with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-                    wait_time = time.time() - max_wait - cursor.lag
-                    dead_masters = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
-                                                  "AND pulse < ?", (wait_time,)).fetchall()
-                    dead_workers = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='worker' "
-                                                  "AND pulse < ?", (wait_time,)).fetchall()
-                    if dead_masters:
-                        dead_masters = [str(x[0]) for x in dead_masters]
-                        dead_masters = ", ".join(dead_masters)
-                        cursor.execute("DELETE FROM heartbeat WHERE thread_id IN (%s)" % dead_masters)
-                    if dead_workers:
-                        dead_workers = [str(x[0]) for x in dead_workers]
-                        dead_workers = ", ".join(dead_workers)
-                        cursor.execute("DELETE FROM heartbeat WHERE thread_id IN (%s)" % dead_workers)
+                self.clean_dead_threads(max_wait)
 
-                    master_ids = cursor.execute("SELECT thread_id FROM heartbeat WHERE thread_type='master'").fetchall()
+            # Fetch a job from the queue
+            data = self.fetch_queue_job()
+            if data:
+                id_hash, psipred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend = data
+                self.idle += time.time() - self.split_time
+                self.split_time = time.time()
 
-                with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
-                    if dead_masters:
-                        cursor.execute("DELETE FROM queue WHERE master_id IN (%s)" % dead_masters)
-                        cursor.execute("DELETE FROM waiting WHERE master_id IN (%s)" % dead_masters)
-
-                        complete_jobs = cursor.execute("SELECT hash FROM complete").fetchall()
-                        for job_hash in complete_jobs:
-                            if not cursor.execute("SELECT hash FROM waiting WHERE hash=?", (job_hash[0],)).fetchall():
-                                cursor.execute("DELETE FROM complete WHERE hash=?", (job_hash,))
-
-                    if master_ids:
-                        master_ids = ", ".join([str(x[0]) for x in master_ids])
-                        orphaned_jobs = cursor.execute("SELECT hash FROM complete "
-                                                       "WHERE master_id NOT IN (%s)" % master_ids).fetchall()
-                        if orphaned_jobs:
-                            orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in orphaned_jobs])
-
-                            waiting = cursor.execute("SELECT hash FROM waiting "
-                                                     "WHERE hash IN (%s)" % orphaned_job_hashes).fetchall()
-                            orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in waiting])
-                            orphaned_jobs = cursor.execute("SELECT hash FROM complete "
-                                                           "WHERE hash NOT IN (%s)" % orphaned_job_hashes).fetchall()
-                            orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in orphaned_jobs])
-                            cursor.execute("DELETE FROM complete WHERE hash IN (%s)" % orphaned_job_hashes)
-
-            with helpers.ExclusiveConnect(self.wrkdb_path, priority=True) as cursor:
-                data = cursor.execute('SELECT * FROM queue').fetchone()
-                if data:
-                    id_hash, psipred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend = data
-                    trimal = trimal.split()
-                    for indx, arg in enumerate(trimal):
-                        try:
-                            trimal[indx] = float(arg)
-                        except ValueError:
-                            pass
-
-                    cursor.execute("INSERT INTO processing (hash, worker_id, master_id)"
-                                   " VALUES (?, ?, ?)", (id_hash, self.heartbeat.id, master_id,))
-                    cursor.execute("DELETE FROM queue WHERE hash=?", (id_hash,))
-
-            self.idle += time.time() - self.split_time
-            self.split_time = time.time()
-            if not data:
+            else:
                 time.sleep(random() * 3)  # Pause for some part of three seconds
                 idle_countdown -= 1
                 continue
@@ -186,71 +112,26 @@ class Worker(object):
                                              params=align_p, quiet=True)
 
             # Prepare psipred dataframes
-            psipred_dfs = OrderedDict()
-            breakout = False
-            printer.write("Preparing %s psipred dataframes" % len(seqbuddy))
-            for rec in alignment.records_iter():
-                psipred_file = "%s/%s.ss2" % (psipred_dir, rec.id)
-                if not os.path.isfile(psipred_file):
-                    self.terminate("missing psi ss2 file (%s)" % psipred_file)
-                    breakout = True
-                    break
-                psipred_dfs[rec.id] = rdmcl.read_ss2_file(psipred_file)
-            if breakout:
+            psipred_dfs = self.prepare_psipred_dfs(seqbuddy, alignment, psipred_dir)
+            if not psipred_dfs:
                 break
 
             # Need to specify what columns the PsiPred files map to now that there are gaps.
-            for rec in alignment.records_iter():
-                ss_file = psipred_dfs[rec.id]
-                ss_counter = 0
-                for indx, residue in enumerate(rec.seq):
-                    if residue != "-":
-                        psipred_dfs[rec.id].set_value(ss_counter, "indx", indx)
-                        ss_counter += 1
-                psipred_dfs[rec.id] = ss_file
+            psipred_dfs = self.update_psipred(alignment, psipred_dfs, "msa")
 
+            # TrimAl
             printer.write("Trimal (%s seqs)" % len(seqbuddy))
-            # Scores seem to be improved by removing gaps. ToDo: Need to test this explicitly for the paper
-            # Only remove columns up to a 50% reduction in average seq length and only if all sequences are retained
-            ave_seq_length = Sb.ave_seq_length(seqbuddy)
-            for threshold in trimal:
-                align_copy = Alb.trimal(Alb.make_copy(alignment), threshold=threshold)
-                cleaned_seqs = Sb.clean_seq(Sb.SeqBuddy(str(align_copy)))
-                cleaned_seqs = Sb.delete_small(cleaned_seqs, 1)
-                if len(alignment.records()) == len(cleaned_seqs) \
-                        and Sb.ave_seq_length(cleaned_seqs) / ave_seq_length >= 0.5:
-                    alignment = align_copy
-                    break
+            alignment = self.trimal(seqbuddy, trimal, alignment)
 
             # Re-update PsiPred files now that some columns, possibly including non-gap characters, are removed
             printer.write("Updating %s psipred dataframes" % len(seqbuddy))
-            for rec in alignment.records_iter():
-                # Instantiate list of max possible size
-                new_psi_pred = [0 for _ in range(len(psipred_dfs[rec.id].index))]
-                indx = 0
-                for row in psipred_dfs[rec.id].itertuples():
-                    if alignment.alignments[0].position_map[int(row[1])][1]:
-                        new_psi_pred[indx] = list(row)[1:]
-                        indx += 1
-                new_psi_pred = new_psi_pred[:indx]
-                psipred_dfs[rec.id] = pd.DataFrame(new_psi_pred, columns=["indx", "aa", "ss", "coil_prob",
-                                                                          "helix_prob", "sheet_prob"])
+            psipred_dfs = self.update_psipred(alignment, psipred_dfs, "trimal")
 
             # Prepare all-by-all list
             printer.write("Preparing all-by-all data")
-            ids1 = [rec.id for rec in seqbuddy.records]
-            ids2 = copy(ids1)
-            data = [0 for _ in range(int((len(ids1)**2 - len(ids1)) / 2))]
-            indx = 0
-            for rec1 in ids1:
-                del ids2[ids2.index(rec1)]
-                for rec2 in ids2:
-                    data[indx] = (rec1, rec2, psipred_dfs[rec1], psipred_dfs[rec2])
-                    indx += 1
+            data_len, data = self.prepare_all_by_all(seqbuddy, psipred_dfs)
 
-            data_len = len(data)
-            n = int(rdmcl.ceil(len(data) / self.cpus))
-            data = [data[i:i + n] for i in range(0, len(data), n)]
+            # ToDo: If len(data[0]) > self.cpus * 10000 --> Separate the job into subjobs and queue them
             # Launch multicore
             printer.write("Running all-by-all data (%s comparisons)" % data_len)
             with open(".Worker_%s.dat" % self.heartbeat.id, "w") as ofile:
@@ -307,6 +188,179 @@ class Worker(object):
         else:
             self.terminate("deleted check file")
         return
+
+    def check_masters(self, idle):
+        if time.time() - self.last_heartbeat_from_master > self.max_wait:
+            terminate = False
+            with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+                cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
+                               "AND pulse>?", (time.time() - self.max_wait - cursor.lag,))
+                masters = cursor.fetchall()
+                if not masters:
+                    terminate = True
+                self.last_heartbeat_from_master = time.time()
+            if terminate:
+                self.terminate("%s of maser inactivity (spent %s%% time idle)" %
+                               (br.pretty_time(self.max_wait), idle))
+        return
+
+    def masterclear(self):
+        max_wait = int(self.max_wait)
+        with WORKERLOCK:
+            # Check MasterClear signal (file in working dir with # of second specified for master heartbeat)
+            if os.path.isfile(self.masterclear_path):
+                with open(self.masterclear_path, "r") as ifile:
+                    try:
+                        max_wait = int(ifile.read())
+                        printer.write("MasterClear signal %s" % max_wait)
+                        printer.new_line(1)
+                    except ValueError as err:
+                        printer.write(str(err))
+                        printer.new_line(1)
+                os.remove(self.masterclear_path)
+            else:
+                pass
+        return max_wait
+
+    def clean_dead_threads(self, max_wait):
+        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+            wait_time = time.time() - max_wait - cursor.lag
+            dead_masters = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
+                                          "AND pulse < ?", (wait_time,)).fetchall()
+            dead_workers = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='worker' "
+                                          "AND pulse < ?", (wait_time,)).fetchall()
+            if dead_masters:
+                dead_masters = [str(x[0]) for x in dead_masters]
+                dead_masters = ", ".join(dead_masters)
+                cursor.execute("DELETE FROM heartbeat WHERE thread_id IN (%s)" % dead_masters)
+            if dead_workers:
+                dead_workers = [str(x[0]) for x in dead_workers]
+                dead_workers = ", ".join(dead_workers)
+                cursor.execute("DELETE FROM heartbeat WHERE thread_id IN (%s)" % dead_workers)
+
+            master_ids = cursor.execute("SELECT thread_id FROM heartbeat WHERE thread_type='master'").fetchall()
+
+        with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+            if dead_masters:
+                cursor.execute("DELETE FROM queue WHERE master_id IN (%s)" % dead_masters)
+                cursor.execute("DELETE FROM waiting WHERE master_id IN (%s)" % dead_masters)
+
+                complete_jobs = cursor.execute("SELECT hash FROM complete").fetchall()
+                for job_hash in complete_jobs:
+                    if not cursor.execute("SELECT hash FROM waiting WHERE hash=?", (job_hash[0],)).fetchall():
+                        cursor.execute("DELETE FROM complete WHERE hash=?", (job_hash,))
+
+            if master_ids:
+                master_ids = ", ".join([str(x[0]) for x in master_ids])
+                orphaned_jobs = cursor.execute("SELECT hash FROM complete "
+                                               "WHERE master_id NOT IN (%s)" % master_ids).fetchall()
+                if orphaned_jobs:
+                    orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in orphaned_jobs])
+
+                    waiting = cursor.execute("SELECT hash FROM waiting "
+                                             "WHERE hash IN (%s)" % orphaned_job_hashes).fetchall()
+                    orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in waiting])
+                    orphaned_jobs = cursor.execute("SELECT hash FROM complete "
+                                                   "WHERE hash NOT IN (%s)" % orphaned_job_hashes).fetchall()
+                    orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in orphaned_jobs])
+                    cursor.execute("DELETE FROM complete WHERE hash IN (%s)" % orphaned_job_hashes)
+        return
+
+    def fetch_queue_job(self):
+        with helpers.ExclusiveConnect(self.wrkdb_path, priority=True) as cursor:
+            data = cursor.execute('SELECT * FROM queue').fetchone()
+            if data:
+                id_hash, psipred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend = data
+                trimal = trimal.split()
+                for indx, arg in enumerate(trimal):
+                    try:
+                        trimal[indx] = float(arg)
+                    except ValueError:
+                        pass
+
+                cursor.execute("INSERT INTO processing (hash, worker_id, master_id)"
+                               " VALUES (?, ?, ?)", (id_hash, self.heartbeat.id, master_id,))
+                cursor.execute("DELETE FROM queue WHERE hash=?", (id_hash,))
+                data = [id_hash, psipred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend]
+        return data
+
+    def prepare_psipred_dfs(self, seqbuddy, alignment, psipred_dir):
+        psipred_dfs = OrderedDict()
+        breakout = False
+        printer.write("Preparing %s psipred dataframes" % len(seqbuddy))
+        for rec in alignment.records_iter():
+            psipred_file = "%s/%s.ss2" % (psipred_dir, rec.id)
+            if not os.path.isfile(psipred_file):
+                self.terminate("missing psi ss2 file (%s)" % psipred_file)
+                breakout = True
+                break
+            psipred_dfs[rec.id] = rdmcl.read_ss2_file(psipred_file)
+        return False if breakout else psipred_dfs
+
+    @staticmethod
+    def update_psipred(alignment, psipred_dfs, mode):
+        if mode == "msa":
+            for rec in alignment.records_iter():
+                ss_file = psipred_dfs[rec.id]
+                ss_counter = 0
+                for indx, residue in enumerate(rec.seq):
+                    if residue != "-":
+                        psipred_dfs[rec.id].set_value(ss_counter, "indx", indx)
+                        ss_counter += 1
+                psipred_dfs[rec.id] = ss_file
+
+        elif mode == "trimal":
+            for rec in alignment.records_iter():
+                # Instantiate list of max possible size
+                new_psi_pred = [0 for _ in range(len(psipred_dfs[rec.id].index))]
+                indx = 0
+                for row in psipred_dfs[rec.id].itertuples():
+                    if alignment.alignments[0].position_map[int(row[1])][1]:
+                        new_psi_pred[indx] = list(row)[1:]
+                        indx += 1
+                new_psi_pred = new_psi_pred[:indx]
+                psipred_dfs[rec.id] = pd.DataFrame(new_psi_pred, columns=["indx", "aa", "ss", "coil_prob",
+                                                                          "helix_prob", "sheet_prob"])
+        else:
+            raise ValueError("Unrecognized mode '%s': select from ['msa', 'trimal']" % mode)
+        return psipred_dfs
+
+    @staticmethod
+    def trimal(seqbuddy, trimal, alignment):
+        # Scores seem to be improved by removing gaps. ToDo: Need to test this explicitly for the paper
+        # Only remove columns up to a 50% reduction in average seq length and only if all sequences are retained
+        ave_seq_length = Sb.ave_seq_length(seqbuddy)
+        for threshold in trimal:
+            align_copy = Alb.trimal(Alb.make_copy(alignment), threshold=threshold)
+            cleaned_seqs = Sb.clean_seq(Sb.SeqBuddy(str(align_copy)))
+            cleaned_seqs = Sb.delete_small(cleaned_seqs, 1)
+            if len(alignment.records()) == len(cleaned_seqs) \
+                    and Sb.ave_seq_length(cleaned_seqs) / ave_seq_length >= 0.5:
+                alignment = align_copy
+                break
+        return alignment
+
+    def prepare_all_by_all(self, seqbuddy, psipred_dfs):
+        ids1 = [rec.id for rec in seqbuddy.records]
+        ids2 = copy(ids1)
+        data = [0 for _ in range(int((len(ids1)**2 - len(ids1)) / 2))]
+        indx = 0
+        for rec1 in ids1:
+            del ids2[ids2.index(rec1)]
+            for rec2 in ids2:
+                data[indx] = (rec1, rec2, psipred_dfs[rec1], psipred_dfs[rec2])
+                indx += 1
+
+        data_len = len(data)
+        n = int(rdmcl.ceil(len(data) / self.cpus))
+        data = [data[i:i + n] for i in range(0, len(data), n)]
+        return data_len, data
+
+    def spawn_subjobs(self):
+        pass
+
+    def run_subjob(self):
+        pass
 
     def terminate(self, message):
         printer.write("Terminating Worker_%s because of %s." % (self.heartbeat.id, message))
