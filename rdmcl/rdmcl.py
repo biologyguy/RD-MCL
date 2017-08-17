@@ -1089,7 +1089,6 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
     """
     seq_ids = sorted([rec.id for rec in seqbuddy.records])
     seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
-    tmp_dir = br.TempDir()
 
     if len(seqbuddy) == 1:
         sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
@@ -1165,11 +1164,11 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
                     if len(waiting_check) <= 1:
                         cursor.execute("DELETE FROM complete WHERE hash=?", (job_id,))
 
-                        # Need to remove these files, but don't want to set up race condition. Store in TempDir for now
+                        # Need to remove these files, but don't want to set up race condition. rename for now.
                         for del_file in [".aln", ".graph", ".seqs"]:
                             try:
                                 shutil.move(os.path.join(WORKER_OUT, "%s%s" % (job_id, del_file)),
-                                            os.path.join(tmp_dir.path, "%s%s" % (job_id, del_file)))
+                                            os.path.join(WORKER_OUT, "%s_%s%s" % (heartbeat.id, job_id, del_file)))
                             except FileNotFoundError as err:
                                 print(err)
 
@@ -1177,8 +1176,8 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
                     finished = True
 
             if finished:
-                location = os.path.join(tmp_dir.path, job_id) \
-                    if os.path.isfile(os.path.join(tmp_dir.path, "%s.aln" % job_id)) \
+                location = os.path.join(WORKER_OUT, "%s_%s" % (heartbeat.id, job_id)) \
+                    if os.path.isfile(os.path.join(WORKER_OUT, "%s_%s.aln" % (heartbeat.id, job_id))) \
                     else os.path.join(WORKER_OUT, job_id)
 
                 try:
@@ -1190,9 +1189,9 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
                     cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
 
                     # Only remove the files if they have been sent to TempDir
-                    if os.path.isfile(os.path.join(tmp_dir.path, "%s.aln" % job_id)):
+                    if os.path.isfile(os.path.join(WORKER_OUT, "%s_%s.aln" % (heartbeat.id, job_id))):
                         for del_file in [".aln", ".graph", ".seqs"]:
-                            os.remove(os.path.join(tmp_dir.path, "%s%s" % (job_id, del_file)))
+                            os.remove(os.path.join(WORKER_OUT, "%s_%s%s" % (heartbeat.id, job_id, del_file)))
                     heartbeat.end()
                     return sim_scores, alignment
                 except FileNotFoundError:
