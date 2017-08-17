@@ -107,31 +107,39 @@ class Worker(object):
             if len(seqbuddy) == 1:
                 alignment = Alb.AlignBuddy(str(seqbuddy), in_format="fasta")
             else:
-                printer.write("Creating MSA (%s seqs)" % len(seqbuddy))
-                alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), align_m,
-                                             params=align_p, quiet=True)
+                if not align_m:
+                    printer.write("Reading MSA (%s seqs)" % len(seqbuddy))
+                    alignment = Alb.AlignBuddy("%s/%s.aln" % (self.output, id_hash))
+                else:
+                    printer.write("Creating MSA (%s seqs)" % len(seqbuddy))
+                    alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), align_m,
+                                                 params=align_p, quiet=True)
 
             # Prepare psipred dataframes
             psipred_dfs = self.prepare_psipred_dfs(seqbuddy, alignment, psipred_dir)
             if not psipred_dfs:
                 break
 
-            # Need to specify what columns the PsiPred files map to now that there are gaps.
-            psipred_dfs = self.update_psipred(alignment, psipred_dfs, "msa")
+            if align_m:  # This is starting a full job from scratch, not a sub-job
+                # Need to specify what columns the PsiPred files map to now that there are gaps.
+                psipred_dfs = self.update_psipred(alignment, psipred_dfs, "msa")
 
-            # TrimAl
-            printer.write("Trimal (%s seqs)" % len(seqbuddy))
-            alignment = self.trimal(seqbuddy, trimal, alignment)
+                # TrimAl
+                printer.write("Trimal (%s seqs)" % len(seqbuddy))
+                alignment = self.trimal(seqbuddy, trimal, alignment)
 
-            # Re-update PsiPred files now that some columns, possibly including non-gap characters, are removed
-            printer.write("Updating %s psipred dataframes" % len(seqbuddy))
-            psipred_dfs = self.update_psipred(alignment, psipred_dfs, "trimal")
+                # Re-update PsiPred files now that some columns, possibly including non-gap characters, are removed
+                printer.write("Updating %s psipred dataframes" % len(seqbuddy))
+                psipred_dfs = self.update_psipred(alignment, psipred_dfs, "trimal")
 
             # Prepare all-by-all list
             printer.write("Preparing all-by-all data")
             data_len, data = self.prepare_all_by_all(seqbuddy, psipred_dfs)
 
-            # ToDo: If len(data[0]) > self.cpus * 10000 --> Separate the job into subjobs and queue them
+            if align_m and len(data[0]) > self.cpus * 10000:
+                # align_m = None
+                pass  # ToDo: Separate the job into subjobs and queue them
+
             # Launch multicore
             printer.write("Running all-by-all data (%s comparisons)" % data_len)
             with open(".Worker_%s.dat" % self.heartbeat.id, "w") as ofile:
@@ -141,41 +149,45 @@ class Worker(object):
                                       func_args=[alignment, gap_open, gap_extend, ".Worker_%s.dat" % self.heartbeat.id])
 
             printer.write("Processing final results")
-            with open(".Worker_%s.dat" % self.heartbeat.id, "r") as ifile:
-                sim_scores = pd.read_csv(ifile, index_col=False)
+            if align_m:
+                with open(".Worker_%s.dat" % self.heartbeat.id, "r") as ifile:
+                    sim_scores = pd.read_csv(ifile, index_col=False)
 
-            # Set raw score, which is used by Orphan placement
-            sim_scores['raw_score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
-            # Distribute final scores_components between 0-1.
-            sim_scores['psi'] = (sim_scores['psi'] - sim_scores['psi'].min()) / \
-                                (sim_scores['psi'].max() - sim_scores['psi'].min())
+                # Set raw score, which is used by Orphan placement
+                sim_scores['raw_score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
+                # Distribute final scores_components between 0-1.
+                sim_scores['psi'] = (sim_scores['psi'] - sim_scores['psi'].min()) / \
+                                    (sim_scores['psi'].max() - sim_scores['psi'].min())
 
-            sim_scores['subsmat'] = (sim_scores['subsmat'] - sim_scores['subsmat'].min()) / \
-                                    (sim_scores['subsmat'].max() - sim_scores['subsmat'].min())
+                sim_scores['subsmat'] = (sim_scores['subsmat'] - sim_scores['subsmat'].min()) / \
+                                        (sim_scores['subsmat'].max() - sim_scores['subsmat'].min())
 
-            # ToDo: Experiment testing these magic number weights...
-            sim_scores['score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
+                # ToDo: Experiment testing these magic number weights...
+                sim_scores['score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
 
-            with helpers.ExclusiveConnect(os.path.join(self.output, "write.lock"), max_lock=0):
-                # Place these write commands in ExclusiveConnect to ensure a writing lock
-                if not os.path.isfile("%s/%s.graph" % (self.output, id_hash)):
-                    sim_scores.to_csv("%s/%s.graph" % (self.output, id_hash), header=None, index=False)
-                if not os.path.isfile("%s/%s.aln" % (self.output, id_hash)):
-                    alignment.write("%s/%s.aln" % (self.output, id_hash), out_format="fasta")
+                with helpers.ExclusiveConnect(os.path.join(self.output, "write.lock"), max_lock=0):
+                    # Place these write commands in ExclusiveConnect to ensure a writing lock
+                    if not os.path.isfile("%s/%s.graph" % (self.output, id_hash)):
+                        sim_scores.to_csv("%s/%s.graph" % (self.output, id_hash), header=None, index=False)
+                    if not os.path.isfile("%s/%s.aln" % (self.output, id_hash)):
+                        alignment.write("%s/%s.aln" % (self.output, id_hash), out_format="fasta")
 
-            with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
-                # Confirm that the job is still being waited on before adding to the `complete` table
-                waiting = cursor.execute("SELECT master_id FROM waiting WHERE hash=?", (id_hash,)).fetchall()
+                with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+                    # Confirm that the job is still being waited on before adding to the `complete` table
+                    waiting = cursor.execute("SELECT master_id FROM waiting WHERE hash=?", (id_hash,)).fetchall()
 
-                if waiting:
-                    cursor.execute("INSERT INTO complete (hash, worker_id, master_id) "
-                                   "VALUES (?, ?, ?)", (id_hash, self.heartbeat.id, master_id,))
-                else:
-                    os.remove("%s/%s.graph" % (self.output, id_hash))
-                    os.remove("%s/%s.aln" % (self.output, id_hash))
-                    os.remove("%s/%s.seqs" % (self.output, id_hash))
+                    if waiting:
+                        cursor.execute("INSERT INTO complete (hash, worker_id, master_id) "
+                                       "VALUES (?, ?, ?)", (id_hash, self.heartbeat.id, master_id,))
+                    else:
+                        os.remove("%s/%s.graph" % (self.output, id_hash))
+                        os.remove("%s/%s.aln" % (self.output, id_hash))
+                        os.remove("%s/%s.seqs" % (self.output, id_hash))
 
-                cursor.execute("DELETE FROM processing WHERE hash=?", (id_hash,))
+                    cursor.execute("DELETE FROM processing WHERE hash=?", (id_hash,))
+            else:
+                # ToDo: handling subjob output
+                self.check_on_subjobs()
 
             self.running += time.time() - self.split_time
             self.split_time = time.time()
@@ -360,6 +372,9 @@ class Worker(object):
         pass
 
     def run_subjob(self):
+        pass
+
+    def check_on_subjobs(self):
         pass
 
     def terminate(self, message):
