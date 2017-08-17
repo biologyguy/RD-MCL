@@ -1254,6 +1254,12 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
                                        (job_id, PSIPREDDIR, heartbeat.id, ALIGNMETHOD, ALIGNPARAMS,
                                         " ".join([str(x) for x in TRIMAL]), GAP_OPEN, GAP_EXTEND,))
 
+                        am_i_waiting_still = cursor.execute("SELECT * FROM waiting WHERE hash=? AND master_id=?",
+                                                            (job_id, heartbeat.id,)).fetchone()
+                        if not am_i_waiting_still:
+                            cursor.execute("INSERT INTO waiting (hash, master_id) VALUES (?, ?)",
+                                           (job_id, heartbeat.id,))
+
             # Pause for 1 sec up to one minutes, depending on queue size and lag
             # This is to prevent spamming database with requests
             pause_time = 1 + (60 * ((cursor.lag + queue_size) / (60 + cursor.lag + queue_size)))
