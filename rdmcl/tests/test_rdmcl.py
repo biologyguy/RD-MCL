@@ -74,6 +74,8 @@ def test_cluster_instantiate_group_0(hf):
         sim_scores = sim_scores.ix[1:, :]
         rdmcl.Cluster(cluster.seq_ids, sim_scores)
     assert "The number of incoming sequence ids (119) does not match the expected graph size of 7021" in str(err)
+    assert os.path.isfile("0eb00400b766199af2040597b963f4da.error")
+    os.remove("0eb00400b766199af2040597b963f4da.error")
 
 
 def test_cluster_instantiate_child(hf):
@@ -1082,3 +1084,7 @@ group_0_2\t6.4167\tBOL-PanxαC\tMle-Panxα12\tVpa-PanxαG
 
     out, err = capsys.readouterr()
     assert "Generating initial all-by-all similarity graph (66 comparisons)" in err
+
+    # Cleanup
+    if os.path.isfile("rdmcl.log"):
+        os.remove("rdmcl.log")
