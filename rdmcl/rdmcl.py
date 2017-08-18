@@ -986,16 +986,20 @@ def write_mcl_clusters(clusters, path):
 def check_sequences(seqbuddy, taxa_sep):
     logging.warning("Checking that the format of all sequence ids matches 'taxa%sgene'" % taxa_sep)
     failures = []
+    taxa = []
     for rec in seqbuddy.records:
         rec_id = rec.id.split(taxa_sep)
         if len(rec_id) != 2:
             failures.append(rec.id)
+        else:
+            taxa.append(rec_id[0])
     if failures:
         logging.error("Malformed sequence id(s): '%s'\nThe taxa separator character is currently set to '%s',\n"
                       " which can be changed with the '-ts' flag" % (", ".join(failures), taxa_sep))
         return False
     else:
         logging.warning("    %s sequences PASSED" % len(seqbuddy))
+        logging.info("%s unique taxa present" % len(set(taxa)))
         return True
 
 
