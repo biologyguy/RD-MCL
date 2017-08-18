@@ -24,6 +24,10 @@ class MockLogging(object):
     def error(_input):
         print(_input)
 
+    @staticmethod
+    def info(_input):
+        print(_input)
+
 
 # #########  Cluster class and functions  ########## #
 def test_cluster_instantiate_group_0(hf):
