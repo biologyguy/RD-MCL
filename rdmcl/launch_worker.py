@@ -349,7 +349,7 @@ def score_sequences(data, func_args):
     return
 
 
-def main():
+def argparse_init():
     import argparse
 
     parser = argparse.ArgumentParser(prog="launch_worker", description="",
@@ -365,6 +365,11 @@ def main():
     parser.add_argument("-q", "--quiet", help="Suppress all output", action="store_true")
 
     in_args = parser.parse_args()
+    return in_args
+
+
+def main():
+    in_args = argparse_init()
 
     workdb = os.path.join(in_args.workdb, "work_db.sqlite")
     heartbeatdb = os.path.join(in_args.workdb, "heartbeat_db.sqlite")
@@ -443,6 +448,7 @@ def main():
                     _line = re.sub('"{0}.*{0}(.*)?"'.format(os.sep), r'"\1"', _line)
                 tb += _line
             print("\nWorker_%s crashed!\n" % wrkr.heartbeat.id, tb)
+    return
 
 
 if __name__ == '__main__':
