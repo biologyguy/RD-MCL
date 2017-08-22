@@ -24,11 +24,12 @@ import traceback
 
 # My packages
 try:
-    import helpers
-    import rdmcl
-except ImportError:
     from . import helpers
     from . import rdmcl
+except ImportError:
+    import helpers
+    import rdmcl
+
 
 # Globals
 WORKERLOCK = Lock()
@@ -63,10 +64,11 @@ class Worker(object):
         self.split_time = time.time()
         self.start_time = time.time()
 
-        self.heartbeat.start()
         with open("Worker_%s" % self.heartbeat.id, "w") as ofile:
             ofile.write("To terminate this Worker, simply delete this file.")
         self.data_file = ".Worker_%s.dat" % self.heartbeat.id
+
+        self.heartbeat.start()
 
         self.last_heartbeat_from_master = time.time()
         printer.write("Starting Worker_%s" % self.heartbeat.id)
@@ -501,7 +503,7 @@ def score_sequences(data, func_args):
     return
 
 
-def main():
+def argparse_init():
     import argparse
 
     parser = argparse.ArgumentParser(prog="launch_worker", description="",
@@ -517,6 +519,11 @@ def main():
     parser.add_argument("-q", "--quiet", help="Suppress all output", action="store_true")
 
     in_args = parser.parse_args()
+    return in_args
+
+
+def main():
+    in_args = argparse_init()
 
     workdb = os.path.join(in_args.workdb, "work_db.sqlite")
     heartbeatdb = os.path.join(in_args.workdb, "heartbeat_db.sqlite")
@@ -568,16 +575,14 @@ def main():
     os.makedirs(worker_output, exist_ok=True)
 
     wrkr = Worker(in_args.workdb, heartrate=in_args.heart_rate, max_wait=in_args.max_wait)
-    valve = br.SafetyValve(100)
-    while True:
+    valve = br.SafetyValve(5)
+    while True:  # The only way out is through Worker.terminate
         try:
             valve.step("Too many Worker crashes detected.")
             wrkr.start()
-            break
 
         except KeyboardInterrupt:
             wrkr.terminate("KeyboardInterrupt")
-            break
 
         except Exception as err:
             with helpers.ExclusiveConnect(wrkr.wrkdb_path) as cursor:
@@ -585,7 +590,6 @@ def main():
 
             if "Too many Worker crashes detected" in str(err):
                 wrkr.terminate("too many Worker crashes")
-                break
 
             tb = "%s: %s\n\n" % (type(err).__name__, err)
             for _line in traceback.format_tb(sys.exc_info()[2]):
@@ -595,7 +599,6 @@ def main():
                     _line = re.sub('"{0}.*{0}(.*)?"'.format(os.sep), r'"\1"', _line)
                 tb += _line
             print("\nWorker_%s crashed!\n" % wrkr.heartbeat.id, tb)
-
 
 if __name__ == '__main__':
     main()
