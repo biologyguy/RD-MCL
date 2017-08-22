@@ -214,6 +214,16 @@ class Timer(object):
         return "%s%s%s" % (prefix, pretty_time(round(time()) - self.start), postfix)
 
 
+def dummy_func(*args, **kwargs):
+    """
+    This can be placed in code for unit test monkey patching
+    :param args: arguments
+    :param kwargs: key-word arguments
+    :return:
+    """
+    return args, kwargs
+
+
 def md5_hash(in_str):
     in_str = str(in_str).encode("utf-8")
     return md5(in_str).hexdigest()
