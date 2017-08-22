@@ -5,6 +5,7 @@ import pandas as pd
 from hashlib import md5
 from copy import deepcopy
 from buddysuite import SeqBuddy as Sb
+from buddysuite import AlignBuddy as Alb
 from io import StringIO
 
 SEP = os.sep
@@ -37,6 +38,7 @@ Tin     6
 Vpa     7
 '''
 cteno_panxs = Sb.SeqBuddy("%s%sCteno_pannexins.fa" % (RESOURCE_PATH, SEP))
+cteno_panxs_aln = Alb.AlignBuddy("%s%sCteno_pannexins_aln.fa" % (RESOURCE_PATH, SEP))
 ids = [rec.id for rec in cteno_panxs.records]
 sim_scores = pd.read_csv("%sCteno_pannexins_sim.scores" % RESOURCE_PATH, index_col=False, header=None)
 sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
@@ -48,6 +50,7 @@ class HelperMethods(object):
         self.sep = SEP
         self.resource_path = RESOURCE_PATH
         self._cteno_panxs = cteno_panxs
+        self._cteno_panxs_aln = cteno_panxs_aln
         self._cteno_ids = ids
         self._cteno_sim_scores = sim_scores
 
@@ -60,7 +63,9 @@ class HelperMethods(object):
 
     def get_data(self, data):
         if data == "cteno_panxs":
-            return deepcopy(self._cteno_panxs)
+            return Sb.make_copy(self._cteno_panxs)
+        elif data == "cteno_panxs_aln":
+            return Alb.make_copy(self._cteno_panxs_aln)
         elif data == "cteno_ids":
             return deepcopy(self._cteno_ids)
         elif data == "cteno_sim_scores":

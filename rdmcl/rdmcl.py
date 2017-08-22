@@ -664,7 +664,7 @@ def read_ss2_file(path):
 
 
 def compare_psi_pred(psi1_df, psi2_df):
-    num_gaps = 0
+    num_extra_gaps = 0
     ss_score = 0
     for row1 in psi1_df.itertuples():
         row2 = psi2_df.loc[psi2_df["indx"] == row1.indx]
@@ -675,8 +675,8 @@ def compare_psi_pred(psi1_df, psi2_df):
             row_score += 1 - abs(float(row1.sheet_prob) - float(row2.sheet_prob))
             ss_score += row_score / 3
         else:
-            num_gaps += 1
-    align_len = len(psi2_df) + num_gaps
+            num_extra_gaps += 1
+    align_len = len(psi2_df) + num_extra_gaps  # Note that any gaps in psi1 are automatically accounted for by len(psi2)
     ss_score /= align_len
     return ss_score
 # ################ END PSI-PRED FUNCTIONS ################ #

@@ -64,11 +64,13 @@ class Worker(object):
         self.split_time = time.time()
         self.start_time = time.time()
 
+        self.heartbeat.start()
+
         with open("Worker_%s" % self.heartbeat.id, "w") as ofile:
             ofile.write("To terminate this Worker, simply delete this file.")
         self.data_file = ".Worker_%s.dat" % self.heartbeat.id
 
-        self.heartbeat.start()
+        helpers.dummy_func()
 
         self.last_heartbeat_from_master = time.time()
         printer.write("Starting Worker_%s" % self.heartbeat.id)
@@ -191,7 +193,7 @@ class Worker(object):
                     terminate = True
                 self.last_heartbeat_from_master = time.time()
             if terminate:
-                self.terminate("%s of maser inactivity (spent %s%% time idle)" %
+                self.terminate("%s of master inactivity (spent %s%% time idle)" %
                                (br.pretty_time(self.max_wait), idle))
         return
 
