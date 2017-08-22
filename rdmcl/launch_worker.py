@@ -34,7 +34,7 @@ except ImportError:
 # Globals
 WORKERLOCK = Lock()
 CPUS = cpu_count()
-JOB_SIZE_COFACTOR = 10
+JOB_SIZE_COFACTOR = 1000
 printer = br.DynamicPrint()
 
 
@@ -150,7 +150,7 @@ class Worker(object):
             printer.write("Preparing all-by-all data")
             data_len, data = self.prepare_all_by_all(seqbuddy, psipred_dfs)
 
-            if num_subjobs == 1 and len(data[0]) > self.cpus * JOB_SIZE_COFACTOR:
+            if num_subjobs == 1 and data_len > self.cpus * JOB_SIZE_COFACTOR:
                 data_len, data, subjob_num, num_subjobs = self.spawn_subjobs(id_hash, data, psipred_dfs, master_id,
                                                                              gap_open, gap_extend)
             elif subjob_num > 1:
@@ -353,7 +353,6 @@ class Worker(object):
             sim_scores = pd.read_csv(ifile, index_col=False)
 
         if num_subjobs > 1:
-            # If all subjobs are done, keep this subjob in the processing table to block others from processing final
             sim_scores = self.process_subjob(id_hash, sim_scores, subjob_num, num_subjobs, master_id)
 
         if not sim_scores.empty:
@@ -404,20 +403,21 @@ class Worker(object):
             df.to_csv(os.path.join(out_dir, "%s.ss2" % rec_id), header=None, index=False, sep=" ")
 
         # Break it up again into min number of chunks where len(each chunk) < #CPUs * JOB_SIZE_COFACTOR
-        n = int(rdmcl.ceil(len(data) / (self.cpus * JOB_SIZE_COFACTOR)))
-        data = [data[i:i + n] for i in range(0, len(data), n)]
-        num_subjobs = len(data)
-        subjob_num = 1
+        num_subjobs = int(rdmcl.ceil(len_data / (self.cpus * JOB_SIZE_COFACTOR)))
+        job_size = int(rdmcl.ceil(len_data / num_subjobs))
+        data = [data[i:i + job_size] for i in range(0, len_data, job_size)]
 
         for indx, subjob in enumerate(data):
             with open(os.path.join(out_dir, "%s_of_%s.txt" % (indx + 1, num_subjobs)), "w") as ofile:
                 for pair in subjob:
                     ofile.write("%s %s\n" % (pair[0], pair[1]))
 
+        # Push all jobs into the queue except the first job, which is held back for the current node to work on
         with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
             for indx, subjob in enumerate(data[1:]):
+                # NOTE: the 'indx + 2' is necessary to push index to '1' start and account for the job already removed
                 cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id, gap_open, gap_extend) "
-                               "VALUES (?, ?, ?, ?, ?)", ("%s_%s_%s" % (indx + 1, num_subjobs, id_hash),
+                               "VALUES (?, ?, ?, ?, ?)", ("%s_%s_%s" % (indx + 2, num_subjobs, id_hash),
                                                           out_dir, master_id, gap_open, gap_extend,))
 
             cursor.execute("INSERT INTO processing (hash, worker_id, master_id) VALUES (?, ?, ?)",
@@ -426,7 +426,8 @@ class Worker(object):
         n = int(rdmcl.ceil(len(data[0]) / self.cpus))
         data = [data[0][i:i + n] for i in range(0, len(data[0]), n)]
 
-        return len_data, data, subjob_num, num_subjobs
+        subjob_num = 1
+        return len(data[0]), data, subjob_num, num_subjobs
 
     def load_subjob(self, id_hash, subjob_num, num_subjobs, psipred_dfs):
         out_dir = os.path.join(self.output, id_hash)
@@ -442,7 +443,7 @@ class Worker(object):
 
     def process_subjob(self, id_hash, sim_scores, subjob_num, num_subjobs, master_id):
         out_dir = os.path.join(self.output, id_hash)
-        full_id_hash = "%s_%s_%s" % (id_hash, subjob_num, num_subjobs)
+        full_id_hash = "%s_%s_%s" % (subjob_num, num_subjobs, id_hash)
         sim_scores.to_csv(os.path.join(out_dir, "%s_of_%s.sim_df" % (subjob_num, num_subjobs)), index=False)
 
         with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
