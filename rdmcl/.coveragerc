@@ -1,5 +1,6 @@
 [run]
 source = /home/travis/build/biologyguy/RD-MCL/rdmcl/rdmcl.py
+         /home/travis/build/biologyguy/RD-MCL/rdmcl/launch_worker.py
          /home/travis/build/biologyguy/RD-MCL/rdmcl/helpers.py
          /home/travis/build/biologyguy/RD-MCL/rdmcl/mcmcmc.py
          /home/travis/build/biologyguy/RD-MCL/rdmcl/tests/conftest.py
