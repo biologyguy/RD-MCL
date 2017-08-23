@@ -128,7 +128,7 @@ class Worker(object):
                     alignment = Alb.AlignBuddy(os.path.join(self.output, "%s.aln" % id_hash))
 
             # Prepare psipred dataframes
-            psipred_dfs = self.prepare_psipred_dfs(seqbuddy, alignment, psipred_dir)
+            psipred_dfs = self.prepare_psipred_dfs(seqbuddy, psipred_dir)
             if not psipred_dfs:
                 break
 
@@ -282,18 +282,15 @@ class Worker(object):
                 data = [id_hash, psipred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend]
         return data
 
-    def prepare_psipred_dfs(self, seqbuddy, alignment, psipred_dir):
+    def prepare_psipred_dfs(self, seqbuddy, psipred_dir):
         psipred_dfs = OrderedDict()
-        breakout = False
         self.printer.write("Preparing %s psipred dataframes" % len(seqbuddy))
-        for rec in alignment.records_iter():
-            psipred_file = "%s/%s.ss2" % (psipred_dir, rec.id)
+        for rec in seqbuddy.records:
+            psipred_file = os.path.join(psipred_dir, "%s.ss2" % rec.id)
             if not os.path.isfile(psipred_file):
                 self.terminate("missing psi ss2 file (%s)" % psipred_file)
-                breakout = True
-                break
             psipred_dfs[rec.id] = rdmcl.read_ss2_file(psipred_file)
-        return False if breakout else psipred_dfs
+        return psipred_dfs
 
     @staticmethod
     def update_psipred(alignment, psipred_dfs, mode):

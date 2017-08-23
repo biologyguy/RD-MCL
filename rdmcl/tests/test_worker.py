@@ -147,6 +147,46 @@ def test_worker_clean_dead_threads(hf):
     assert not work_cursor.execute("SELECT * FROM processing WHERE worker_id=%s" % worker_id).fetchone()
 
 
+def test_worker_fetch_queue_job(hf):
+    temp_dir = br.TempDir()
+    temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    worker = launch_worker.Worker(temp_dir.path)
+
+    work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
+    work_cursor = work_con.cursor()
+    work_cursor.execute("INSERT INTO "
+                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('foo', './', 2, '', '', 'gappyout 50 90 clean', 0, 0)")
+    work_con.commit()
+    queued_job = worker.fetch_queue_job()
+    assert queued_job == ['foo', './', 2, '', '', ['gappyout', 50.0, 90.0, 'clean'], 0, 0]
+    assert not work_cursor.execute("SELECT * FROM queue").fetchall()
+
+
+def test_worker_prepare_psipred_dfs(hf, capsys):
+    temp_dir = br.TempDir()
+    temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    worker = launch_worker.Worker(temp_dir.path)
+    seqbuddy = hf.get_data("cteno_panxs")
+    psipred_dfs = worker.prepare_psipred_dfs(seqbuddy, os.path.join(hf.resource_path, "psi_pred"))
+    assert len(seqbuddy) == len(psipred_dfs)
+    assert str(psipred_dfs["Hvu-PanxβO"].iloc[0]) == """\
+indx              1
+aa                M
+ss                C
+coil_prob     0.999
+helix_prob    0.001
+sheet_prob    0.001
+Name: 0, dtype: object"""
+
+    capsys.readouterr()
+    seqbuddy.records[0].id = "Foo"
+    with pytest.raises(SystemExit):
+        worker.prepare_psipred_dfs(seqbuddy, os.path.join(hf.resource_path, "psi_pred"))
+    out, err = capsys.readouterr()
+    assert "Terminating Worker_None because of missing psi ss2 file" in out
+
+
 def test_score_sequences(hf):
     outfile = br.TempFile()
     alb_obj = hf.get_data("cteno_panxs_aln")
