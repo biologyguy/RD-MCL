@@ -11,6 +11,7 @@ import pandas as pd
 from collections import OrderedDict
 from buddysuite import buddy_resources as br
 from buddysuite import AlignBuddy as Alb
+from buddysuite import SeqBuddy as Sb
 # from copy import copy, deepcopy
 import time
 import argparse
@@ -185,6 +186,108 @@ Name: 0, dtype: object"""
         worker.prepare_psipred_dfs(seqbuddy, os.path.join(hf.resource_path, "psi_pred"))
     out, err = capsys.readouterr()
     assert "Terminating Worker_None because of missing psi ss2 file" in out
+
+
+def test_worker_update_psipred(hf):
+    temp_dir = br.TempDir()
+    temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    worker = launch_worker.Worker(temp_dir.path)
+
+    align = hf.get_data("cteno_panxs_aln")
+    align = Alb.extract_regions(align, "105:115")
+    align = Alb.pull_records(align, "Bfo-PanxαA|Bfr-PanxαD")
+    ss2_dfs = hf.get_data("ss2_dfs")
+    ss2_dfs = {"Bfo-PanxαA": ss2_dfs["Bfo-PanxαA"], "Bfr-PanxαD": ss2_dfs["Bfr-PanxαD"]}
+    ss2_dfs["Bfo-PanxαA"] = ss2_dfs["Bfo-PanxαA"].iloc[47:56]
+    for indx, new in [(47, 1), (48, 2), (49, 3), (50, 4), (51, 5), (52, 6), (53, 7), (54, 8), (55, 9)]:
+        ss2_dfs["Bfo-PanxαA"].set_value(indx, "indx", new)
+    ss2_dfs["Bfo-PanxαA"] = ss2_dfs["Bfo-PanxαA"].reset_index(drop=True)
+
+    ss2_dfs["Bfr-PanxαD"] = ss2_dfs["Bfr-PanxαD"].iloc[44:53]
+    for indx, new in [(44, 1), (45, 2), (46, 3), (47, 4), (48, 5), (49, 6), (50, 7), (51, 8), (52, 9)]:
+        ss2_dfs["Bfr-PanxαD"].set_value(indx, "indx", new)
+
+    ss2_dfs["Bfr-PanxαD"] = ss2_dfs["Bfr-PanxαD"].reset_index(drop=True)
+
+    ss2_dfs = worker.update_psipred(align, ss2_dfs, "msa")
+    assert str(ss2_dfs["Bfo-PanxαA"]) == """\
+   indx aa ss  coil_prob  helix_prob  sheet_prob
+0     0  S  H      0.034       0.966       0.003
+1     1  Q  H      0.071       0.926       0.004
+2     2  M  H      0.371       0.649       0.003
+3     3  W  C      0.802       0.211       0.004
+4     4  S  C      0.852       0.151       0.010
+5     5  Q  C      0.765       0.253       0.009
+6     8  D  C      0.733       0.283       0.011
+7     9  D  C      0.890       0.126       0.014
+8    10  A  C      0.914       0.085       0.028"""
+
+    align = Alb.trimal(align, "all")
+    ss2_dfs = worker.update_psipred(align, ss2_dfs, "trimal")
+    assert str(ss2_dfs["Bfo-PanxαA"]) == """\
+   indx aa ss  coil_prob  helix_prob  sheet_prob
+0     0  S  H      0.034       0.966       0.003
+1     3  W  C      0.802       0.211       0.004
+2     4  S  C      0.852       0.151       0.010
+3     5  Q  C      0.765       0.253       0.009
+4     8  D  C      0.733       0.283       0.011
+5     9  D  C      0.890       0.126       0.014
+6    10  A  C      0.914       0.085       0.028""", print(str(ss2_dfs["Bfo-PanxαA"]))
+
+    with pytest.raises(ValueError) as err:
+        worker.update_psipred(align, ss2_dfs, "foo")
+
+    assert "Unrecognized mode 'foo': select from ['msa', 'trimal']" in str(err)
+
+
+def test_worker_trimal(hf):
+    temp_dir = br.TempDir()
+    worker = launch_worker.Worker(temp_dir.path)
+    align = Alb.AlignBuddy("""\
+>A
+MSTGTC-------
+>B
+M---TC-------
+>C
+M---TC---AILP
+>D
+-STP---YWAILP
+""", in_format="fasta")
+
+    seqbuddy = Sb.SeqBuddy(Alb.make_copy(align).records(), in_format="fasta")
+    seqbuddy = Sb.clean_seq(seqbuddy)
+
+    # Don't modify if any sequence is reduced to nothing
+    trimal = worker.trimal(seqbuddy, [0.3], Alb.make_copy(align))
+    assert str(trimal) == str(align)
+
+    align = Alb.AlignBuddy("""\
+>A
+MSTGTC-------
+>B
+M---TC-------
+>C
+M---TC---AILP
+>D
+-STPTC-YWAILP
+""", in_format="fasta")
+
+    # Don't modify if average sequence length is reduced by more than half
+    trimal = worker.trimal(seqbuddy, [0.3], Alb.make_copy(align))
+    assert str(trimal) == str(align)
+
+    # Remove some gaps
+    trimal = worker.trimal(seqbuddy, ["all", 0.3, 0.55, "clean"], Alb.make_copy(align))
+    assert str(trimal) == """\
+>A
+MSTGTC----
+>B
+M---TC----
+>C
+M---TCAILP
+>D
+-STPTCAILP
+"""
 
 
 def test_score_sequences(hf):
