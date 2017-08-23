@@ -24,6 +24,84 @@ def mock_keyboardinterupt(*args, **kwargs):
     raise KeyboardInterrupt(args, kwargs)
 
 
+def test_instantiate_worker():
+    temp_dir = br.TempDir()
+    worker = launch_worker.Worker(temp_dir.path)
+    assert worker.wrkdb_path == os.path.join(temp_dir.path, "work_db.sqlite")
+    assert worker.hbdb_path == os.path.join(temp_dir.path, "heartbeat_db.sqlite")
+    assert worker.output == os.path.join(temp_dir.path, ".worker_output")
+    assert worker.masterclear_path == os.path.join(temp_dir.path, "MasterClear")
+    assert worker.heartrate == 60
+    assert type(worker.heartbeat) == launch_worker.rdmcl.HeartBeat
+    assert worker.heartbeat.hbdb_path == worker.hbdb_path
+    assert worker.heartbeat.pulse_rate == worker.heartrate
+    assert worker.heartbeat.thread_type == "worker"
+    assert worker.max_wait == 120
+    assert worker.cpus == br.cpu_count() - 1
+    assert worker.data_file == ""
+    assert worker.start_time
+    assert worker.split_time == 0
+    assert worker.idle == 1
+    assert worker.running == 1
+    assert worker.last_heartbeat_from_master == 0
+    assert worker.subjob_num == 1
+    assert worker.num_subjobs == 1
+    assert worker.job_id_hash is None
+    worker.heartbeat.end()
+
+
+def test_start_worker_no_master(hf, capsys):
+    temp_dir = br.TempDir()
+    temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
+    worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=1)
+    with pytest.raises(SystemExit):
+        worker.start()
+    assert worker.split_time != 0
+    assert worker.last_heartbeat_from_master != 0
+    worker.data_file = ".Worker_1.dat"
+    out, err = capsys.readouterr()
+    assert "Starting Worker_2" in out
+
+
+def test_worker_check_master(hf, capsys):
+    temp_dir = br.TempDir()
+    temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
+    worker = launch_worker.Worker(temp_dir.path)
+    worker.last_heartbeat_from_master = launch_worker.time.time() + 100
+    assert worker.check_masters(20) is None
+
+    worker.last_heartbeat_from_master = launch_worker.time.time() - 200
+    with pytest.raises(SystemExit):
+        worker.check_masters(20)
+    out, err = capsys.readouterr()
+    assert "Terminating Worker_None because of 2 min, 0 sec of master inactivity (spent 20% time idle)" in out
+
+
+def test_worker_master_clear(hf, capsys):
+    temp_dir = br.TempDir()
+    temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
+    worker = launch_worker.Worker(temp_dir.path)
+    masterclear = temp_dir.subfile("MasterClear")
+    assert os.path.isfile(worker.masterclear_path), print(worker.masterclear_path)
+
+    with open(masterclear, "w") as ofile:
+        ofile.write("12345")
+    assert worker.masterclear() == 12345
+    launch_worker.sys.stdout.flush()
+    out, err = capsys.readouterr()
+    assert out == "\r\rMasterClear signal 12345\n"
+    assert not os.path.isfile(masterclear)
+
+    with open(masterclear, "w") as ofile:
+        ofile.write("Foo")
+    assert worker.masterclear() == worker.max_wait
+    out, err = capsys.readouterr()
+    assert out == "\r\rinvalid literal for int() with base 10: 'Foo'\n"
+
+
 def test_score_sequences(hf):
     outfile = br.TempFile()
     alb_obj = hf.get_data("cteno_panxs_aln")
@@ -113,8 +191,8 @@ def test_main(monkeypatch, capsys):
 
     with pytest.raises(SystemExit):
         launch_worker.main()
-        out, err = capsys.readouterr()
-        assert 'Terminating Worker_1 because of 1 sec of maser inactivity' in err
+    out, err = capsys.readouterr()
+    assert 'Terminating Worker_1 because of 1 sec of master inactivity' in out
 
     workdb_con = sqlite3.connect(os.path.join(out_dir.path, "work_db.sqlite"))
     workdb_cursor = workdb_con.cursor()
@@ -164,8 +242,8 @@ def test_main(monkeypatch, capsys):
     capsys.readouterr()
     with pytest.raises(SystemExit):
         launch_worker.main()
-        out, err = capsys.readouterr()
-        assert not (out + err)
+    out, err = capsys.readouterr()
+    assert not (out + err)
 
     out, err = capsys.readouterr()
     assert not (out + err)
@@ -178,7 +256,7 @@ def test_main(monkeypatch, capsys):
         launch_worker.main()
 
     out, err = capsys.readouterr()
-    assert "\nStarting Worker_3\n\n" in out and "Terminating Worker_3 because of 2 sec of master inactivity" in out
+    assert "Starting Worker_3\n" in out and "Terminating Worker_3 because of 2 sec of master inactivity" in out
 
     # Test termination types
     monkeypatch.setattr(launch_worker.helpers, "dummy_func", mock_valueerror)
@@ -187,12 +265,12 @@ def test_main(monkeypatch, capsys):
 
     with pytest.raises(SystemExit):
         launch_worker.main()
-        out, err = capsys.readouterr()
-        assert 'Terminating Worker_1 because of too many Worker crashes' in err
+    out, err = capsys.readouterr()
+    assert 'Terminating Worker_7 because of too many Worker crashes' in out
 
     monkeypatch.setattr(launch_worker.helpers, "dummy_func", mock_keyboardinterupt)
 
     with pytest.raises(SystemExit):
         launch_worker.main()
-        out, err = capsys.readouterr()
-        assert 'Terminating Worker_1 because of KeyboardInterrupt' in err
+    out, err = capsys.readouterr()
+    assert 'Terminating Worker_8 because of KeyboardInterrupt' in out

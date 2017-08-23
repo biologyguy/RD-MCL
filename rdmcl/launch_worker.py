@@ -34,12 +34,11 @@ except ImportError:
 # Globals
 WORKERLOCK = Lock()
 CPUS = cpu_count()
-JOB_SIZE_COFACTOR = 1000
-printer = br.DynamicPrint()
+JOB_SIZE_COFACTOR = 300
 
 
 class Worker(object):
-    def __init__(self, location, heartrate=60, max_wait=120):
+    def __init__(self, location, heartrate=60, max_wait=120, log=False, quiet=False):
         self.wrkdb_path = os.path.join(location, "work_db.sqlite")
         self.hbdb_path = os.path.join(location, "heartbeat_db.sqlite")
         self.output = os.path.join(location, ".worker_output")
@@ -50,7 +49,7 @@ class Worker(object):
         self.heartbeat = rdmcl.HeartBeat(self.hbdb_path, self.heartrate, thread_type="worker")
         self.max_wait = max_wait
         self.cpus = br.cpu_count() - 1
-        self.data_file = None
+        self.data_file = ""
         self.start_time = time.time()
         self.split_time = 0
         self.idle = 1
@@ -59,6 +58,9 @@ class Worker(object):
         self.subjob_num = 1
         self.num_subjobs = 1
         self.job_id_hash = None
+        self.printer = br.DynamicPrint(quiet=quiet)
+        if log:
+            self.printer._write = _write
 
     def start(self):
         self.split_time = time.time()
@@ -73,17 +75,14 @@ class Worker(object):
         helpers.dummy_func()
 
         self.last_heartbeat_from_master = time.time()
-        printer.write("Starting Worker_%s" % self.heartbeat.id)
-        printer.new_line(1)
-
-        # Instantiate some variables
-        # seqs, psipred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend = ["", "", 0, "", "", "", 0, 0]
+        self.printer.write("Starting Worker_%s" % self.heartbeat.id)
+        self.printer.new_line(1)
 
         idle_countdown = 1
         while os.path.isfile("Worker_%s" % self.heartbeat.id):
             idle = round(100 * self.idle / (self.idle + self.running), 2)
             if not idle_countdown:
-                printer.write("Idle %s%%" % idle)
+                self.printer.write("Idle %s%%" % idle)
                 idle_countdown = 5
 
             # Make sure there are some masters still kicking around
@@ -119,11 +118,11 @@ class Worker(object):
                 alignment = Alb.AlignBuddy(str(seqbuddy), in_format="fasta")
             else:
                 if num_subjobs == 1:
-                    printer.write("Creating MSA (%s seqs)" % len(seqbuddy))
+                    self.printer.write("Creating MSA (%s seqs)" % len(seqbuddy))
                     alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), align_m,
                                                  params=align_p, quiet=True)
                 else:
-                    printer.write("Reading MSA (%s seqs)" % len(seqbuddy))
+                    self.printer.write("Reading MSA (%s seqs)" % len(seqbuddy))
                     alignment = Alb.AlignBuddy(os.path.join(self.output, "%s.aln" % id_hash))
 
             # Prepare psipred dataframes
@@ -136,7 +135,7 @@ class Worker(object):
                 psipred_dfs = self.update_psipred(alignment, psipred_dfs, "msa")
 
                 # TrimAl
-                printer.write("Trimal (%s seqs)" % len(seqbuddy))
+                self.printer.write("Trimal (%s seqs)" % len(seqbuddy))
                 alignment = self.trimal(seqbuddy, trimal, alignment)
 
                 with helpers.ExclusiveConnect(os.path.join(self.output, "write.lock"), max_lock=0):
@@ -145,11 +144,11 @@ class Worker(object):
                         alignment.write(os.path.join(self.output, "%s.aln" % id_hash), out_format="fasta")
 
                 # Re-update PsiPred files now that some columns, possibly including non-gap characters, are removed
-                printer.write("Updating %s psipred dataframes" % len(seqbuddy))
+                self.printer.write("Updating %s psipred dataframes" % len(seqbuddy))
                 psipred_dfs = self.update_psipred(alignment, psipred_dfs, "trimal")
 
             # Prepare all-by-all list
-            printer.write("Preparing all-by-all data")
+            self.printer.write("Preparing all-by-all data")
             data_len, data = self.prepare_all_by_all(seqbuddy, psipred_dfs)
 
             if num_subjobs == 1 and data_len > self.cpus * JOB_SIZE_COFACTOR:
@@ -159,14 +158,14 @@ class Worker(object):
                 data_len, data = self.load_subjob(id_hash, subjob_num, num_subjobs, psipred_dfs)
 
             # Launch multicore
-            printer.write("Running all-by-all data (%s comparisons)" % data_len)
+            self.printer.write("Running all-by-all data (%s comparisons)" % data_len)
             with open(".Worker_%s.dat" % self.heartbeat.id, "w") as ofile:
                 ofile.write("seq1,seq2,subsmat,psi")
 
             br.run_multicore_function(data, score_sequences, quiet=True, max_processes=self.cpus,
                                       func_args=[alignment, gap_open, gap_extend, ".Worker_%s.dat" % self.heartbeat.id])
 
-            printer.write("Processing final results")
+            self.printer.write("Processing final results")
             self.process_final_results(id_hash, alignment, master_id, subjob_num, num_subjobs)
 
             self.running += time.time() - self.split_time
@@ -205,11 +204,11 @@ class Worker(object):
                 with open(self.masterclear_path, "r") as ifile:
                     try:
                         max_wait = int(ifile.read())
-                        printer.write("MasterClear signal %s" % max_wait)
-                        printer.new_line(1)
+                        self.printer.write("MasterClear signal %s" % max_wait)
+                        self.printer.new_line(1)
                     except ValueError as err:
-                        printer.write(str(err))
-                        printer.new_line(1)
+                        self.printer.write(str(err))
+                        self.printer.new_line(1)
                 os.remove(self.masterclear_path)
             else:
                 pass
@@ -281,7 +280,7 @@ class Worker(object):
     def prepare_psipred_dfs(self, seqbuddy, alignment, psipred_dir):
         psipred_dfs = OrderedDict()
         breakout = False
-        printer.write("Preparing %s psipred dataframes" % len(seqbuddy))
+        self.printer.write("Preparing %s psipred dataframes" % len(seqbuddy))
         for rec in alignment.records_iter():
             psipred_file = "%s/%s.ss2" % (psipred_dir, rec.id)
             if not os.path.isfile(psipred_file):
@@ -466,8 +465,8 @@ class Worker(object):
         return sim_scores
 
     def terminate(self, message):
-        printer.write("Terminating Worker_%s because of %s." % (self.heartbeat.id, message))
-        printer.new_line(1)
+        self.printer.write("Terminating Worker_%s because of %s." % (self.heartbeat.id, message))
+        self.printer.new_line(1)
         with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
             cursor.execute("DELETE FROM processing WHERE worker_id=?", (self.heartbeat.id,))
         if os.path.isfile(self.data_file):
@@ -506,6 +505,18 @@ def score_sequences(data, func_args):
     return
 
 
+# Used to patch br.DynamicPrint() when the -log flag is thrown
+def _write(self):
+    try:
+        while True:
+            self.out_type.write("\n%s" % self._next_print,)
+            self.out_type.flush()
+            self._last_print = self._next_print
+            yield
+    finally:
+        pass
+
+
 def argparse_init():
     import argparse
 
@@ -531,23 +542,6 @@ def main():
     workdb = os.path.join(in_args.workdb, "work_db.sqlite")
     heartbeatdb = os.path.join(in_args.workdb, "heartbeat_db.sqlite")
     worker_output = os.path.join(in_args.workdb, ".worker_output")
-
-    global printer
-    if in_args.log:
-        def _write(self):
-            try:
-                while True:
-                    self.out_type.write("\n%s" % self._next_print,)
-                    self.out_type.flush()
-                    self._last_print = self._next_print
-                    yield
-            finally:
-                pass
-        br.DynamicPrint._write = _write
-        printer = br.DynamicPrint()
-
-    if in_args.quiet:
-        printer = br.DynamicPrint(quiet=True)
 
     connection = sqlite3.connect(workdb)
     cur = connection.cursor()
@@ -577,7 +571,8 @@ def main():
 
     os.makedirs(worker_output, exist_ok=True)
 
-    wrkr = Worker(in_args.workdb, heartrate=in_args.heart_rate, max_wait=in_args.max_wait)
+    wrkr = Worker(in_args.workdb, heartrate=in_args.heart_rate, max_wait=in_args.max_wait,
+                  log=in_args.log, quiet=in_args.quiet)
     valve = br.SafetyValve(5)
     while True:  # The only way out is through Worker.terminate
         try:
