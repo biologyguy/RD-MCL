@@ -60,7 +60,7 @@ class Worker(object):
         self.job_id_hash = None
         self.printer = br.DynamicPrint(quiet=quiet)
         if log:
-            self.printer._write = _write
+            self.printer._writer = _write(self.printer)
 
     def start(self):
         self.split_time = time.time()
@@ -99,10 +99,12 @@ class Worker(object):
             # Fetch a job from the queue
             data = self.fetch_queue_job()
             if data:
-                id_hash, psipred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend = data
-                subjob_num, num_subjobs, id_hash = [1, 1, id_hash] if len(id_hash.split("_")) == 1 else id_hash.split("_")
+                full_name, psipred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend = data
+                subjob_num, num_subjobs, id_hash = [1, 1, full_name] if len(full_name.split("_")) == 1 \
+                    else full_name.split("_")
                 subjob_num = int(subjob_num)
                 num_subjobs = int(num_subjobs)
+                self.printer.write("Running %s" % full_name)
             else:
                 time.sleep(random() * 3)  # Pause for some part of three seconds
                 idle_countdown -= 1
@@ -345,8 +347,8 @@ class Worker(object):
                 indx += 1
 
         data_len = len(data)
-        n = int(rdmcl.ceil(len(data) / self.cpus))
-        data = [data[i:i + n] for i in range(0, len(data), n)]
+        n = int(rdmcl.ceil(data_len / self.cpus))
+        data = [data[i:i + n] for i in range(0, data_len, n)]
         return data_len, data
 
     def process_final_results(self, id_hash, alignment, master_id, subjob_num, num_subjobs):

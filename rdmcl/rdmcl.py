@@ -1248,7 +1248,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
 
                 else:
                     # Ummmm... Where'd the job go??? Queue it back up if it really seems to have vanished
-                    print("We had a vanish!")
+                    print("%s vanished!" % job_id)
                     if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, job_id)):
                         seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, job_id), out_format="fasta")
 
