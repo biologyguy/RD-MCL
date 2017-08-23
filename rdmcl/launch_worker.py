@@ -242,7 +242,10 @@ class Worker(object):
                 complete_jobs = cursor.execute("SELECT hash FROM complete").fetchall()
                 for job_hash in complete_jobs:
                     if not cursor.execute("SELECT hash FROM waiting WHERE hash=?", (job_hash[0],)).fetchall():
-                        cursor.execute("DELETE FROM complete WHERE hash=?", (job_hash,))
+                        cursor.execute("DELETE FROM complete WHERE hash=?", (job_hash[0],))
+
+            if dead_workers:
+                cursor.execute("DELETE FROM processing WHERE worker_id IN (%s)" % dead_workers)
 
             if master_ids:
                 master_ids = ", ".join([str(x[0]) for x in master_ids])

@@ -12,7 +12,7 @@ from collections import OrderedDict
 from buddysuite import buddy_resources as br
 from buddysuite import AlignBuddy as Alb
 # from copy import copy, deepcopy
-import shutil
+import time
 import argparse
 
 
@@ -69,17 +69,17 @@ def test_worker_check_master(hf, capsys):
     temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
     temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
     worker = launch_worker.Worker(temp_dir.path)
-    worker.last_heartbeat_from_master = launch_worker.time.time() + 100
+    worker.last_heartbeat_from_master = time.time() + 100
     assert worker.check_masters(20) is None
 
-    worker.last_heartbeat_from_master = launch_worker.time.time() - 200
+    worker.last_heartbeat_from_master = time.time() - 200
     with pytest.raises(SystemExit):
         worker.check_masters(20)
     out, err = capsys.readouterr()
     assert "Terminating Worker_None because of 2 min, 0 sec of master inactivity (spent 20% time idle)" in out
 
 
-def test_worker_master_clear(hf, capsys):
+def test_worker_masterclear(hf, capsys):
     temp_dir = br.TempDir()
     temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
     temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
@@ -100,6 +100,51 @@ def test_worker_master_clear(hf, capsys):
     assert worker.masterclear() == worker.max_wait
     out, err = capsys.readouterr()
     assert out == "\r\rinvalid literal for int() with base 10: 'Foo'\n"
+
+
+def test_worker_clean_dead_threads(hf):
+    temp_dir = br.TempDir()
+    temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
+    worker = launch_worker.Worker(temp_dir.path)
+
+    hb_con = sqlite3.connect(os.path.join(temp_dir.path, "heartbeat_db.sqlite"))
+    hb_cursor = hb_con.cursor()
+    hb_cursor.execute("INSERT INTO heartbeat (thread_type, pulse) VALUES ('master', %s)" % round(time.time()))
+    master_id = hb_cursor.lastrowid
+    hb_cursor.execute("INSERT INTO heartbeat (thread_type, pulse) VALUES ('worker', %s)" % round(time.time()))
+    worker_id = hb_cursor.lastrowid
+    hb_con.commit()
+
+    work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
+    work_cursor = work_con.cursor()
+    work_cursor.execute("INSERT INTO "
+                        "waiting (hash, master_id) "
+                        "VALUES ('foo', %s)" % master_id)
+    work_cursor.execute("INSERT INTO "
+                        "processing (hash, worker_id, master_id) "
+                        "VALUES ('foo', ?, ?)", (worker_id, master_id,))
+    # Orphan
+    work_cursor.execute("INSERT INTO "
+                        "complete (hash, worker_id, master_id) "
+                        "VALUES ('baz', 101, 100)")
+    work_con.commit()
+
+    worker.clean_dead_threads(100)
+    assert hb_cursor.execute("SELECT * FROM heartbeat WHERE thread_id=%s" % master_id).fetchone()
+    assert work_cursor.execute("SELECT * FROM waiting WHERE master_id=%s" % master_id).fetchone()
+    assert work_cursor.execute("SELECT * FROM processing WHERE worker_id=%s" % worker_id).fetchone()
+
+    # No one waiting on complete
+    work_cursor.execute("INSERT INTO "
+                        "complete (hash, worker_id, master_id) "
+                        "VALUES ('bar', ?, ?)", (worker_id, master_id,))
+    work_con.commit()
+
+    worker.clean_dead_threads(-100)
+    assert not hb_cursor.execute("SELECT * FROM heartbeat WHERE thread_id=%s" % master_id).fetchone()
+    assert not work_cursor.execute("SELECT * FROM waiting WHERE master_id=%s" % master_id).fetchone()
+    assert not work_cursor.execute("SELECT * FROM processing WHERE worker_id=%s" % worker_id).fetchone()
 
 
 def test_score_sequences(hf):
