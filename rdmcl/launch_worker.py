@@ -43,6 +43,7 @@ class Worker(object):
         self.wrkdb_path = os.path.join(self.working_dir, "work_db.sqlite")
         self.hbdb_path = os.path.join(self.working_dir, "heartbeat_db.sqlite")
         self.output = os.path.join(self.working_dir, ".worker_output")
+        os.makedirs(self.output, exist_ok=True)
 
         self.masterclear_path = os.path.split(self.wrkdb_path)[0]
         self.masterclear_path = os.path.join(self.masterclear_path, "MasterClear")
@@ -363,6 +364,7 @@ class Worker(object):
             sim_scores = pd.read_csv(ifile, index_col=False)
 
         if num_subjobs > 1:
+            # If all subjobs are not complete, an empty df is returned
             sim_scores = self.process_subjob(id_hash, sim_scores, subjob_num, num_subjobs, master_id)
 
         if not sim_scores.empty:
@@ -380,8 +382,7 @@ class Worker(object):
 
             with helpers.ExclusiveConnect(os.path.join(self.output, "write.lock"), max_lock=0):
                 # Place these write commands in ExclusiveConnect to ensure a writing lock
-                if not os.path.isfile(os.path.join(self.output, "%s.graph" % id_hash)):
-                    sim_scores.to_csv(os.path.join(self.output, "%s.graph" % id_hash), header=None, index=False)
+                sim_scores.to_csv(os.path.join(self.output, "%s.graph" % id_hash), header=None, index=False)
 
             with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
                 # Confirm that the job is still being waited on before adding to the `complete` table
@@ -391,9 +392,11 @@ class Worker(object):
                     cursor.execute("INSERT INTO complete (hash, worker_id, master_id) "
                                    "VALUES (?, ?, ?)", (id_hash, self.heartbeat.id, master_id,))
                 else:
-                    os.remove(os.path.join(self.output, "%s.graph" % id_hash))
-                    os.remove(os.path.join(self.output, "%s.aln" % id_hash))
-                    os.remove(os.path.join(self.output, "%s.seqs" % id_hash))
+                    for del_file in ["%s.%s" % (id_hash, x) for x in ["graph", "aln", "seqs"]]:
+                        try:
+                            os.remove(os.path.join(self.output, del_file))
+                        except FileNotFoundError:
+                            pass
 
                 cursor.execute("DELETE FROM processing WHERE hash=?", (id_hash,))
                 cursor.execute("DELETE FROM processing WHERE hash LIKE '%%_%s'" % id_hash)
@@ -550,7 +553,6 @@ def main():
 
     workdb = os.path.join(in_args.workdb, "work_db.sqlite")
     heartbeatdb = os.path.join(in_args.workdb, "heartbeat_db.sqlite")
-    worker_output = os.path.join(in_args.workdb, ".worker_output")
 
     connection = sqlite3.connect(workdb)
     cur = connection.cursor()
@@ -577,8 +579,6 @@ def main():
 
     cur.close()
     connection.close()
-
-    os.makedirs(worker_output, exist_ok=True)
 
     wrkr = Worker(in_args.workdb, heartrate=in_args.heart_rate, max_wait=in_args.max_wait,
                   log=in_args.log, quiet=in_args.quiet)

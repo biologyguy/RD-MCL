@@ -12,7 +12,7 @@ from collections import OrderedDict
 from buddysuite import buddy_resources as br
 from buddysuite import AlignBuddy as Alb
 from buddysuite import SeqBuddy as Sb
-# from copy import copy, deepcopy
+from math import ceil
 import time
 import argparse
 
@@ -28,6 +28,7 @@ def mock_keyboardinterupt(*args, **kwargs):
 def test_instantiate_worker():
     temp_dir = br.TempDir()
     worker = launch_worker.Worker(temp_dir.path)
+    assert worker.working_dir == temp_dir.path
     assert worker.wrkdb_path == os.path.join(temp_dir.path, "work_db.sqlite")
     assert worker.hbdb_path == os.path.join(temp_dir.path, "heartbeat_db.sqlite")
     assert worker.output == os.path.join(temp_dir.path, ".worker_output")
@@ -39,6 +40,7 @@ def test_instantiate_worker():
     assert worker.heartbeat.thread_type == "worker"
     assert worker.max_wait == 120
     assert worker.cpus == br.cpu_count() - 1
+    assert worker.worker_file == ""
     assert worker.data_file == ""
     assert worker.start_time
     assert worker.split_time == 0
@@ -288,6 +290,119 @@ M---TCAILP
 >D
 -STPTCAILP
 """
+
+
+def test_worker_prepare_all_by_all(hf):
+    temp_dir = br.TempDir()
+    worker = launch_worker.Worker(temp_dir.path)
+    seqbuddy = hf.get_data("cteno_panxs")
+    seqbuddy = Sb.pull_recs(seqbuddy, "Oma")  # Only 4 records, which means 6 comparisons
+    ss2_dfs = hf.get_data("ss2_dfs")
+
+    data_len, data = worker.prepare_all_by_all(seqbuddy, ss2_dfs)
+    assert data_len == 6
+    assert len(data) == 6
+    assert data[0][0][0:2] == ('Oma-PanxαA', 'Oma-PanxαB')
+
+    seqbuddy = hf.get_data("cteno_panxs")  # 134 records = 8911 comparisons
+    data_len, data = worker.prepare_all_by_all(seqbuddy, ss2_dfs)
+    assert data_len == 8911
+    assert len(data[0]) == int(ceil(data_len / (br.cpu_count() - 1)))
+
+
+def test_worker_process_final_results(hf, monkeypatch):
+    temp_dir = br.TempDir()
+    temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+
+    work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
+    work_cursor = work_con.cursor()
+
+    worker = launch_worker.Worker(temp_dir.path)
+    aln_file = temp_dir.subfile(os.path.join(worker.output, "foo.aln"))
+    seqs_file = temp_dir.subfile(os.path.join(worker.output, "foo.seqs"))
+    graph_file = os.path.join(worker.output, "foo.graph")
+    subjob_dir = temp_dir.subdir(os.path.join(worker.output, "foo"))
+
+    # Use worker id = 2 and master id = 3
+    worker.data_file = os.path.join(temp_dir.path, ".Worker_2.dat")
+
+    work_cursor.execute("INSERT INTO "
+                        "waiting (hash, master_id) "
+                        "VALUES ('foo', 3)")
+    work_cursor.execute("INSERT INTO "
+                        "processing (hash, worker_id, master_id) "
+                        "VALUES ('foo', 2, 3)")
+    work_cursor.execute("INSERT INTO "
+                        "processing (hash, worker_id, master_id) "
+                        "VALUES ('1_2_foo', 2, 3)")
+    work_cursor.execute("INSERT INTO "
+                        "complete (hash, worker_id, master_id) "
+                        "VALUES ('1_2_foo', 2, 3)")
+    work_con.commit()
+
+    # Start by processing an empty result
+    with open(worker.data_file, "w") as ifile:
+        ifile.write("seq1,seq2,subsmat,psi")
+
+    assert worker.process_final_results("foo", 3, 1, 1) is None
+    assert work_cursor.execute("SELECT * FROM waiting WHERE hash='foo'").fetchone()
+    assert work_cursor.execute("SELECT * FROM processing WHERE hash='foo'").fetchone()
+    assert work_cursor.execute("SELECT * FROM processing WHERE hash LIKE '%%_foo'").fetchone()
+    assert not work_cursor.execute("SELECT * FROM complete WHERE hash='foo'").fetchone()
+    assert work_cursor.execute("SELECT * FROM complete WHERE hash LIKE '%%_foo'").fetchone()
+    assert os.path.isfile(aln_file)
+    assert os.path.isfile(seqs_file)
+    assert not os.path.isfile(graph_file)
+    assert os.path.isdir(subjob_dir)
+
+    # Confirm that the sim_scores will be collected from process_subjob if num_subjobs > 1
+    sim_scores = launch_worker.pd.read_csv(worker.data_file, index_col=False)
+    monkeypatch.setattr(launch_worker.Worker, "process_subjob", lambda *_: sim_scores)
+
+    assert worker.process_final_results("foo", 3, 1, 4) is None
+    assert work_cursor.execute("SELECT * FROM waiting WHERE hash='foo'").fetchone()
+    assert work_cursor.execute("SELECT * FROM processing WHERE hash='foo'").fetchone()
+    assert not work_cursor.execute("SELECT * FROM complete WHERE hash='foo'").fetchone()
+    assert os.path.isfile(aln_file)
+    assert os.path.isfile(seqs_file)
+    assert not os.path.isfile(graph_file)
+    assert os.path.isdir(subjob_dir)
+
+    # Process an actual result
+    result = """
+Oma-PanxαA,Oma-PanxαB,0.24409184734877187,0.48215666893146514
+Oma-PanxαA,Oma-PanxαC,0.5135617078978646,0.7301561315022769
+Oma-PanxαA,Oma-PanxαD,0.587799312776859,0.7428144752048478
+Oma-PanxαB,Oma-PanxαC,0.23022898459442326,0.5027489193831555
+Oma-PanxαB,Oma-PanxαD,0.2382962711779895,0.44814103743455824
+Oma-PanxαC,Oma-PanxαD,0.47123287364498306,0.6647632735397735
+"""
+    with open(worker.data_file, "a") as ifile:
+        ifile.write(result)
+    assert worker.process_final_results("foo", 3, 1, 1) is None
+    assert work_cursor.execute("SELECT * FROM waiting WHERE hash='foo'").fetchone()
+    assert not work_cursor.execute("SELECT * FROM processing WHERE hash='foo'").fetchone()
+    assert work_cursor.execute("SELECT * FROM complete WHERE hash='foo'").fetchone()
+    assert not work_cursor.execute("SELECT * FROM complete WHERE hash LIKE '%%_foo'").fetchone()
+    assert os.path.isfile(aln_file)
+    assert os.path.isfile(seqs_file)
+    assert os.path.isfile(graph_file)
+    assert not os.path.isdir(subjob_dir)
+
+    # Process a result with no masters waiting around
+    work_cursor.execute("DELETE FROM waiting WHERE hash='foo'")
+    work_cursor.execute("DELETE FROM complete WHERE hash='foo'")
+    work_con.commit()
+    os.remove(seqs_file)
+    assert worker.process_final_results("foo", 3, 1, 1) is None
+    assert not work_cursor.execute("SELECT * FROM waiting WHERE hash='foo'").fetchone()
+    assert not work_cursor.execute("SELECT * FROM processing WHERE hash='foo'").fetchone()
+    assert not work_cursor.execute("SELECT * FROM processing WHERE hash LIKE '%%_foo'").fetchone()
+    assert not work_cursor.execute("SELECT * FROM complete WHERE hash='foo'").fetchone()
+    assert not work_cursor.execute("SELECT * FROM complete WHERE hash LIKE '%%_foo'").fetchone()
+    assert not os.path.isfile(aln_file)
+    assert not os.path.isfile(seqs_file)
+    assert not os.path.isfile(graph_file)
 
 
 def test_score_sequences(hf):
