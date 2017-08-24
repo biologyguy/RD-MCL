@@ -71,10 +71,11 @@ class Worker(object):
 
         self.heartbeat.start()
         self.worker_file = os.path.join(self.working_dir, "Worker_%s" % self.heartbeat.id)
-        self.data_file = os.path.join(self.working_dir, ".Worker_%s.dat" % self.heartbeat.id)
-
         with open(self.worker_file, "w") as ofile:
             ofile.write("To terminate this Worker, simply delete this file.")
+
+        self.data_file = os.path.join(self.working_dir, ".Worker_%s.dat" % self.heartbeat.id)
+        open(self.data_file, "w").close()
 
         helpers.dummy_func()
 
@@ -121,7 +122,7 @@ class Worker(object):
 
             # Prepare alignment
             if len(seqbuddy) == 1:
-                alignment = Alb.AlignBuddy(str(seqbuddy), in_format="fasta")
+                raise ValueError("Queued job of size 1 encountered: %s" % id_hash)
             else:
                 if num_subjobs == 1:
                     self.printer.write("Creating MSA (%s seqs)" % len(seqbuddy))
@@ -133,8 +134,6 @@ class Worker(object):
 
             # Prepare psipred dataframes
             psipred_dfs = self.prepare_psipred_dfs(seqbuddy, psipred_dir)
-            if not psipred_dfs:
-                break
 
             if num_subjobs == 1:  # This is starting a full job from scratch, not a sub-job
                 # Need to specify what columns the PsiPred files map to now that there are gaps.
@@ -181,10 +180,7 @@ class Worker(object):
         if os.path.isfile(self.data_file):
             os.remove(self.data_file)
 
-        if os.path.isfile(self.worker_file):
-            os.remove(self.worker_file)
-        else:
-            self.terminate("deleted check file")
+        self.terminate("deleted check file")
         return
 
     def check_masters(self, idle):

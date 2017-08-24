@@ -67,6 +67,99 @@ def test_start_worker_no_master(hf, capsys):
     assert "Starting Worker_2" in out
 
 
+def test_start_worker_clean_dead_master(hf, capsys, monkeypatch):
+    monkeypatch.setattr(launch_worker, "random", lambda *_: 0.991)
+    # No need to actually call the function, just confirm we can get there
+    monkeypatch.setattr(launch_worker.Worker, "clean_dead_threads", lambda *_: print("PASSED"))
+    temp_dir = br.TempDir()
+    temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
+    worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=1)
+    with pytest.raises(SystemExit):
+        worker.start()
+    out, err = capsys.readouterr()
+    assert "PASSED" in out
+
+
+def test_start_worker_fetch_queue(hf, capsys):
+    temp_dir = br.TempDir()
+    temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
+    worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=1)
+
+    work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
+    work_cursor = work_con.cursor()
+    work_cursor.execute("INSERT INTO "
+                        "waiting (hash, master_id) "
+                        "VALUES ('foo', 2)")
+    work_cursor.execute("INSERT INTO "
+                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('foo', ?, 2, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
+                        (os.path.join(hf.resource_path, "psi_pred"),))
+
+    work_con.commit()
+
+    seqbuddy = hf.get_data("cteno_panxs")
+    seqbuddy = Sb.pull_recs(seqbuddy, "Oma")  # Only 4 records, which means 6 comparisons
+    seqbuddy.write(os.path.join(worker.output, "foo.seqs"))
+
+    with pytest.raises(SystemExit):
+        worker.start()
+
+    out, err = capsys.readouterr()
+    assert "Running foo" in out
+    assert "Creating MSA (4 seqs)" in out
+    assert "Trimal (4 seqs)" in out
+    assert os.path.isfile(os.path.join(worker.output, "foo.aln"))
+    assert "Updating 4 psipred dataframes" in out
+    assert "Preparing all-by-all data" in out
+    assert "Running all-by-all data (6 comparisons)" in out
+    assert "Processing final results" in out
+
+
+def test_start_worker_1seq_error(hf, monkeypatch):
+    temp_dir = br.TempDir()
+    temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
+    worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=1)
+
+    work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
+    work_cursor = work_con.cursor()
+    work_cursor.execute("INSERT INTO "
+                        "waiting (hash, master_id) "
+                        "VALUES ('foo', 2)")
+    work_cursor.execute("INSERT INTO "
+                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('foo', ?, 2, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
+                        (os.path.join(hf.resource_path, "psi_pred"),))
+    work_con.commit()
+
+    # Only a single sequence present
+    seqbuddy = hf.get_data("cteno_panxs")
+    seqbuddy = Sb.pull_recs(seqbuddy, "Oma-PanxαC")
+    seqbuddy.write(os.path.join(worker.output, "foo.seqs"))
+
+    with pytest.raises(ValueError) as err:
+        worker.start()
+
+    assert "Queued job of size 1 encountered: foo" in str(err)
+
+
+def test_start_worker_deleted_check(hf, capsys, monkeypatch):
+    temp_dir = br.TempDir()
+    temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
+    worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=1)
+    monkeypatch.setattr(helpers, "dummy_func", lambda *_: os.remove(worker.worker_file))
+
+    with pytest.raises(SystemExit):
+        worker.start()
+
+    out, err = capsys.readouterr()
+    assert "Terminating Worker_2 because of deleted check file" in out, print(out)
+    assert not os.path.isfile(worker.data_file)
+
+
 def test_worker_check_master(hf, capsys):
     temp_dir = br.TempDir()
     temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
