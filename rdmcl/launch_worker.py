@@ -39,9 +39,10 @@ JOB_SIZE_COFACTOR = 300
 
 class Worker(object):
     def __init__(self, location, heartrate=60, max_wait=120, log=False, quiet=False):
-        self.wrkdb_path = os.path.join(location, "work_db.sqlite")
-        self.hbdb_path = os.path.join(location, "heartbeat_db.sqlite")
-        self.output = os.path.join(location, ".worker_output")
+        self.working_dir = os.path.abspath(location)
+        self.wrkdb_path = os.path.join(self.working_dir, "work_db.sqlite")
+        self.hbdb_path = os.path.join(self.working_dir, "heartbeat_db.sqlite")
+        self.output = os.path.join(self.working_dir, ".worker_output")
 
         self.masterclear_path = os.path.split(self.wrkdb_path)[0]
         self.masterclear_path = os.path.join(self.masterclear_path, "MasterClear")
@@ -49,6 +50,7 @@ class Worker(object):
         self.heartbeat = rdmcl.HeartBeat(self.hbdb_path, self.heartrate, thread_type="worker")
         self.max_wait = max_wait
         self.cpus = br.cpu_count() - 1
+        self.worker_file = ""
         self.data_file = ""
         self.start_time = time.time()
         self.split_time = 0
@@ -67,10 +69,11 @@ class Worker(object):
         self.start_time = time.time()
 
         self.heartbeat.start()
+        self.worker_file = os.path.join(self.working_dir, "Worker_%s" % self.heartbeat.id)
+        self.data_file = os.path.join(self.working_dir, ".Worker_%s.dat" % self.heartbeat.id)
 
-        with open("Worker_%s" % self.heartbeat.id, "w") as ofile:
+        with open(self.worker_file, "w") as ofile:
             ofile.write("To terminate this Worker, simply delete this file.")
-        self.data_file = ".Worker_%s.dat" % self.heartbeat.id
 
         helpers.dummy_func()
 
@@ -79,7 +82,7 @@ class Worker(object):
         self.printer.new_line(1)
 
         idle_countdown = 1
-        while os.path.isfile("Worker_%s" % self.heartbeat.id):
+        while os.path.isfile(self.worker_file):
             idle = round(100 * self.idle / (self.idle + self.running), 2)
             if not idle_countdown:
                 self.printer.write("Idle %s%%" % idle)
@@ -161,14 +164,14 @@ class Worker(object):
 
             # Launch multicore
             self.printer.write("Running all-by-all data (%s comparisons)" % data_len)
-            with open(".Worker_%s.dat" % self.heartbeat.id, "w") as ofile:
+            with open(self.data_file, "w") as ofile:
                 ofile.write("seq1,seq2,subsmat,psi")
 
             br.run_multicore_function(data, score_sequences, quiet=True, max_processes=self.cpus,
-                                      func_args=[alignment, gap_open, gap_extend, ".Worker_%s.dat" % self.heartbeat.id])
+                                      func_args=[alignment, gap_open, gap_extend, self.data_file])
 
             self.printer.write("Processing final results")
-            self.process_final_results(id_hash, alignment, master_id, subjob_num, num_subjobs)
+            self.process_final_results(id_hash, master_id, subjob_num, num_subjobs)
 
             self.running += time.time() - self.split_time
             self.split_time = time.time()
@@ -177,8 +180,8 @@ class Worker(object):
         if os.path.isfile(self.data_file):
             os.remove(self.data_file)
 
-        if os.path.isfile("Worker_%s" % self.heartbeat.id):
-            os.remove("Worker_%s" % self.heartbeat.id)
+        if os.path.isfile(self.worker_file):
+            os.remove(self.worker_file)
         else:
             self.terminate("deleted check file")
         return
@@ -355,8 +358,8 @@ class Worker(object):
         data = [data[i:i + n] for i in range(0, data_len, n)]
         return data_len, data
 
-    def process_final_results(self, id_hash, alignment, master_id, subjob_num, num_subjobs):
-        with open(".Worker_%s.dat" % self.heartbeat.id, "r") as ifile:
+    def process_final_results(self, id_hash, master_id, subjob_num, num_subjobs):
+        with open(self.data_file, "r") as ifile:
             sim_scores = pd.read_csv(ifile, index_col=False)
 
         if num_subjobs > 1:
@@ -477,8 +480,8 @@ class Worker(object):
             cursor.execute("DELETE FROM processing WHERE worker_id=?", (self.heartbeat.id,))
         if os.path.isfile(self.data_file):
             os.remove(self.data_file)
-        if os.path.isfile("Worker_%s" % self.heartbeat.id):
-            os.remove("Worker_%s" % self.heartbeat.id)
+        if os.path.isfile(self.worker_file):
+            os.remove(self.worker_file)
         self.heartbeat.end()
         sys.exit()
 
