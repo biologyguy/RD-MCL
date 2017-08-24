@@ -406,14 +406,14 @@ class Worker(object):
         return
 
     def spawn_subjobs(self, id_hash, data, psipred_dfs, master_id, gap_open, gap_extend):
-        out_dir = os.path.join(self.output, id_hash)
-        os.makedirs(out_dir, exist_ok=True)
+        subjob_out_dir = os.path.join(self.output, id_hash)
+        os.makedirs(subjob_out_dir, exist_ok=True)
         # Flatten the data jobs list back down
         data = [y for x in data for y in x]
         len_data = len(data)
 
         for rec_id, df in psipred_dfs.items():
-            df.to_csv(os.path.join(out_dir, "%s.ss2" % rec_id), header=None, index=False, sep=" ")
+            df.to_csv(os.path.join(subjob_out_dir, "%s.ss2" % rec_id), header=None, index=False, sep=" ")
 
         # Break it up again into min number of chunks where len(each chunk) < #CPUs * JOB_SIZE_COFACTOR
         num_subjobs = int(rdmcl.ceil(len_data / (self.cpus * JOB_SIZE_COFACTOR)))
@@ -421,7 +421,7 @@ class Worker(object):
         data = [data[i:i + job_size] for i in range(0, len_data, job_size)]
 
         for indx, subjob in enumerate(data):
-            with open(os.path.join(out_dir, "%s_of_%s.txt" % (indx + 1, num_subjobs)), "w") as ofile:
+            with open(os.path.join(subjob_out_dir, "%s_of_%s.txt" % (indx + 1, num_subjobs)), "w") as ofile:
                 for pair in subjob:
                     ofile.write("%s %s\n" % (pair[0], pair[1]))
 
@@ -431,7 +431,7 @@ class Worker(object):
                 # NOTE: the 'indx + 2' is necessary to push index to '1' start and account for the job already removed
                 cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id, gap_open, gap_extend) "
                                "VALUES (?, ?, ?, ?, ?)", ("%s_%s_%s" % (indx + 2, num_subjobs, id_hash),
-                                                          out_dir, master_id, gap_open, gap_extend,))
+                                                          subjob_out_dir, master_id, gap_open, gap_extend,))
 
             cursor.execute("INSERT INTO processing (hash, worker_id, master_id) VALUES (?, ?, ?)",
                            ("1_%s_%s" % (num_subjobs, id_hash), self.heartbeat.id, master_id,))

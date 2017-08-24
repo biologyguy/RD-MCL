@@ -242,7 +242,7 @@ def test_worker_update_psipred(hf):
     assert "Unrecognized mode 'foo': select from ['msa', 'trimal']" in str(err)
 
 
-def test_worker_trimal(hf):
+def test_worker_trimal():
     temp_dir = br.TempDir()
     worker = launch_worker.Worker(temp_dir.path)
     align = Alb.AlignBuddy("""\
@@ -403,6 +403,74 @@ Oma-PanxαC,Oma-PanxαD,0.47123287364498306,0.6647632735397735
     assert not os.path.isfile(aln_file)
     assert not os.path.isfile(seqs_file)
     assert not os.path.isfile(graph_file)
+
+
+def test_worker_spawn_subjobs(hf, monkeypatch):
+    temp_dir = br.TempDir()
+    temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+
+    work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
+    work_cursor = work_con.cursor()
+
+    worker = launch_worker.Worker(temp_dir.path)
+    worker.heartbeat.id = 1
+    subjob_dir = os.path.join(worker.output, "foo")
+
+    # Set max job size at 4
+    worker.cpus = 2
+    monkeypatch.setattr(launch_worker, "JOB_SIZE_COFACTOR", 2)
+
+    ss2_dfs = hf.get_data("ss2_dfs")
+
+    pairs = [('Bch-PanxαA', 'Bch-PanxαB'), ('Bch-PanxαA', 'Bch-PanxαC'), ('Bch-PanxαA', 'Bch-PanxαD'),
+             ('Bch-PanxαA', 'Bch-PanxαE'), ('Bch-PanxαB', 'Bch-PanxαC'), ('Bch-PanxαB', 'Bch-PanxαD'),
+             ('Bch-PanxαB', 'Bch-PanxαE'), ('Bch-PanxαC', 'Bch-PanxαD'), ('Bch-PanxαC', 'Bch-PanxαE'),
+             ('Bch-PanxαD', 'Bch-PanxαE')]
+
+    for indx, pair in enumerate(pairs):
+        pairs[indx] = (pair[0], pair[1], ss2_dfs[pair[0]], ss2_dfs[pair[1]])
+
+    data = [pairs[i:i + 5] for i in range(0, len(pairs), 5)]  # This gives two groups of five
+
+    data_len, data, subjob_num, num_subjobs = worker.spawn_subjobs("foo", data, ss2_dfs, 3, -5, 0)
+
+    assert data_len == len(data[0]) == 2
+    assert len(data[1]) == 2
+    assert len(data) == 2
+    assert subjob_num == 1
+    assert num_subjobs == 3
+
+    assert os.path.isfile(os.path.join(subjob_dir, "Bch-PanxαA.ss2"))
+    with open(os.path.join(subjob_dir, "1_of_3.txt"), "r") as ifile:
+        assert ifile.read() == """\
+Bch-PanxαA Bch-PanxαB
+Bch-PanxαA Bch-PanxαC
+Bch-PanxαA Bch-PanxαD
+Bch-PanxαA Bch-PanxαE
+"""
+
+    with open(os.path.join(subjob_dir, "3_of_3.txt"), "r") as ifile:
+        assert ifile.read() == """\
+Bch-PanxαC Bch-PanxαE
+Bch-PanxαD Bch-PanxαE
+"""
+
+    queue = work_cursor.execute("SELECT * FROM queue").fetchall()
+    assert len(queue) == 2
+    hash_id, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend = queue[0]
+    assert hash_id == "2_3_foo"
+    assert psi_pred_dir == subjob_dir
+    assert master_id == 3
+    assert align_m is align_p is trimal is None
+    assert gap_open, gap_extend == (-5, 0)
+
+    processing = work_cursor.execute("SELECT * FROM processing").fetchall()
+    assert len(processing) == 1
+
+    hash_id, worker_id, master_id = processing[0]
+    assert hash_id == "1_3_foo"
+    assert worker_id == worker.heartbeat.id
+    assert master_id == 3
 
 
 def test_score_sequences(hf):
