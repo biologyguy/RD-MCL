@@ -8,7 +8,7 @@ from .. import launch_worker
 import os
 import sqlite3
 import pandas as pd
-from collections import OrderedDict
+from io import StringIO
 from buddysuite import buddy_resources as br
 from buddysuite import AlignBuddy as Alb
 from buddysuite import SeqBuddy as Sb
@@ -471,6 +471,123 @@ Bch-PanxαD Bch-PanxαE
     assert hash_id == "1_3_foo"
     assert worker_id == worker.heartbeat.id
     assert master_id == 3
+
+
+def test_worker_load_subjob(hf):
+    temp_dir = br.TempDir()
+    worker = launch_worker.Worker(temp_dir.path)
+    temp_dir.subdir(".worker_output/foo")
+    worker.cpus = 2
+    ss2_dfs = hf.get_data("ss2_dfs")
+    subjob_dir = os.path.join(worker.output, "foo")
+
+    with open(os.path.join(subjob_dir, "2_of_3.txt"), "w") as ofile:
+        ofile.write("""\
+Bch-PanxαA Bch-PanxαB
+Bch-PanxαA Bch-PanxαC
+Bch-PanxαA Bch-PanxαD
+Bch-PanxαA Bch-PanxαE
+""")
+
+    data_len, data = worker.load_subjob("foo", 2, 3, ss2_dfs)
+    assert data_len == 4
+    assert len(data) == 2
+
+
+def test_worker_process_subjob(hf):
+    temp_dir = br.TempDir()
+    temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    worker = launch_worker.Worker(temp_dir.path)
+    worker.heartbeat.id = 1
+
+    subjob_dir = temp_dir.subdir(".worker_output/foo")
+
+    work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
+    work_cursor = work_con.cursor()
+    work_cursor.execute("INSERT INTO "
+                        "processing (hash, worker_id, master_id) "
+                        "VALUES ('2_3_foo', 1, 3)")
+    work_con.commit()
+
+    # First test what happens when there are remaining subjobs
+    sim_scores = """\
+seq1,seq2,subsmat,psi
+Oma-PanxαA,Oma-PanxαB,0.2440918473487719,0.4821566689314651
+Oma-PanxαA,Oma-PanxαC,0.5135617078978646,0.7301561315022769
+"""
+    sim_scores_df = pd.read_csv(StringIO(sim_scores))
+    sim_scores_df = worker.process_subjob("foo", sim_scores_df, 2, 3, 3)
+    assert sim_scores_df.empty
+    assert work_cursor.execute("SELECT * FROM complete").fetchone()[0] == "2_3_foo"
+    assert not work_cursor.execute("SELECT * FROM processing").fetchall()
+
+    with open(os.path.join(subjob_dir, "2_of_3.sim_df"), "r") as ifile:
+        assert ifile.read() == sim_scores
+
+    # Now test the final processing after all subjobs complete
+    work_cursor.execute("INSERT INTO "
+                        "complete (hash, worker_id, master_id) "
+                        "VALUES ('1_3_foo', 1, 3)")
+
+    work_cursor.execute("INSERT INTO "
+                        "processing (hash, worker_id, master_id) "
+                        "VALUES ('3_3_foo', 1, 3)")
+    work_con.commit()
+
+    with open(os.path.join(subjob_dir, "1_of_3.sim_df"), "w") as ofile:
+        ofile.write("""\
+seq1,seq2,subsmat,psi
+Oma-PanxαA,Oma-PanxαD,0.587799312776859,0.7428144752048478
+Oma-PanxαB,Oma-PanxαC,0.2302289845944233,0.5027489193831555
+""")
+
+    sim_scores = """\
+seq1,seq2,subsmat,psi
+Oma-PanxαB,Oma-PanxαD,0.2382962711779895,0.44814103743455824
+Oma-PanxαC,Oma-PanxαD,0.4712328736449831,0.6647632735397735
+"""
+    sim_scores_df = pd.read_csv(StringIO(sim_scores))
+    sim_scores_df = worker.process_subjob("foo", sim_scores_df, 3, 3, 3)
+
+    assert str(sim_scores_df) == """\
+         seq1        seq2   subsmat       psi
+0  Oma-PanxαA  Oma-PanxαD  0.587799  0.742814
+1  Oma-PanxαB  Oma-PanxαC  0.230229  0.502749
+0  Oma-PanxαA  Oma-PanxαB  0.244092  0.482157
+1  Oma-PanxαA  Oma-PanxαC  0.513562  0.730156
+0  Oma-PanxαB  Oma-PanxαD  0.238296  0.448141
+1  Oma-PanxαC  Oma-PanxαD  0.471233  0.664763"""
+
+
+def test_worker_terminate(hf, monkeypatch, capsys):
+    monkeypatch.setattr(launch_worker.rdmcl.HeartBeat, "end", lambda *_: True)
+    temp_dir = br.TempDir()
+    temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
+    work_cursor = work_con.cursor()
+    work_cursor.execute("INSERT INTO "
+                        "processing (hash, worker_id, master_id) "
+                        "VALUES ('2_3_foo', 1, 3)")
+    work_cursor.execute("INSERT INTO "
+                        "processing (hash, worker_id, master_id) "
+                        "VALUES ('1_3_foo', 2, 3)")
+    work_con.commit()
+
+    worker = launch_worker.Worker(temp_dir.path)
+    worker.heartbeat.id = 1
+    worker.data_file = temp_dir.subfile(".Worker_1.dat")
+    assert os.path.isfile(worker.data_file)
+    worker.worker_file = temp_dir.subfile("Worker_1")
+    assert os.path.isfile(worker.worker_file)
+
+    with pytest.raises(SystemExit):
+        worker.terminate("unit test signal")
+    out, err = capsys.readouterr()
+    assert "Terminating Worker_1 because of unit test signal" in out
+    assert not os.path.isfile(worker.data_file)
+    assert not os.path.isfile(worker.worker_file)
+    assert not work_cursor.execute("SELECT * FROM processing WHERE worker_id=1").fetchall()
+    assert work_cursor.execute("SELECT * FROM processing WHERE worker_id=2").fetchall()
 
 
 def test_score_sequences(hf):

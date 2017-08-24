@@ -443,8 +443,8 @@ class Worker(object):
         return len(data[0]), data, subjob_num, num_subjobs
 
     def load_subjob(self, id_hash, subjob_num, num_subjobs, psipred_dfs):
-        out_dir = os.path.join(self.output, id_hash)
-        with open(os.path.join(out_dir, "%s_of_%s.txt" % (subjob_num, num_subjobs)), "r") as ifile:
+        subjob_out_dir = os.path.join(self.output, id_hash)
+        with open(os.path.join(subjob_out_dir, "%s_of_%s.txt" % (subjob_num, num_subjobs)), "r") as ifile:
             data = ifile.read().strip().split("\n")
 
         data = [line.split() for line in data]
@@ -455,9 +455,9 @@ class Worker(object):
         return data_len, data
 
     def process_subjob(self, id_hash, sim_scores, subjob_num, num_subjobs, master_id):
-        out_dir = os.path.join(self.output, id_hash)
+        subjob_out_dir = os.path.join(self.output, id_hash)
         full_id_hash = "%s_%s_%s" % (subjob_num, num_subjobs, id_hash)
-        sim_scores.to_csv(os.path.join(out_dir, "%s_of_%s.sim_df" % (subjob_num, num_subjobs)), index=False)
+        sim_scores.to_csv(os.path.join(subjob_out_dir, "%s_of_%s.sim_df" % (subjob_num, num_subjobs)), index=False)
 
         with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
             cursor.execute("INSERT INTO complete (hash, worker_id, master_id) "
@@ -469,11 +469,10 @@ class Worker(object):
         sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi"])
         if complete_count == num_subjobs:
             for indx in range(1, num_subjobs + 1):
-                next_df = os.path.join(out_dir, "%s_of_%s.sim_df" % (indx, num_subjobs))
+                next_df = os.path.join(subjob_out_dir, "%s_of_%s.sim_df" % (indx, num_subjobs))
                 sim_scores = sim_scores.append(pd.read_csv(next_df, index_col=False))
         else:
             sim_scores = pd.DataFrame()
-
         return sim_scores
 
     def terminate(self, message):
