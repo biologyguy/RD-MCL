@@ -178,7 +178,7 @@ class Cluster(object):
     def reset_seq_ids(self, seq_ids):
         # Note that this does NOT reset sim_scores. This needs to be updated manually
         self.seq_ids = sorted(seq_ids)
-        self.seq_ids_str = str(", ".join(seq_ids))
+        self.seq_ids_str = str(", ".join(self.seq_ids))
         self.seq_id_hash = helpers.md5_hash(self.seq_ids_str)
 
     def collapse(self):
@@ -288,7 +288,7 @@ class Cluster(object):
             if _edge.seq2 not in tested_ids:
                 tested_ids.append(_edge.seq2)
                 global_best_hits = self.recursive_best_hits(_edge.seq2, global_best_hits, tested_ids)
-        return global_best_hits
+        return global_best_hits.drop_duplicates()
 
     def perturb(self, scores, col_name="score"):
         """
@@ -377,6 +377,7 @@ class Cluster(object):
         return self.cluster_score
 
     def _score_direct_replicate_penalty(self):
+        # Final scores can be negative, which is problematic
         # This is currently only accessible by modifying the default in score()
         unique_taxa = 0
         replicate_taxa = 0
