@@ -620,10 +620,10 @@ def cluster2database(cluster, sql_broker, alignment):
 # ################ PSI-PRED FUNCTIONS ################ #
 def mc_psi_pred(seq_obj, args):
     outdir = args[0]
-    if os.path.isfile("{0}{1}{2}.ss2".format(outdir, os.sep, seq_obj.id)):
+    if os.path.isfile(os.path.join(outdir, "%s.ss2" % seq_obj.id)):
         return
     result = run_psi_pred(seq_obj)
-    with open("{0}{1}{2}.ss2".format(outdir, os.sep, seq_obj.id), "w") as ofile:
+    with open(os.path.join(outdir, "%s.ss2" % seq_obj.id), "w") as ofile:
         ofile.write(result)
     return
 
@@ -631,7 +631,7 @@ def mc_psi_pred(seq_obj, args):
 def run_psi_pred(seq_rec):
     temp_dir = br.TempDir()
     pwd = os.getcwd()
-    psipred_dir = os.path.abspath("%s%spsipred" % (SCRIPT_PATH, os.sep))
+    psipred_dir = os.path.join(SCRIPT_PATH, "psipred")
     os.chdir(temp_dir.path)
     with open("sequence.fa", "w") as ofile:
         ofile.write(seq_rec.format("fasta"))
@@ -644,7 +644,7 @@ psipass2 {0}{3}data{3}weights_p2.dat 1 1.0 1.0 {1}{3}{2}.ss2 {1}{3}{2}.ss > {1}{
 '''.format(psipred_dir, temp_dir.path, seq_rec.id, os.sep)
 
     else:
-        data_weights = "{0}{1}data{1}weights".format(psipred_dir, os.sep)
+        data_weights = os.path.join(psipred_dir, "data", "weights")
         command = '''\
     {0}{3}bin{3}seq2mtx sequence.fa > {1}{3}{2}.mtx;
     {0}{3}bin{3}psipred {1}{3}{2}.mtx {4}.dat {4}.dat2 {4}.dat3 > {1}{3}{2}.ss;
@@ -653,7 +653,7 @@ psipass2 {0}{3}data{3}weights_p2.dat 1 1.0 1.0 {1}{3}{2}.ss2 {1}{3}{2}.ss > {1}{
 
     Popen(command, shell=True).wait()
     os.chdir(pwd)
-    with open("%s%s%s.ss2" % (temp_dir.path, os.sep, seq_rec.id), "r") as ifile:
+    with open(os.path.join(temp_dir.path, "%s.ss2" % seq_rec.id), "r") as ifile:
         result = ifile.read()
     return result
 

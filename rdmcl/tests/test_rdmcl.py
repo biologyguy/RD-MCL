@@ -29,6 +29,16 @@ class MockLogging(object):
         print(_input)
 
 
+class MockPopen(object):
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+
+    def wait(self):
+        print(self.args, self.kwargs)
+        return
+
+
 # #########  Cluster class and functions  ########## #
 def test_cluster_instantiate_group_0(hf, monkeypatch):
     monkeypatch.setattr(rdmcl.Cluster, "collapse", lambda *_: True)  # Don't actually call the collapse method
@@ -507,28 +517,43 @@ def test_cluster2database(hf, monkeypatch):
 
 
 # #########  PSI-PRED  ########## #
-def test_run_psi_pred(hf):
+def test_mc_psi_pred(hf, monkeypatch):
+    outdir = br.TempDir()
+    with open(os.path.join(hf.resource_path, "psi_pred", "BOL-PanxαB.ss2"), "r") as ofile:
+        ss2_file = ofile.read()
+    monkeypatch.setattr(rdmcl, "run_psi_pred", lambda *_: ss2_file)
+    seq_rec = hf.get_data("cteno_panxs").to_dict()["BOL-PanxαB"]
+    rdmcl.mc_psi_pred(seq_rec, [outdir.path])
+    with open(os.path.join(outdir.path, "BOL-PanxαB.ss2"), "r") as ifile:
+        output = ifile.read()
+        assert hf.string2hash(output) == "da4192e125808e501495dfe4169d56c0", print(output)
+
+    with open(os.path.join(outdir.path, "BOL-PanxαB.ss2"), "a") as ofile:
+        ofile.write("\nfoo")
+
+    # Confirm that sequences are not reprocessed if already present
+    rdmcl.mc_psi_pred(hf.get_data("cteno_panxs").to_dict()["BOL-PanxαB"], [outdir.path])
+    with open(os.path.join(outdir.path, "BOL-PanxαB.ss2"), "r") as ifile:
+        output = ifile.read()
+        assert hf.string2hash(output) == "af9666d37426caa2bbf6b9075ce8df96", print(output)
+
+
+def test_run_psi_pred(hf, monkeypatch, capsys):
+    tempdir = br.TempDir()
+    monkeypatch.setattr(br, "TempDir", lambda *_: tempdir)
+
     seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
     rdmcl.Sb.pull_recs(seqbuddy, "Bab-PanxαA")
     ss2_file = rdmcl.run_psi_pred(seqbuddy.records[0])
     assert hf.string2hash(ss2_file) == "b50f39dc22e4d16be325efdd14f7900d"
 
-
-def test_mc_psi_pred(hf):
-    tmpdir = br.TempDir()
-    rdmcl.mc_psi_pred(hf.get_data("cteno_panxs").to_dict()["BOL-PanxαB"], [tmpdir.path])
-    with open("{0}{1}BOL-PanxαB.ss2".format(tmpdir.path, hf.sep), "r") as ifile:
-        output = ifile.read()
-        assert hf.string2hash(output) == "da4192e125808e501495dfe4169d56c0", print(output)
-
-    with open("%s/BOL-PanxαB.ss2" % tmpdir.path, "a") as ofile:
-        ofile.write("\nfoo")
-
-    # Confirm that sequences are not reprocessed if already present
-    rdmcl.mc_psi_pred(hf.get_data("cteno_panxs").to_dict()["BOL-PanxαB"], [tmpdir.path])
-    with open("{0}{1}BOL-PanxαB.ss2".format(tmpdir.path, hf.sep), "r") as ifile:
-        output = ifile.read()
-        assert hf.string2hash(output) == "af9666d37426caa2bbf6b9075ce8df96", print(output)
+    monkeypatch.setattr(shutil, "which", lambda *_: False)
+    monkeypatch.setattr(rdmcl, "Popen", MockPopen)
+    rdmcl.run_psi_pred(seqbuddy.records[0])
+    out, err = capsys.readouterr()
+    assert "rdmcl/psipred/bin/seq2mtx sequence.fa" in out
+    assert "rdmcl/psipred/bin/psipred" in out
+    assert "rdmcl/psipred/bin/psipass2" in out
 
 
 def test_read_ss2_file(hf):
@@ -547,8 +572,14 @@ Name: 1, dtype: object"""
 
 
 def test_compare_psi_pred(hf):
-    ss2_1 = rdmcl.read_ss2_file("%spsi_pred%sMle-Panxα10A.ss2" % (hf.resource_path, hf.sep))
-    ss2_2 = rdmcl.read_ss2_file("%spsi_pred%sMle-Panxα8.ss2" % (hf.resource_path, hf.sep))
+    ss2_1 = os.path.join(hf.resource_path, "psi_pred", "Mle-Panxα10A.ss2")
+    ss2_1 = pd.read_csv(ss2_1, comment="#", header=None, delim_whitespace=True)
+    ss2_1.columns = ["indx", "aa", "ss", "coil_prob", "helix_prob", "sheet_prob"]
+
+    ss2_2 = os.path.join(hf.resource_path, "psi_pred", "Mle-Panxα8.ss2")
+    ss2_2 = pd.read_csv(ss2_2, comment="#", header=None, delim_whitespace=True)
+    ss2_2.columns = ["indx", "aa", "ss", "coil_prob", "helix_prob", "sheet_prob"]
+
     assert rdmcl.compare_psi_pred(ss2_1, ss2_2) == 0.691672882672883
 
 
