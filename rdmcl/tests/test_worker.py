@@ -117,7 +117,7 @@ def test_start_worker_fetch_queue(hf, capsys):
     assert "Processing final results" in out
 
 
-def test_start_worker_1seq_error(hf, monkeypatch):
+def test_start_worker_1seq_error(hf):
     temp_dir = br.TempDir()
     temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
     temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
@@ -158,6 +158,64 @@ def test_start_worker_deleted_check(hf, capsys, monkeypatch):
     out, err = capsys.readouterr()
     assert "Terminating Worker_2 because of deleted check file" in out, print(out)
     assert not os.path.isfile(worker.data_file)
+
+
+def test_start_worker_deal_with_subjobs(hf, capsys, monkeypatch):
+    temp_dir = br.TempDir()
+    temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
+    worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=1)
+
+    work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
+    work_cursor = work_con.cursor()
+    work_cursor.execute("INSERT INTO "
+                        "waiting (hash, master_id) "
+                        "VALUES ('foo', 2)")
+    work_cursor.execute("INSERT INTO "
+                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('foo', ?, 2, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
+                        (os.path.join(hf.resource_path, "psi_pred"),))
+
+    work_con.commit()
+
+    worker.cpus = 2
+    monkeypatch.setattr(launch_worker, "JOB_SIZE_COFACTOR", 2)
+    monkeypatch.setattr(launch_worker.Worker, "prepare_all_by_all", lambda *_: [136, []])
+    monkeypatch.setattr(launch_worker.Worker, "spawn_subjobs", lambda *_: [2, [], 1, 3])
+    monkeypatch.setattr(launch_worker.Worker, "load_subjob", lambda *_: [4, []])
+
+    def kill_worker(*args, **kwargs):
+        worker.terminate("unit test kill")
+
+    monkeypatch.setattr(br, "run_multicore_function", kill_worker)
+
+    seqbuddy = hf.get_data("cteno_panxs")
+    seqbuddy.write(os.path.join(worker.output, "foo.seqs"))
+
+    alignment = hf.get_data("cteno_panxs_aln")
+    alignment.write(os.path.join(worker.output, "foo.aln"))
+
+    monkeypatch.setattr(Alb, "generate_msa", lambda *_, **__: alignment)
+
+    # This first run is a full (large) job that will spawn subjobs
+    with pytest.raises(SystemExit):
+        worker.start()
+
+    out, err = capsys.readouterr()
+    assert "Terminating Worker_2 because of unit test kill" in out, print(out)
+
+    # A second run is pulling a subjob off the queue
+    work_cursor.execute("INSERT INTO "
+                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('2_3_foo', ?, 2, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
+                        (os.path.join(hf.resource_path, "psi_pred"),))
+    work_con.commit()
+
+    with pytest.raises(SystemExit):
+        worker.start()
+
+    out, err = capsys.readouterr()
+    assert "Terminating Worker_3 because of unit test kill" in out, print(out)
 
 
 def test_worker_check_master(hf, capsys):

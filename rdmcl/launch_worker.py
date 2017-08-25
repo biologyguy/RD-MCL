@@ -181,7 +181,6 @@ class Worker(object):
             os.remove(self.data_file)
 
         self.terminate("deleted check file")
-        return
 
     def check_masters(self, idle):
         if time.time() - self.last_heartbeat_from_master > self.max_wait:
