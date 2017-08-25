@@ -164,7 +164,7 @@ def test_start_worker_deal_with_subjobs(hf, capsys, monkeypatch):
     temp_dir = br.TempDir()
     temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
     temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
-    worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=1)
+    worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=1, cpus=3, job_size_coff=2)
 
     work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
     work_cursor = work_con.cursor()
@@ -178,14 +178,13 @@ def test_start_worker_deal_with_subjobs(hf, capsys, monkeypatch):
 
     work_con.commit()
 
-    worker.cpus = 2
-    monkeypatch.setattr(launch_worker, "JOB_SIZE_COFACTOR", 2)
     monkeypatch.setattr(launch_worker.Worker, "prepare_all_by_all", lambda *_: [136, []])
     monkeypatch.setattr(launch_worker.Worker, "spawn_subjobs", lambda *_: [2, [], 1, 3])
     monkeypatch.setattr(launch_worker.Worker, "load_subjob", lambda *_: [4, []])
 
     def kill_worker(*args, **kwargs):
         worker.terminate("unit test kill")
+        return args, kwargs
 
     monkeypatch.setattr(br, "run_multicore_function", kill_worker)
 
@@ -557,20 +556,16 @@ Oma-PanxαC,Oma-PanxαD,0.47123287364498306,0.6647632735397735
     assert not os.path.isfile(graph_file)
 
 
-def test_worker_spawn_subjobs(hf, monkeypatch):
+def test_worker_spawn_subjobs(hf):
     temp_dir = br.TempDir()
     temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
 
     work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
     work_cursor = work_con.cursor()
 
-    worker = launch_worker.Worker(temp_dir.path)
+    worker = launch_worker.Worker(temp_dir.path, cpus=3, job_size_coff=2)  # Set max job size at 4
     worker.heartbeat.id = 1
     subjob_dir = os.path.join(worker.output, "foo")
-
-    # Set max job size at 4
-    worker.cpus = 2
-    monkeypatch.setattr(launch_worker, "JOB_SIZE_COFACTOR", 2)
 
     ss2_dfs = hf.get_data("ss2_dfs")
 

@@ -33,12 +33,11 @@ except ImportError:
 
 # Globals
 WORKERLOCK = Lock()
-CPUS = cpu_count()
-JOB_SIZE_COFACTOR = 300
 
 
 class Worker(object):
-    def __init__(self, location, heartrate=60, max_wait=120, log=False, quiet=False):
+    def __init__(self, location, heartrate=60, max_wait=120, cpus=cpu_count(), job_size_coff=300,
+                 log=False, quiet=False):
         self.working_dir = os.path.abspath(location)
         self.wrkdb_path = os.path.join(self.working_dir, "work_db.sqlite")
         self.hbdb_path = os.path.join(self.working_dir, "heartbeat_db.sqlite")
@@ -50,7 +49,8 @@ class Worker(object):
         self.heartrate = heartrate
         self.heartbeat = rdmcl.HeartBeat(self.hbdb_path, self.heartrate, thread_type="worker")
         self.max_wait = max_wait
-        self.cpus = br.cpu_count() - 1
+        self.cpus = cpus - 1 if cpus > 1 else 1
+        self.job_size_coff = job_size_coff
         self.worker_file = ""
         self.data_file = ""
         self.start_time = time.time()
@@ -156,7 +156,7 @@ class Worker(object):
             self.printer.write("Preparing all-by-all data")
             data_len, data = self.prepare_all_by_all(seqbuddy, psipred_dfs)
 
-            if num_subjobs == 1 and data_len > self.cpus * JOB_SIZE_COFACTOR:
+            if num_subjobs == 1 and data_len > self.cpus * self.job_size_coff:
                 data_len, data, subjob_num, num_subjobs = self.spawn_subjobs(id_hash, data, psipred_dfs, master_id,
                                                                              gap_open, gap_extend)
             elif subjob_num > 1:
@@ -410,8 +410,8 @@ class Worker(object):
         for rec_id, df in psipred_dfs.items():
             df.to_csv(os.path.join(subjob_out_dir, "%s.ss2" % rec_id), header=None, index=False, sep=" ")
 
-        # Break it up again into min number of chunks where len(each chunk) < #CPUs * JOB_SIZE_COFACTOR
-        num_subjobs = int(rdmcl.ceil(len_data / (self.cpus * JOB_SIZE_COFACTOR)))
+        # Break it up again into min number of chunks where len(each chunk) < #CPUs * job_size_coff
+        num_subjobs = int(rdmcl.ceil(len_data / (self.cpus * self.job_size_coff)))
         job_size = int(rdmcl.ceil(len_data / num_subjobs))
         data = [data[i:i + job_size] for i in range(0, len_data, job_size)]
 
@@ -535,6 +535,10 @@ def argparse_init():
                         help="Specify how often the worker should check in")
     parser.add_argument("-mw", "--max_wait", action="store", type=int, default=120,
                         help="Specify the maximum time a worker will stay alive without seeing a master")
+    parser.add_argument("-cpu", "--max_cpus", type=int, action="store", default=cpu_count(), metavar="",
+                        help="Specify the maximum number of cores the worker can use (default=%s)" % cpu_count())
+    parser.add_argument("-js", "--job_size", type=int, action="store", default=cpu_count(), metavar="",
+                        help="Set a job size coffactor for how many comparisons to send to each core")
     parser.add_argument("-log", "--log", help="Stream log data one line at a time", action="store_true")
     parser.add_argument("-q", "--quiet", help="Suppress all output", action="store_true")
 
@@ -574,8 +578,8 @@ def main():
     cur.close()
     connection.close()
 
-    wrkr = Worker(in_args.workdb, heartrate=in_args.heart_rate, max_wait=in_args.max_wait,
-                  log=in_args.log, quiet=in_args.quiet)
+    wrkr = Worker(in_args.workdb, heartrate=in_args.heart_rate, max_wait=in_args.max_wait, cpus=in_args.max_cpus,
+                  job_size_coff=in_args.job_size, log=in_args.log, quiet=in_args.quiet)
     valve = br.SafetyValve(5)
     while True:  # The only way out is through Worker.terminate
         try:
