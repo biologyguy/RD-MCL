@@ -1807,6 +1807,21 @@ Please do so now:
     ALIGNPARAMS = in_args.align_params
 
     logging.info("\nAlignment method: %s %s" % (tmp_alb.align_tool["tool"], tmp_alb.align_tool["version"]))
+    if in_args.align_params:
+        logging.info("Additional alignment parameters: %s" % in_args.align_params)
+    else:
+        logging.info("Additional alignment parameters: None")
+
+    global TRIMAL
+    if in_args.trimal:
+        in_args.trimal = in_args.trimal[0]
+        for indx, arg in enumerate(in_args.trimal):
+            try:
+                in_args.trimal[indx] = float(in_args.trimal[indx])
+            except ValueError:
+                pass
+        TRIMAL = in_args.trimal
+    logging.info("TrimAl values: %s" % TRIMAL)
 
     logging.warning("\nLaunching SQLite Daemons")
 
@@ -1934,17 +1949,6 @@ Continue? y/[n] """ % len(sequences)
         psi_pred_files.append((record.id, os.path.join(in_args.psipred_dir, "%s.ss2" % record.id)))
 
     psi_pred_files = OrderedDict(psi_pred_files)
-
-    global TRIMAL
-    if in_args.trimal:
-        in_args.trimal = in_args.trimal[0]
-        for indx, arg in enumerate(in_args.trimal):
-            try:
-                in_args.trimal[indx] = float(in_args.trimal[indx])
-            except ValueError:
-                pass
-        TRIMAL = in_args.trimal
-        logging.info("\nOverriding TRIMAL values: %s" % TRIMAL)
 
     # Initial alignment
     logging.warning("\n** All-by-all graph **")

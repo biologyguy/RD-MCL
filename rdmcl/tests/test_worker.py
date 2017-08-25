@@ -385,8 +385,9 @@ M---TCAILP
 """
 
 
-def test_worker_prepare_all_by_all(hf):
+def test_worker_prepare_all_by_all(hf, monkeypatch):
     temp_dir = br.TempDir()
+    monkeypatch.setattr(br, "cpu_count", lambda *_: 24)
     worker = launch_worker.Worker(temp_dir.path)
     seqbuddy = hf.get_data("cteno_panxs")
     seqbuddy = Sb.pull_recs(seqbuddy, "Oma")  # Only 4 records, which means 6 comparisons
