@@ -784,8 +784,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
             else best_score
 
     if round(best_score["result"].iloc[0], 8) <= round(master_cluster.score(), 8):
-        save_cluster("New best score of %s is less than master cluster at %s"
-                     % (best_score["result"].iloc[0], master_cluster.score()))
+        save_cluster("New best score of %s is ≤ master cluster at %s"
+                     % (round(best_score["result"].iloc[0], 8), round(master_cluster.score(), 8)))
         return cluster_list
 
     mcl_obj = helpers.MarkovClustering(master_cluster.sim_scores, inflation=best_score["I"].iloc[0],
@@ -837,6 +837,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     return cluster_list
 
 
+# #########  Miscellaneous  ########## #
 class Progress(object):
     def __init__(self, outdir, base_cluster):
         self.outdir = outdir
@@ -862,126 +863,6 @@ class Progress(object):
         _progress = self.read()
         return "MCL runs processed: %s. Sequences placed: %s/%s. Run time: " \
                % (_progress['mcl_runs'], _progress['placed'], _progress['total'])
-
-
-def mcmcmc_mcl(args, params):
-    """
-    Function passed to mcmcmcm.MCMCMC that will execute MCL and return the final cluster scores
-    :param args: Sample values to run MCL with and a random seed [inflation, gq, r_seed]
-    :param params: List of parameters (see below for unpacking assignment)
-    :return:
-    """
-    inflation, gq, r_seed = args
-    exter_tmp_dir, seqbuddy, parent_cluster, taxa_sep, \
-        sql_broker, psi_pred_ss2, progress, expect_num_results = params
-    rand_gen = Random(r_seed)
-    mcl_obj = helpers.MarkovClustering(parent_cluster.sim_scores, inflation=inflation, edge_sim_threshold=gq)
-    mcl_obj.run()
-    progress.update('mcl_runs', 1)
-    clusters = mcl_obj.clusters
-    # Order the clusters so the big jobs are queued up front.
-    clusters = sorted(clusters, key=lambda x: len(x), reverse=True)
-    score = 0
-
-    child_list = OrderedDict()
-    for indx, cluster_ids in enumerate(clusters):
-        sb_copy = Sb.make_copy(seqbuddy)
-        sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster_ids]))
-        # Queue jobs if appropriate
-        if WORKER_DB and os.path.isfile(WORKER_DB) and len(cluster_ids) >= MIN_SIZE_TO_WORKER:
-            p = Process(target=mc_create_all_by_all_scores, args=(sb_copy, [psi_pred_ss2, sql_broker]))
-            p.start()
-            seq_ids = sorted([rec.id for rec in sb_copy.records])
-            seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
-            child_list[seq_id_hash] = [p, indx, cluster_ids]
-        else:
-            sim_scores, alb_obj = create_all_by_all_scores(sb_copy, psi_pred_ss2, sql_broker, quiet=True)
-            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
-                              r_seed=rand_gen.randint(1, 999999999999999))
-            clusters[indx] = cluster
-            score += cluster.score()
-
-    # wait for remaining processes to complete
-    while len(child_list) > 0:
-        for _name, args in child_list.items():
-            child, indx, cluster_ids = args
-            if child.is_alive():
-                continue
-            else:
-                query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash=?", (_name,))
-                if query and len(query[0]) == 2:
-                    sim_scores, alignment = query[0]
-                    alignment = Alb.AlignBuddy(alignment, in_format="fasta")
-                    if len(alignment.records()) == 1:
-                        sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
-                    else:
-                        sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None)
-                        sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
-
-                    cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
-                                      r_seed=rand_gen.randint(1, 999999999999999))
-                    clusters[indx] = cluster
-                    score += cluster.score()
-                    del child_list[_name]
-                    break
-
-    with LOCK:
-        with open(os.path.join(exter_tmp_dir, "max.txt"), "r") as ifile:
-            results = ifile.readlines()
-            results = [result.strip() for result in results]
-            results.append(",".join([cluster.seq_id_hash for cluster in clusters]))
-            results = sorted(results)
-
-        with open(os.path.join(exter_tmp_dir, "max.txt"), "w") as ofile:
-            ofile.write("\n".join(results))
-
-    if len(results) == expect_num_results:
-        best_score = None
-        best_clusters = []  # Hopefully just find a single best set of cluster, but could be more
-        for clusters in results:
-            score_sum = 0
-            cluster_ids = []
-            for cluster in clusters.split(","):
-                sql_query = sql_broker.query("SELECT seq_ids, graph FROM data_table WHERE hash=?", (cluster,))
-                seq_ids = sql_query[0][0].split(", ")
-                cluster_ids.append(sql_query[0][0])
-                if len(seq_ids) == 1:
-                    sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
-                else:
-                    sim_scores = pd.read_csv(StringIO(sql_query[0][1]), index_col=False, header=None)
-
-                cluster = Cluster(seq_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
-                                  r_seed=rand_gen.randint(1, 999999999999))
-                score_sum += cluster.score()
-            if score_sum == best_score:
-                best_clusters.append(cluster_ids)
-            elif best_score is None or score_sum > best_score:
-                best_clusters = [cluster_ids]
-                best_score = score_sum
-
-        best_clusters = [cluster.replace(', ', '\t') for cluster in best_clusters[0]]
-        with LOCK:
-            with open(os.path.join(exter_tmp_dir, "best_group"), "w") as ofile:
-                ofile.write('\n'.join(best_clusters))
-            open(os.path.join(exter_tmp_dir, "max.txt"), "w").close()
-    elif len(results) > expect_num_results:  # This should never be able to happen
-        raise ValueError("More results written to max.txt than expect_num_results")
-    return score
-
-
-def parse_mcl_clusters(path):
-    with open(path, "r") as ifile:
-        clusters = ifile.read()
-    clusters = clusters.strip().split("\n")
-    clusters = [cluster.strip().split("\t") for cluster in clusters]
-    return clusters
-
-
-def write_mcl_clusters(clusters, path):
-    clusters_strings = ["\t".join(cluster.seq_ids) for cluster in clusters]
-    with open(path, "w") as ofile:
-        ofile.write("\n".join(clusters_strings))
-    return
 
 
 def check_sequences(seqbuddy, taxa_sep):
@@ -1010,6 +891,7 @@ class HeartBeat(object):
         self.pulse_rate = pulse_rate
         self.id = None
         self.running_process = None
+        self.check_file = br.TempFile()
         self.thread_type = thread_type
         self.dummy = dummy  # This allows an object with start() and end() methods that won't spin off a daemon
         if not dummy:
@@ -1026,7 +908,7 @@ class HeartBeat(object):
         split_time = time.time()
         try:
             while True:
-                with open("%s" % check_file_path, "r") as ifile:
+                with open(check_file_path, "r") as ifile:
                     ifile_content = ifile.read()
                 if ifile_content != "Running":
                     break
@@ -1038,7 +920,7 @@ class HeartBeat(object):
                     split_time = time.time()
                 time.sleep(random())
         except KeyboardInterrupt:
-            pass
+            open(check_file_path, "w").close()
         return
 
     def start(self):
@@ -1046,16 +928,15 @@ class HeartBeat(object):
             return
         if self.running_process:
             self.end()
-        tmp_file = br.TempFile()
-        tmp_file.write("Running")
+        self.check_file.write("Running")
         with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
             cursor.execute("INSERT INTO heartbeat (thread_type, pulse) "
                            "VALUES (?, ?)", (self.thread_type, round(time.time()),))
             self.id = cursor.lastrowid
-        p = Process(target=self._run, args=(tmp_file.path,))
+        p = Process(target=self._run, args=(self.check_file.path,))
         p.daemon = 1
         p.start()
-        self.running_process = [tmp_file, p]
+        self.running_process = p
         return
 
     def end(self):
@@ -1063,8 +944,8 @@ class HeartBeat(object):
             return
         if not self.running_process:
             return
-        self.running_process[0].clear()
-        while self.running_process[1].is_alive():
+        self.check_file.clear()
+        while self.running_process.is_alive():
             continue
         self.running_process = None
         with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
@@ -1420,6 +1301,128 @@ def compare_pairwise_alignment(alb_obj, gap_open, gap_extend):
 # ################ END SCORING FUNCTIONS ################ #
 
 
+# #########  MCL stuff  ########## #
+def mcmcmc_mcl(args, params):
+    """
+    Function passed to mcmcmcm.MCMCMC that will execute MCL and return the final cluster scores
+    :param args: Sample values to run MCL with and a random seed [inflation, gq, r_seed]
+    :param params: List of parameters (see below for unpacking assignment)
+    :return:
+    """
+    inflation, gq, r_seed = args
+    exter_tmp_dir, seqbuddy, parent_cluster, taxa_sep, \
+        sql_broker, psi_pred_ss2, progress, expect_num_results = params
+    rand_gen = Random(r_seed)
+    mcl_obj = helpers.MarkovClustering(parent_cluster.sim_scores, inflation=inflation, edge_sim_threshold=gq)
+    mcl_obj.run()
+    progress.update('mcl_runs', 1)
+    clusters = mcl_obj.clusters
+    # Order the clusters so the big jobs are queued up front.
+    clusters = sorted(clusters, key=lambda x: len(x), reverse=True)
+    score = 0
+
+    child_list = OrderedDict()
+    for indx, cluster_ids in enumerate(clusters):
+        sb_copy = Sb.make_copy(seqbuddy)
+        sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster_ids]))
+        # Queue jobs if appropriate
+        if WORKER_DB and os.path.isfile(WORKER_DB) and len(cluster_ids) >= MIN_SIZE_TO_WORKER:
+            p = Process(target=mc_create_all_by_all_scores, args=(sb_copy, [psi_pred_ss2, sql_broker]))
+            p.start()
+            seq_ids = sorted([rec.id for rec in sb_copy.records])
+            seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
+            child_list[seq_id_hash] = [p, indx, cluster_ids]
+        else:
+            sim_scores, alb_obj = create_all_by_all_scores(sb_copy, psi_pred_ss2, sql_broker, quiet=True)
+            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
+                              r_seed=rand_gen.randint(1, 999999999999999))
+            clusters[indx] = cluster
+            score += cluster.score()
+
+    # wait for remaining processes to complete
+    while len(child_list) > 0:
+        for _name, args in child_list.items():
+            child, indx, cluster_ids = args
+            if child.is_alive():
+                continue
+            else:
+                query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash=?", (_name,))
+                if query and len(query[0]) == 2:
+                    sim_scores, alignment = query[0]
+                    alignment = Alb.AlignBuddy(alignment, in_format="fasta")
+                    if len(alignment.records()) == 1:
+                        sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
+                    else:
+                        sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None)
+                        sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+
+                    cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
+                                      r_seed=rand_gen.randint(1, 999999999999999))
+                    clusters[indx] = cluster
+                    score += cluster.score()
+                    del child_list[_name]
+                    break
+
+    with LOCK:
+        with open(os.path.join(exter_tmp_dir, "max.txt"), "r") as ifile:
+            results = ifile.readlines()
+            results = [result.strip() for result in results]
+            results.append(",".join([cluster.seq_id_hash for cluster in clusters]))
+            results = sorted(results)
+
+        with open(os.path.join(exter_tmp_dir, "max.txt"), "w") as ofile:
+            ofile.write("\n".join(results))
+
+    if len(results) == expect_num_results:
+        best_score = None
+        best_clusters = []  # Hopefully just find a single best set of cluster, but could be more
+        for clusters in results:
+            score_sum = 0
+            cluster_ids = []
+            for cluster in clusters.split(","):
+                sql_query = sql_broker.query("SELECT seq_ids, graph FROM data_table WHERE hash=?", (cluster,))
+                seq_ids = sql_query[0][0].split(", ")
+                cluster_ids.append(sql_query[0][0])
+                if len(seq_ids) == 1:
+                    sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
+                else:
+                    sim_scores = pd.read_csv(StringIO(sql_query[0][1]), index_col=False, header=None)
+
+                cluster = Cluster(seq_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
+                                  r_seed=rand_gen.randint(1, 999999999999))
+                score_sum += cluster.score()
+            if score_sum == best_score:
+                best_clusters.append(cluster_ids)
+            elif best_score is None or score_sum > best_score:
+                best_clusters = [cluster_ids]
+                best_score = score_sum
+
+        best_clusters = [cluster.replace(', ', '\t') for cluster in best_clusters[0]]
+        with LOCK:
+            with open(os.path.join(exter_tmp_dir, "best_group"), "w") as ofile:
+                ofile.write('\n'.join(best_clusters))
+            open(os.path.join(exter_tmp_dir, "max.txt"), "w").close()
+    elif len(results) > expect_num_results:  # This should never be able to happen
+        raise ValueError("More results written to max.txt than expect_num_results")
+    return score
+
+
+def parse_mcl_clusters(path):
+    with open(path, "r") as ifile:
+        clusters = ifile.read()
+    clusters = clusters.strip().split("\n")
+    clusters = [cluster.strip().split("\t") for cluster in clusters]
+    return clusters
+
+
+def write_mcl_clusters(clusters, path):
+    clusters_strings = ["\t".join(cluster.seq_ids) for cluster in clusters]
+    with open(path, "w") as ofile:
+        ofile.write("\n".join(clusters_strings))
+    return
+
+
+# #########  Orphan placement  ########## #
 class Orphans(object):
     def __init__(self, seqbuddy, clusters, sql_broker, psi_pred_ss2, quiet=False):
         """
