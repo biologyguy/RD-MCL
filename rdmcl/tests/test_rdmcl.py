@@ -828,7 +828,7 @@ def test_heartbeat_end():
 
 
 # ################ SCORING FUNCTIONS ################ #
-def test_mc_score_sequence(hf):
+def test_mc_score_sequences(hf):
     seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
     rdmcl.Sb.pull_recs(seqbuddy, "Mle")
     alignbuddy = rdmcl.Alb.generate_msa(seqbuddy, "mafft", params="--globalpair --thread 2", quiet=True)
@@ -859,6 +859,13 @@ MPPQISAS-I
 """
     subs_mat_score = rdmcl.compare_pairwise_alignment(alignbuddy, -5, 0)
     assert subs_mat_score == 0.4658627087198515
+
+
+def test_mc_create_all_by_all_scores(capsys, monkeypatch):
+    monkeypatch.setattr(rdmcl, "create_all_by_all_scores", lambda *args, **kwargs: print(args, kwargs))
+    rdmcl.mc_create_all_by_all_scores("seqbuddy", ["arg1", "arg2"])
+    out, err = capsys.readouterr()
+    assert out == "('seqbuddy', 'arg1', 'arg2') {'quiet': True}\n"
 
 
 def test_create_all_by_all_scores(hf):

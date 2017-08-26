@@ -955,6 +955,74 @@ class HeartBeat(object):
 
 
 # ################ SCORING FUNCTIONS ################ #
+def mc_score_sequences(seq_pairs, args):
+    # ##################################################################### #
+    # Calculate the best possible scores, and divide by the observed scores #
+    # ##################################################################### #
+    alb_obj, psi_pred_ss2_dfs, output_dir, gap_open, gap_extend = args
+    file_name = helpers.md5_hash(str(seq_pairs))
+    ofile = open(os.path.join(output_dir, file_name), "w")
+    for seq_pair in seq_pairs:
+        id1, id2 = seq_pair
+        id_regex = "^%s$|^%s$" % (id1, id2)
+        # Alignment comparison
+        alb_copy = Alb.make_copy(alb_obj)
+        Alb.pull_records(alb_copy, id_regex)
+
+        subs_mat_score = compare_pairwise_alignment(alb_copy, gap_open, gap_extend)
+
+        # PSI PRED comparison
+        ss_score = compare_psi_pred(psi_pred_ss2_dfs[id1], psi_pred_ss2_dfs[id2])
+        ofile.write("\n%s,%s,%s,%s" % (id1, id2, subs_mat_score, ss_score))
+    ofile.close()
+    return
+
+
+def compare_pairwise_alignment(alb_obj, gap_open, gap_extend):
+    observed_score = 0
+    observed_len = alb_obj.lengths()[0]
+    seq1_best = 0
+    seq1_len = 0
+    seq2_best = 0
+    seq2_len = 0
+    seq1, seq2 = alb_obj.records()
+    prev_aa1 = "-"
+    prev_aa2 = "-"
+
+    for aa_pos in range(observed_len):
+        aa1 = seq1.seq[aa_pos]
+        aa2 = seq2.seq[aa_pos]
+
+        if aa1 != "-":
+            seq1_best += BLOSUM62[aa1, aa1]
+            seq1_len += 1
+        if aa2 != "-":
+            seq2_best += BLOSUM62[aa2, aa2]
+            seq2_len += 1
+        if aa1 == "-" or aa2 == "-":
+            if prev_aa1 == "-" or prev_aa2 == "-":
+                observed_score += gap_extend
+            else:
+                observed_score += gap_open
+        else:
+            observed_score += BLOSUM62[aa1, aa2]
+        prev_aa1 = str(aa1)
+        prev_aa2 = str(aa2)
+
+    # Calculate average per-residue log-odds ratios for both best possible alignments and observed
+    # Note: The best score range is 4 to 11. Possible observed range is -4 to 11.
+    observed_score = (observed_score / observed_len)
+
+    seq1_best = (seq1_best / seq1_len)
+    seq1_score = observed_score / seq1_best
+
+    seq2_best = (seq2_best / seq2_len)
+    seq2_score = observed_score / seq2_best
+
+    subs_mat_score = (seq1_score + seq2_score) / 2
+    return subs_mat_score
+
+
 def mc_create_all_by_all_scores(seqbuddy, args):
     psi_pred_ss2, sql_broker = args
     create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=True)
@@ -1230,74 +1298,6 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
     sim_scores['score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
     cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
     return sim_scores, alignment
-
-
-def mc_score_sequences(seq_pairs, args):
-    # ##################################################################### #
-    # Calculate the best possible scores, and divide by the observed scores #
-    # ##################################################################### #
-    alb_obj, psi_pred_ss2_dfs, output_dir, gap_open, gap_extend = args
-    file_name = helpers.md5_hash(str(seq_pairs))
-    ofile = open(os.path.join(output_dir, file_name), "w")
-    for seq_pair in seq_pairs:
-        id1, id2 = seq_pair
-        id_regex = "^%s$|^%s$" % (id1, id2)
-        # Alignment comparison
-        alb_copy = Alb.make_copy(alb_obj)
-        Alb.pull_records(alb_copy, id_regex)
-
-        subs_mat_score = compare_pairwise_alignment(alb_copy, gap_open, gap_extend)
-
-        # PSI PRED comparison
-        ss_score = compare_psi_pred(psi_pred_ss2_dfs[id1], psi_pred_ss2_dfs[id2])
-        ofile.write("\n%s,%s,%s,%s" % (id1, id2, subs_mat_score, ss_score))
-    ofile.close()
-    return
-
-
-def compare_pairwise_alignment(alb_obj, gap_open, gap_extend):
-    observed_score = 0
-    observed_len = alb_obj.lengths()[0]
-    seq1_best = 0
-    seq1_len = 0
-    seq2_best = 0
-    seq2_len = 0
-    seq1, seq2 = alb_obj.records()
-    prev_aa1 = "-"
-    prev_aa2 = "-"
-
-    for aa_pos in range(observed_len):
-        aa1 = seq1.seq[aa_pos]
-        aa2 = seq2.seq[aa_pos]
-
-        if aa1 != "-":
-            seq1_best += BLOSUM62[aa1, aa1]
-            seq1_len += 1
-        if aa2 != "-":
-            seq2_best += BLOSUM62[aa2, aa2]
-            seq2_len += 1
-        if aa1 == "-" or aa2 == "-":
-            if prev_aa1 == "-" or prev_aa2 == "-":
-                observed_score += gap_extend
-            else:
-                observed_score += gap_open
-        else:
-            observed_score += BLOSUM62[aa1, aa2]
-        prev_aa1 = str(aa1)
-        prev_aa2 = str(aa2)
-
-    # Calculate average per-residue log-odds ratios for both best possible alignments and observed
-    # Note: The best score range is 4 to 11. Possible observed range is -4 to 11.
-    observed_score = (observed_score / observed_len)
-
-    seq1_best = (seq1_best / seq1_len)
-    seq1_score = observed_score / seq1_best
-
-    seq2_best = (seq2_best / seq2_len)
-    seq2_score = observed_score / seq2_best
-
-    subs_mat_score = (seq1_score + seq2_score) / 2
-    return subs_mat_score
 # ################ END SCORING FUNCTIONS ################ #
 
 
