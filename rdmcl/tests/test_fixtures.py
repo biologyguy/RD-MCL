@@ -40,18 +40,18 @@ def test_helper_get_data(hf):
 def test_helper_get_db_graph(hf):
     broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
     broker.start_broker()
-    assert str(hf.get_db_graph("441c3610506fda8a6820da5f67fdc470", broker)) == """\
-          seq1         seq2   subsmat       psi  raw_score     score
-0  Mle-Panxα11   Oma-PanxαD  1.000000  1.000000   0.960266  1.000000
-1   Lla-PanxαA   Oma-PanxαD  0.130327  0.476188   0.900593  0.234086
-2  Mle-Panxα11   Tin-PanxαF  0.890459  0.660884   0.948619  0.821587
-3   Lla-PanxαA   Pba-PanxαB  0.000000  0.273360   0.889770  0.082008
-4   Lla-PanxαA  Mle-Panxα11  0.241332  0.395932   0.905984  0.287712
-5   Pba-PanxαB   Tin-PanxαF  0.112153  0.000000   0.892309  0.078507
-6   Lla-PanxαA   Tin-PanxαF  0.198788  0.208441   0.900617  0.201684
-7  Mle-Panxα11   Pba-PanxαB  0.187336  0.158893   0.899186  0.178803
-8   Oma-PanxαD   Pba-PanxαB  0.103258  0.285039   0.896091  0.157792
-9   Oma-PanxαD   Tin-PanxαF  0.756897  0.653412   0.940558  0.725851"""
+    assert str(hf.get_db_graph("842e7bfe442b6cdc2011860514130663", broker)) == """\
+         seq1        seq2   subsmat       psi  raw_score     score
+0  Dgl-PanxαC  Tin-PanxαA  1.000000  1.000000   0.766242  1.000000
+1  Lcr-PanxαE  Tin-PanxαA  0.486244  0.511777   0.687687  0.493904
+2  Dgl-PanxαB  Tin-PanxαA  0.227795  0.446938   0.652298  0.293538
+3  Dgl-PanxαC  Lcr-PanxαE  0.353235  0.476845   0.669438  0.390318
+4  Dgl-PanxαB  Dgl-PanxαC  0.025460  0.331744   0.623121  0.117345
+5  Dgl-PanxαB  Lcr-PanxαE  0.874808  0.520567   0.738867  0.768535
+6  Bfo-PanxαH  Dgl-PanxαB  0.000000  0.000000   0.612204  0.000000
+7  Bfo-PanxαH  Dgl-PanxαC  0.360949  0.474893   0.670406  0.395132
+8  Bfo-PanxαH  Lcr-PanxαE  0.131930  0.274142   0.635774  0.174593
+9  Bfo-PanxαH  Tin-PanxαA  0.397759  0.589353   0.677849  0.455237"""
 
     assert str(hf.get_db_graph("Foo", broker)) == """\
 Empty DataFrame
