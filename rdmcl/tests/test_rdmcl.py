@@ -684,6 +684,149 @@ def test_check_sequences(hf, monkeypatch, capsys):
            " which can be changed with the '-ts' flag" in out
 
 
+def test_heartbeat_init():
+    tmpdir = br.TempDir()
+    hbdb_path = tmpdir.subfile("hbdb.sqlite")
+    heartbeat = rdmcl.HeartBeat(hbdb_path, 60)
+    assert heartbeat.hbdb_path == hbdb_path
+    assert heartbeat.pulse_rate == 60
+    assert heartbeat.id is None
+    assert heartbeat.running_process is None
+    assert heartbeat.thread_type == "master"
+    assert not heartbeat.dummy
+
+    conn = sqlite3.connect(hbdb_path)
+    cursor = conn.cursor()
+    tables = cursor.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    assert tables == [("heartbeat",), ('sqlite_sequence',)]
+
+    # Instantiate a second object to ensure 'table exists' error is handled
+    rdmcl.HeartBeat(hbdb_path, 60)
+    tables = cursor.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    assert tables == [("heartbeat",), ('sqlite_sequence',)]
+
+
+def test_heartbeat_dummy():
+    tmpdir = br.TempDir()
+    hbdb_path = tmpdir.subfile("hbdb.sqlite")
+    heartbeat = rdmcl.HeartBeat(hbdb_path, 60, dummy=True)
+
+    conn = sqlite3.connect(hbdb_path)
+    cursor = conn.cursor()
+    assert not cursor.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+
+    heartbeat._run("foo")
+    assert heartbeat.id is None
+    assert heartbeat.running_process is None
+    assert not cursor.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+
+    heartbeat.start()
+    assert heartbeat.id is None
+    assert heartbeat.running_process is None
+    assert not cursor.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+
+    heartbeat.end()
+    assert heartbeat.id is None
+    assert heartbeat.running_process is None
+    assert not cursor.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+
+
+def test_heartbeat_run(monkeypatch):
+    tmpdir = br.TempDir()
+    checkfile = tmpdir.subfile("checkfile")
+    with open(checkfile, "w") as ofile:
+        ofile.write("Running")
+
+    hbdb_path = tmpdir.subfile("hbdb.sqlite")
+    heartbeat = rdmcl.HeartBeat(hbdb_path, 0)
+    heartbeat.id = 1
+    conn = sqlite3.connect(hbdb_path)
+    cursor = conn.cursor()
+    start_time = round(rdmcl.time.time()) - 1
+    cursor.execute("INSERT INTO heartbeat (thread_type, pulse) " 
+                   "VALUES (?, ?)", ("master", start_time,))
+    conn.commit()
+
+    monkeypatch.setattr(rdmcl.time, "sleep", mock_keyboardinterupt)
+    heartbeat._run(checkfile)
+
+    query = cursor.execute("SELECT * FROM heartbeat").fetchall()
+    assert len(query) == 1
+    assert query[0][2] > start_time
+
+    monkeypatch.setattr(rdmcl.time, "sleep", lambda *_: open(checkfile, "w").close())
+    heartbeat._run(checkfile)
+    query2 = cursor.execute("SELECT * FROM heartbeat").fetchall()
+    assert query[0][2] <= query2[0][2]
+
+
+def test_heartbeat_start(monkeypatch):
+    tmpdir = br.TempDir()
+    hbdb_path = tmpdir.subfile("hbdb.sqlite")
+    heartbeat = rdmcl.HeartBeat(hbdb_path, 0, thread_type="worker")
+
+    conn = sqlite3.connect(hbdb_path)
+    cursor = conn.cursor()
+    monkeypatch.setattr(rdmcl.time, "sleep", mock_keyboardinterupt)
+    monkeypatch.setattr(rdmcl.time, "time", lambda *_: 123456)
+
+    heartbeat.start()
+    assert heartbeat.check_file.read() == "Running"  # This is a race, but should be fine.
+    while heartbeat.running_process.is_alive():
+        pass
+    assert heartbeat.check_file.read() == ""
+    assert heartbeat.id == 1
+    query = cursor.execute("SELECT * FROM heartbeat").fetchall()
+    assert len(query) == 1
+    assert query[0][0] == 1
+    assert query[0][1] == "worker"
+    assert query[0][2] == 123456
+
+    monkeypatch.setattr(rdmcl.HeartBeat, "end", lambda *_: True)
+    heartbeat.start()
+    assert heartbeat.id == 2
+    query = cursor.execute("SELECT * FROM heartbeat").fetchall()
+    assert len(query) == 2
+    assert query[1][0] == 2
+    assert query[1][1] == "worker"
+    assert query[1][2] == 123456
+
+
+def test_heartbeat_end():
+    tmpdir = br.TempDir()
+    hbdb_path = tmpdir.subfile("hbdb.sqlite")
+    heartbeat = rdmcl.HeartBeat(hbdb_path, 0, thread_type="master")
+
+    heartbeat.id = 1
+    conn = sqlite3.connect(hbdb_path)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO heartbeat (thread_type, pulse) " 
+                   "VALUES (?, ?)", ("master", 123456,))
+    conn.commit()
+
+    # Not running yet
+    heartbeat.end()
+    assert cursor.execute("SELECT thread_type FROM heartbeat").fetchone() == ("master",)
+
+    class MockProcess(object):
+        def __init__(self):
+            self.alive = True
+
+        def is_alive(self):
+            if self.alive:
+                self.alive = False
+                return True
+            else:
+                self.alive = True
+                return False
+
+    heartbeat.running_process = MockProcess()
+    heartbeat.end()
+    assert heartbeat.running_process is None
+    assert not cursor.execute("SELECT thread_type FROM heartbeat").fetchone()
+    assert heartbeat.id is None
+
+
 # ################ SCORING FUNCTIONS ################ #
 def test_mc_score_sequence(hf):
     seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
