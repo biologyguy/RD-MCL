@@ -901,6 +901,27 @@ def test_create_all_by_all_scores(hf):
     sql_broker.close()
 
 
+def test_workerjob_init(hf):
+    seqbuddy = hf.get_data("cteno_panxs")
+    seq_ids = hf.get_data("cteno_ids")
+    seq_ids_hash = hf.string2hash(", ".join(seq_ids))
+    sql_broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
+    sql_broker.start_broker()
+    job_id = "".join([str(x) for x in [seq_ids_hash, rdmcl.GAP_OPEN, rdmcl.GAP_EXTEND,
+                                       rdmcl.ALIGNMETHOD, rdmcl.ALIGNPARAMS, rdmcl.TRIMAL]])
+    job_id = hf.string2hash(job_id)
+
+    worker = rdmcl.WorkerJob(seqbuddy, sql_broker)
+    assert worker.seqbuddy == seqbuddy
+    assert worker.seq_ids == seq_ids
+    assert worker.seq_id_hash == seq_ids_hash
+    assert worker.job_id == job_id
+    assert worker.sql_broker == sql_broker
+    assert worker.heartbeat.hbdb_path == rdmcl.HEARTBEAT_DB
+    assert worker.heartbeat.pulse_rate == rdmcl.MASTER_PULSE
+    assert worker.queue_size == 0
+
+
 # #########  MCL stuff  ########## #
 def test_mcmcmc_mcl(hf):
     ext_tmp_dir = br.TempDir()

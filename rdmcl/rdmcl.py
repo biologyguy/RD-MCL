@@ -1029,15 +1029,12 @@ def mc_create_all_by_all_scores(seqbuddy, args):
     return
 
 
-def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OPEN,
-                             gap_extend=GAP_EXTEND, quiet=False):
+def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=False):
     """
     Generate a multiple sequence alignment and pull out all-by-all similarity graph
     :param seqbuddy: SeqBuddy object
     :param psi_pred_ss2: OrderedDict of {seqID: ss2 dataframe path}
     :param sql_broker: Active broker object to search/update SQL database
-    :param gap_open: Gap initiation penalty
-    :param gap_extend: Gap extension penalty
     :param quiet: Supress multicore output
     :return: sim_scores, Alb.AlignBuddy
     """
@@ -1060,7 +1057,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
 
     # Try to feed the job to independent workers
     if WORKER_DB and os.path.isfile(WORKER_DB) and len(seq_ids) > MIN_SIZE_TO_WORKER:
-        workerjob = WorkerJob(seq_ids, seq_id_hash, gap_open, gap_extend, seqbuddy, sql_broker)
+        workerjob = WorkerJob(seqbuddy, sql_broker)
         worker_result = workerjob.run()
         if worker_result:
             return worker_result
@@ -1118,7 +1115,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
     if all_by_all:
         n = int(ceil(len(all_by_all) / CPUS))
         all_by_all = [all_by_all[i:i + n] for i in range(0, len(all_by_all), n)] if all_by_all else []
-        score_sequences_params = [alignment, psi_pred_ss2_dfs, all_by_all_outdir.path, gap_open, gap_extend]
+        score_sequences_params = [alignment, psi_pred_ss2_dfs, all_by_all_outdir.path, GAP_OPEN, GAP_EXTEND]
         with MULTICORE_LOCK:
             br.run_multicore_function(all_by_all, mc_score_sequences, score_sequences_params,
                                       quiet=quiet, max_processes=CPUS)
@@ -1146,15 +1143,13 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, gap_open=GAP_OP
 
 
 class WorkerJob(object):
-    def __init__(self, seq_ids, seq_id_hash, gap_open, gap_extend, seqbuddy, sql_broker):
-        # Job id can't be the same as seq_id_hash, because different alignment options may be involved
-        job_id = "".join([str(x) for x in [seq_id_hash, gap_open, gap_extend, ALIGNMETHOD, ALIGNPARAMS, TRIMAL]])
-        self.job_id = helpers.md5_hash(job_id)
-        self.seq_ids = seq_ids
-        self.seq_id_hash = seq_id_hash
-        self.gap_open = gap_open
-        self.gap_extend = gap_extend
+    def __init__(self, seqbuddy, sql_broker):
         self.seqbuddy = seqbuddy
+        self.seq_ids = sorted([rec.id for rec in self.seqbuddy.records])
+        self.seq_id_hash = helpers.md5_hash(", ".join(self.seq_ids))
+        # Job id can't be the same as seq_id_hash, because different alignment options may be involved
+        job_id = "".join([str(x) for x in [self.seq_id_hash, GAP_OPEN, GAP_EXTEND, ALIGNMETHOD, ALIGNPARAMS, TRIMAL]])
+        self.job_id = helpers.md5_hash(job_id)
         self.sql_broker = sql_broker
         self.heartbeat = HeartBeat(HEARTBEAT_DB, MASTER_PULSE)
         self.queue_size = 0

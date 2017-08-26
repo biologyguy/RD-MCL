@@ -13,7 +13,7 @@ def test_helper_attributes(hf):
     assert hf.sep == os.sep
     assert hf.resource_path == os.path.join(os.path.dirname(os.path.abspath(__file__)), 'unit_test_resources') + os.sep
     assert type(hf._cteno_panxs) == buddysuite.SeqBuddy.SeqBuddy
-    assert hf._cteno_ids == [rec.id for rec in hf._cteno_panxs.records]
+    assert hf._cteno_ids == sorted([rec.id for rec in hf._cteno_panxs.records])
     assert md5(hf._cteno_sim_scores.to_csv().encode("utf-8")).hexdigest() == "049088e80b31bac797a66534e518229f"
 
 
