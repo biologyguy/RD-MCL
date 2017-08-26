@@ -828,37 +828,43 @@ def test_heartbeat_end():
 
 
 # ################ SCORING FUNCTIONS ################ #
-def test_mc_score_sequences(hf):
-    seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
-    rdmcl.Sb.pull_recs(seqbuddy, "Mle")
-    alignbuddy = rdmcl.Alb.generate_msa(seqbuddy, "mafft", params="--globalpair --thread 2", quiet=True)
-    psi_pred_files = [(rec.id, rdmcl.read_ss2_file("%spsi_pred%s%s.ss2" % (hf.resource_path, hf.sep, rec.id)))
-                      for rec in alignbuddy.records()]
-    psi_pred_files = OrderedDict(psi_pred_files)
+def test_mc_score_sequences(hf, monkeypatch):
     tmp_dir = br.TempDir()
-
-    seq_pairs = [("Mle-Panxα2", "Mle-Panxα12"), ("Mle-Panxα1", "Mle-Panxα3")]
-    args = [alignbuddy, psi_pred_files, tmp_dir.path, -5, 0]
-    rdmcl.mc_score_sequences(seq_pairs, args)
-    assert os.path.isfile("%s%s50687872cdaaed1fee7e809b5a032377" % (tmp_dir.path, hf.sep))
-    with open("%s%s50687872cdaaed1fee7e809b5a032377" % (tmp_dir.path, hf.sep), "r") as ifile:
-        content = ifile.read()
-        assert content == """
-Mle-Panxα2,Mle-Panxα12,0.3760737547928561,0.6767437070938215
-Mle-Panxα1,Mle-Panxα3,0.2237341940045855,0.6656420029895364""", print(content)
-
-
-def test_compare_pairwise_alignment():
-    seqbuddy = rdmcl.Sb.SeqBuddy(">seq1\nMPQMSASWI\n>Seq2\nMPPQISASI")
-    alignbuddy = rdmcl.Alb.generate_msa(seqbuddy, "mafft", params="--globalpair --op 0 --thread 2", quiet=True)
-    assert str(alignbuddy) == """\
+    seq_pairs = [("seq1", "seq2"), ("seq1", "seq3"), ("seq2", "seq3")]
+    results_file = tmp_dir.subfile(hf.string2hash(str(seq_pairs)))
+    alb_obj = rdmcl.Alb.AlignBuddy("""\
 >seq1
 MP-QMSASWI
 >Seq2
 MPPQISAS-I
-"""
-    subs_mat_score = rdmcl.compare_pairwise_alignment(alignbuddy, -5, 0)
-    assert subs_mat_score == 0.4658627087198515
+>Seq3
+MP-QISGAWI
+""")
+    psi_pred_ss2_dfs = {"seq1": "", "seq2": "", "seq3": ""}
+
+    args = [alb_obj, psi_pred_ss2_dfs, tmp_dir.path, -5, 0]
+
+    monkeypatch.setattr(rdmcl, "compare_pairwise_alignment", lambda *_: "subs_mat_score")
+    monkeypatch.setattr(rdmcl, "compare_psi_pred", lambda *_: "ss_score")
+
+    rdmcl.mc_score_sequences(seq_pairs, args)
+    with open(results_file, "r") as ifile:
+        results = ifile.read()
+        assert results == """
+seq1,seq2,subs_mat_score,ss_score
+seq1,seq3,subs_mat_score,ss_score
+seq2,seq3,subs_mat_score,ss_score""", print(results)
+
+
+def test_compare_pairwise_alignment():
+    alignbuddy = rdmcl.Alb.AlignBuddy("""\
+>seq1
+MP--QMSASWI
+>Seq2
+MPPIQISAS-I
+""")
+    subs_mat_score = rdmcl.compare_pairwise_alignment(alignbuddy, -5, -1)
+    assert subs_mat_score == 0.40982529375386517
 
 
 def test_mc_create_all_by_all_scores(capsys, monkeypatch):
