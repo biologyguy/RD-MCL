@@ -1,5 +1,6 @@
 [![Build Status](https://travis-ci.org/biologyguy/RD-MCL.svg?branch=master)](https://travis-ci.org/biologyguy/RD-MCL)
 [![Coverage Status](https://img.shields.io/coveralls/biologyguy/RD-MCL/master.svg)](https://coveralls.io/github/biologyguy/RD-MCL?branch=master)
+[![PyPi version](https://img.shields.io/pypi/v/rdmcl.svg)](https://pypi.python.org/pypi/rdmcl)
 <p align="center"><a href="https://github.com/biologyguy/RD-MCL/wiki">
 <img src="https://raw.githubusercontent.com/biologyguy/RD-MCL/master/rdmcl/images/rdmcl-logo.png" width=70%/></a></p>
 
@@ -16,6 +17,9 @@ In essence, RD-MCL is an extension of conventional [Markov clustering](http://mi
 3) Differences in evolutionary rates among orthologous groups of sequences are accounted for by recursive rounds of clustering.
 
 ### Getting started
+
+[Click here a full use-case tutorial](https://github.com/biologyguy/RD-MCL/wiki/Tutorial)
+
 RD-MCL is hosted on the Python Package Index, so the easiest way to get the software and most dependencies is via `pip`:
 
 ```bash

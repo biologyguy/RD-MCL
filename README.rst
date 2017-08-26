@@ -22,6 +22,8 @@ In essence, RD-MCL is an extension of conventional `Markov clustering <http://mi
 Getting started
 ~~~~~~~~~~~~~~~
 
+`Click here a full use-case tutorial <https://github.com/biologyguy/RD-MCL/wiki/Tutorial>`_
+
 RD-MCL is hosted on the Python Package Index, so the easiest way to get the software and most dependencies is via `pip`:
 
 .. code:: text
