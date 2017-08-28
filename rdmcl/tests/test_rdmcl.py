@@ -39,6 +39,23 @@ class MockPopen(object):
         return
 
 
+class MockHeartBeat(object):
+    def __init__(self, hbdb_path, pulse_rate, thread_type='master', dummy=False):
+        self.hbdb_path = hbdb_path
+        self.pulse_rate = pulse_rate
+        self.id = None
+        self.running_process = None
+        self.check_file = br.TempFile()
+        self.thread_type = thread_type
+        self.dummy = dummy
+
+    def start(self):
+        return
+
+    def end(self):
+        return
+
+
 def mock_keyboardinterupt(*args, **kwargs):
     raise KeyboardInterrupt(args, kwargs)
 
@@ -1182,6 +1199,133 @@ def test_workerjob_init(hf):
     assert worker.heartbeat.hbdb_path == rdmcl.HEARTBEAT_DB
     assert worker.heartbeat.pulse_rate == rdmcl.MASTER_PULSE
     assert worker.queue_size == 0
+
+
+def test_workerjob_run(hf, monkeypatch, capsys):
+    temp_dir = br.TempDir()
+    hb_db = temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
+
+    hb_con = sqlite3.connect(os.path.join(temp_dir.path, "heartbeat_db.sqlite"))
+    hb_cursor = hb_con.cursor()
+
+    hb_cursor.execute("DELETE FROM heartbeat")
+    hb_con.commit()
+
+    seqbuddy = hf.get_data("cteno_panxs")
+
+    rdmcl.HEARTBEAT_DB = hb_db
+    monkeypatch.setattr(rdmcl, "HeartBeat", MockHeartBeat)
+    monkeypatch.setattr(rdmcl.WorkerJob, "queue_job", lambda *_: print("queue_job()"))
+
+    worker = rdmcl.WorkerJob(seqbuddy, "sql_broker")
+    # No workers available
+    assert not worker.run()
+    out, err = capsys.readouterr()
+    assert "queue_job" not in out
+
+    # Return DB result
+    monkeypatch.setattr(rdmcl.WorkerJob, "pull_from_db", lambda *_: "db_result")
+    hb_cursor.execute("INSERT INTO heartbeat (thread_type, pulse) VALUES ('worker', %s)" % 10e12)
+    hb_con.commit()
+    assert worker.run() == "db_result"
+    out, err = capsys.readouterr()
+    assert "queue_job" in out
+
+    # Job finished
+    def mock_pull_from_db(self):
+        self.running = False
+        return False
+
+    monkeypatch.setattr(rdmcl.WorkerJob, "pull_from_db", mock_pull_from_db)
+    monkeypatch.setattr(rdmcl.WorkerJob, "check_finished", lambda *_: True)
+    monkeypatch.setattr(rdmcl.WorkerJob, "process_finished", lambda *_: "process_finished")
+
+    assert worker.run() == "process_finished"
+
+    # Job died
+    monkeypatch.setattr(rdmcl.WorkerJob, "check_finished", lambda *_: False)
+    monkeypatch.setattr(rdmcl, "random", lambda *_: 0.99)
+    monkeypatch.setattr(rdmcl.WorkerJob, "check_if_active", lambda *_: False)
+    assert not worker.run()
+
+    # Go to the end and hit pause
+    monkeypatch.setattr(rdmcl, "random", lambda *_: 0.01)
+    assert not worker.run()
+
+
+def test_workerjob_queue_job(hf, monkeypatch, capsys):
+    temp_dir = br.TempDir()
+    work_db = temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    rdmcl.WORKER_DB = work_db
+    rdmcl.WORKER_OUT = temp_dir.path
+
+    work_con = sqlite3.connect(work_db)
+    work_cursor = work_con.cursor()
+
+    seqbuddy = hf.get_data("cteno_panxs")
+    worker = rdmcl.WorkerJob(seqbuddy, "sql_broker")
+
+    assert not worker.queue_job()
+    assert os.path.isfile(os.path.join(temp_dir.path, "%s.seqs" % worker.job_id))
+    queue = work_cursor.execute("SELECT * FROM queue").fetchall()
+    assert queue == [('a2aaca4f79bd56fbf8debfdc281660fd', '', None, 'clustalo', '',
+                      'gappyout 0.5 0.75 0.9 0.95 clean', -5.0, 0.0)], print(queue)
+
+
+def test_workerjob_pull_from_db(hf, monkeypatch, capsys):
+    temp_dir = br.TempDir()
+    broker_db = temp_dir.copy_to(os.path.join(hf.resource_path, "db.sqlite"))
+    sql_broker = helpers.SQLiteBroker(broker_db)
+    sql_broker.start_broker()
+
+    work_db = temp_dir.copy_to(os.path.join(hf.resource_path, "work_db.sqlite"))
+    rdmcl.WORKER_DB = work_db
+    rdmcl.WORKER_OUT = temp_dir.path
+
+    work_con = sqlite3.connect(work_db)
+    work_cursor = work_con.cursor()
+
+    seqbuddy = hf.get_data("cteno_panxs")
+    worker = rdmcl.WorkerJob(seqbuddy, sql_broker)
+    worker.heartbeat.id = 1
+
+    # No record in DB
+    assert not worker.pull_from_db()
+
+    # Get record
+    graph = """\
+Hca-PanxαG,Lla-PanxαC,0.239665,0.000000,0.320014,0.167765
+Hca-PanxαG,Mle-Panxα1,0.000000,0.453888,0.301325,0.136167
+"""
+    alignment = """\
+>Hca-PanxαG
+MTGLILIL
+>Lla-PanxαC
+MTGLILIL
+>Mle-Panxα1
+MTGLILIL
+"""
+    sql_broker.query("INSERT INTO data_table (hash, graph, alignment) VALUES (?, ?, ?)", (worker.job_id,
+                                                                                          graph, alignment,))
+    work_cursor.execute("INSERT INTO complete (hash) VALUES (?)", (worker.job_id,))
+    work_cursor.execute("INSERT INTO waiting (hash, master_id) VALUES (?, ?)", (worker.job_id, 1))
+    work_cursor.execute("INSERT INTO waiting (hash, master_id) VALUES (?, ?)", (worker.job_id, 2))
+    work_con.commit()
+
+    pulled_data = worker.pull_from_db()
+    assert str(pulled_data[0]) == """\
+         seq1        seq2   subsmat       psi  raw_score     score
+0  Hca-PanxαG  Lla-PanxαC  0.239665  0.000000   0.320014  0.167765
+1  Hca-PanxαG  Mle-Panxα1  0.000000  0.453888   0.301325  0.136167"""
+    assert str(pulled_data[1]) == alignment
+
+    assert len(work_cursor.execute("SELECT * FROM complete").fetchall()) == 1
+    assert len(work_cursor.execute("SELECT * FROM waiting").fetchall()) == 1
+
+    worker.heartbeat.id = 2
+    worker.pull_from_db()
+    assert not work_cursor.execute("SELECT * FROM complete").fetchall()
+    assert not work_cursor.execute("SELECT * FROM waiting").fetchall()
 
 
 # #########  MCL stuff  ########## #

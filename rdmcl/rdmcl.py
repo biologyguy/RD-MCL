@@ -1201,6 +1201,7 @@ class WorkerJob(object):
         self.sql_broker = sql_broker
         self.heartbeat = HeartBeat(HEARTBEAT_DB, MASTER_PULSE)
         self.queue_size = 0
+        self.running = False
 
     def run(self):
         self.heartbeat.start()
@@ -1209,8 +1210,9 @@ class WorkerJob(object):
                                      "WHERE thread_type='worker' "
                                      "AND pulse>%s" % (time.time() - MAX_WORKER_WAIT - cursor.lag)).fetchone()
         if workers:
+            self.running = True
             self.queue_job()
-            while True:
+            while self.running:
                 db_result = self.pull_from_db()
                 if db_result:
                     return db_result
