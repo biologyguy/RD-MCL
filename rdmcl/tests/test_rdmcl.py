@@ -877,12 +877,12 @@ def test_mc_score_sequences1(hf):
 
     # For score, subsmat = -0.363
     rdmcl.mc_score_sequences([("Bfo-PanxαA", "Bfr-PanxαD", ss2_dfs["Bfo-PanxαA"], ss2_dfs["Bfr-PanxαD"])],
-                                  [alb_obj, gap_open, gap_extend, outfile.path])
+                             [alb_obj, gap_open, gap_extend, outfile.path])
 
     assert outfile.read() == "\nBfo-PanxαA,Bfr-PanxαD,-0.3627272727272728,0.4183636363636363"
 
 
-def test_mc_score_sequences2(hf, monkeypatch):
+def test_mc_score_sequences2(monkeypatch):
     results_file = br.TempFile()
     seq_pairs = [("seq1", "seq2", "fakedf1", "fakedf2"), ("seq1", "seq3",  "fakedf1", "fakedf3"),
                  ("seq2", "seq3",  "fakedf2", "fakedf3")]
@@ -927,52 +927,109 @@ def test_mc_create_all_by_all_scores(capsys, monkeypatch):
     assert out == "('seqbuddy', 'arg1', 'arg2') {'quiet': True}\n"
 
 
-def test_retrieve_all_by_all_scores(hf):
+def test_retrieve_all_by_all_scores_single(hf):
+    sql_broker = helpers.SQLiteBroker(os.path.join(hf.resource_path, "db.sqlite"))
+    sql_broker.start_broker()
+
+    seqbuddy = rdmcl.Sb.pull_recs(hf.get_data("cteno_panxs"), "Mle-Panxα5")
+    sim_scores, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqbuddy, "psi_pred_files", sql_broker)
+    assert len(alignbuddy.records()) == 1
+    assert sim_scores.empty
+    assert list(sim_scores.columns) == ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+    sql_broker.close()
+
+
+def test_retrieve_all_by_all_scores_from_db(hf, monkeypatch):
+    sql_broker = helpers.SQLiteBroker(os.path.join(hf.resource_path, "db.sqlite"))
+    sql_broker.start_broker()
+
+    seqbuddy = rdmcl.Sb.pull_recs(hf.get_data("cteno_panxs"), "Bfo-PanxαF|Hca-PanxαD|Mle-Panxα6")
+
+    # These patches shouldn't execute, they're here to make sure the control flow doesn't go passed the query statement
+    monkeypatch.setattr(rdmcl, "WorkerJob", mock_keyboardinterupt)
+    monkeypatch.setattr(rdmcl.AllByAllScores, "create", mock_keyboardinterupt)
+    sim_scores, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqbuddy, "psi_pred_files", sql_broker)
+    assert len(alignbuddy.records()) == 3
+    assert str(sim_scores) == """\
+         seq1        seq2   subsmat       psi  raw_score     score
+0  Bfo-PanxαF  Mle-Panxα6  1.000000  1.000000   0.913305  1.000000
+1  Bfo-PanxαF  Hca-PanxαD  0.117138  0.000000   0.820955  0.081997
+2  Hca-PanxαD  Mle-Panxα6  0.000000  0.192926   0.814353  0.057878""", print(sim_scores)
+    sql_broker.close()
+
+
+def test_retrieve_all_by_all_scores_feed_worker(hf, monkeypatch):
+    sql_broker = helpers.SQLiteBroker(os.path.join(hf.resource_path, "db.sqlite"))
+    sql_broker.start_broker()
+
+    seqbuddy = rdmcl.Sb.pull_recs(hf.get_data("cteno_panxs"), "Mle")
+    tmpfile = br.TempFile()
+
+    class MockWorkerJob(object):
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+
+        @staticmethod
+        def run():
+            return "worker_sim_scores", "worker_alignment"
+
+    monkeypatch.setattr(rdmcl, "WorkerJob", MockWorkerJob)
+    monkeypatch.setattr(rdmcl, "WORKER_DB", tmpfile.path)
+    monkeypatch.setattr(rdmcl, "MIN_SIZE_TO_WORKER", 1)
+
+    sim_scores, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqbuddy, "psi_pred_files", sql_broker)
+    assert sim_scores == "worker_sim_scores"
+    assert alignbuddy == "worker_alignment"
+
+
+def test_retrieve_all_by_all_scores_new_run(hf, monkeypatch):
+    sql_broker = helpers.SQLiteBroker(os.path.join(hf.resource_path, "db.sqlite"))
+    sql_broker.start_broker()
+
+    monkeypatch.setattr(rdmcl, "MIN_SIZE_TO_WORKER", 1000)
+    monkeypatch.setattr(rdmcl.AllByAllScores, "create", lambda *_, **__: ["create_sim_scores", "create_alignment"])
+    seqbuddy = rdmcl.Sb.pull_recs(hf.get_data("cteno_panxs"), "Mle")
+
+    sim_scores, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqbuddy, "psi_pred_files", sql_broker)
+    assert sim_scores == "create_sim_scores"
+    assert alignbuddy == "create_alignment"
+    sql_broker.close()
+
+
+def test_allbyallscores_init(hf):
+    seqbuddy = rdmcl.Sb.pull_recs(hf.get_data("cteno_panxs"), "Mle")
+    all_by_all = rdmcl.AllByAllScores(seqbuddy, "psipred", "sqlbroker")
+    assert type(all_by_all.seqbuddy) == rdmcl.Sb.SeqBuddy
+    assert all_by_all.seqbuddy != seqbuddy
+    assert str(all_by_all.seqbuddy.records) == str(seqbuddy.records)
+    for rec in all_by_all.seqbuddy.records:
+        assert rec.id.startswith("Mle")
+    assert all_by_all.psi_pred_ss2 == "psipred"
+    assert all_by_all.sql_broker == "sqlbroker"
+    assert not all_by_all.quiet
+
+
+def test_allbyallscores_create(hf):
     tmpdir = br.TempDir()
-    sql_broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
+    sql_broker = helpers.SQLiteBroker(os.path.join(tmpdir.path, "db.sqlite"))
     sql_broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
                                            "graph TEXT", "cluster_score TEXT"])
     sql_broker.start_broker()
 
     seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
     rdmcl.Sb.pull_recs(seqbuddy, "Mle")
-    psi_pred_files = [(rec.id, "%spsi_pred%s%s.ss2" % (hf.resource_path, hf.sep, rec.id))
+    psi_pred_files = [(rec.id, os.path.join(hf.resource_path, "psi_pred", "%s.ss2" % rec.id))
                       for rec in seqbuddy.records]
     psi_pred_files = OrderedDict(psi_pred_files)
 
-    rdmcl.ALIGNMETHOD = "mafft"
-    rdmcl.ALIGNPARAMS = "--globalpair"
-    sim_scores, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqbuddy, psi_pred_files, sql_broker)
+    all_by_all_obj = rdmcl.AllByAllScores(seqbuddy, psi_pred_files, sql_broker)
+    sim_scores, alignbuddy = all_by_all_obj.create()
     assert len(sim_scores.index) == 66  # This is for 12 starting sequences --> (a * (a - 1)) / 2
     compare = sim_scores.loc[:][(sim_scores['seq1'] == "Mle-Panxα2") & (sim_scores['seq2'] == "Mle-Panxα12")]
-    assert "Mle-Panxα2  Mle-Panxα12  0.33004  0.341381   0.546307  0.333442" in str(compare), print(compare)
+    assert "Mle-Panxα2  Mle-Panxα12  0.332679  0.370271   0.536612  0.343957" in str(compare), print(compare)
     assert len(alignbuddy.records()) == 12
-
-    rdmcl.Sb.pull_recs(seqbuddy, "Mle-Panxα2")
-    sim_scores, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqbuddy, psi_pred_files, sql_broker)
-    assert len(sim_scores.index) == 0
     sql_broker.close()
-
-
-def test_workerjob_init(hf):
-    seqbuddy = hf.get_data("cteno_panxs")
-    seq_ids = hf.get_data("cteno_ids")
-    seq_ids_hash = hf.string2hash(", ".join(seq_ids))
-    sql_broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
-    sql_broker.start_broker()
-    job_id = "".join([str(x) for x in [seq_ids_hash, rdmcl.GAP_OPEN, rdmcl.GAP_EXTEND,
-                                       rdmcl.ALIGNMETHOD, rdmcl.ALIGNPARAMS, rdmcl.TRIMAL]])
-    job_id = hf.string2hash(job_id)
-
-    worker = rdmcl.WorkerJob(seqbuddy, sql_broker)
-    assert worker.seqbuddy == seqbuddy
-    assert worker.seq_ids == seq_ids
-    assert worker.seq_id_hash == seq_ids_hash
-    assert worker.job_id == job_id
-    assert worker.sql_broker == sql_broker
-    assert worker.heartbeat.hbdb_path == rdmcl.HEARTBEAT_DB
-    assert worker.heartbeat.pulse_rate == rdmcl.MASTER_PULSE
-    assert worker.queue_size == 0
 
 
 def test_worker_update_psipred(hf):
@@ -1071,7 +1128,7 @@ M---TCAILP
 """
 
 
-def test_prepare_all_by_all(hf, monkeypatch):
+def test_prepare_all_by_all(hf):
     cpus = 24
     seqbuddy = hf.get_data("cteno_panxs")
     seqbuddy = rdmcl.Sb.pull_recs(seqbuddy, "Oma")  # Only 4 records, which means 6 comparisons
@@ -1085,7 +1142,7 @@ def test_prepare_all_by_all(hf, monkeypatch):
     seqbuddy = hf.get_data("cteno_panxs")  # 134 records = 8911 comparisons
     data_len, data = rdmcl.prepare_all_by_all(seqbuddy, ss2_dfs, cpus)
     assert data_len == 8911
-    assert len(data[0]) == int(rdmcl.ceil(data_len / (cpus)))
+    assert len(data[0]) == int(rdmcl.ceil(data_len / cpus))
 
 
 def test_set_final_sim_scores(hf):
@@ -1104,6 +1161,27 @@ def test_set_final_sim_scores(hf):
 7  Hca-PanxαG  Mle-Panxα7A  0.190522  0.681612   0.378628  0.337849
 8  Hca-PanxαG   Mle-Panxα8  0.290356  0.511685   0.388444  0.356755
 9  Hca-PanxαG   Mle-Panxα9  0.483807  0.580624   0.449717  0.512852"""
+
+
+def test_workerjob_init(hf):
+    seqbuddy = hf.get_data("cteno_panxs")
+    seq_ids = hf.get_data("cteno_ids")
+    seq_ids_hash = hf.string2hash(", ".join(seq_ids))
+    sql_broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
+    sql_broker.start_broker()
+    job_id = "".join([str(x) for x in [seq_ids_hash, rdmcl.GAP_OPEN, rdmcl.GAP_EXTEND,
+                                       rdmcl.ALIGNMETHOD, rdmcl.ALIGNPARAMS, rdmcl.TRIMAL]])
+    job_id = hf.string2hash(job_id)
+
+    worker = rdmcl.WorkerJob(seqbuddy, sql_broker)
+    assert worker.seqbuddy == seqbuddy
+    assert worker.seq_ids == seq_ids
+    assert worker.seq_id_hash == seq_ids_hash
+    assert worker.job_id == job_id
+    assert worker.sql_broker == sql_broker
+    assert worker.heartbeat.hbdb_path == rdmcl.HEARTBEAT_DB
+    assert worker.heartbeat.pulse_rate == rdmcl.MASTER_PULSE
+    assert worker.queue_size == 0
 
 
 # #########  MCL stuff  ########## #
