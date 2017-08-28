@@ -137,11 +137,11 @@ class Worker(object):
 
             if num_subjobs == 1:  # This is starting a full job from scratch, not a sub-job
                 # Need to specify what columns the PsiPred files map to now that there are gaps.
-                psipred_dfs = self.update_psipred(alignment, psipred_dfs, "msa")
+                psipred_dfs = rdmcl.update_psipred(alignment, psipred_dfs, "msa")
 
                 # TrimAl
                 self.printer.write("Trimal (%s seqs)" % len(seqbuddy))
-                alignment = self.trimal(seqbuddy, trimal, alignment)
+                alignment = rdmcl.trimal(seqbuddy, trimal, alignment)
 
                 with helpers.ExclusiveConnect(os.path.join(self.output, "write.lock"), max_lock=0):
                     # Place these write commands in ExclusiveConnect to ensure a writing lock
@@ -150,11 +150,11 @@ class Worker(object):
 
                 # Re-update PsiPred files now that some columns, possibly including non-gap characters, are removed
                 self.printer.write("Updating %s psipred dataframes" % len(seqbuddy))
-                psipred_dfs = self.update_psipred(alignment, psipred_dfs, "trimal")
+                psipred_dfs = rdmcl.update_psipred(alignment, psipred_dfs, "trimal")
 
             # Prepare all-by-all list
             self.printer.write("Preparing all-by-all data")
-            data_len, data = self.prepare_all_by_all(seqbuddy, psipred_dfs)
+            data_len, data = rdmcl.prepare_all_by_all(seqbuddy, psipred_dfs, self.cpus)
 
             if num_subjobs == 1 and data_len > self.cpus * self.job_size_coff:
                 data_len, data, subjob_num, num_subjobs = self.spawn_subjobs(id_hash, data, psipred_dfs, master_id,
@@ -291,69 +291,6 @@ class Worker(object):
             psipred_dfs[rec.id] = rdmcl.read_ss2_file(psipred_file)
         return psipred_dfs
 
-    @staticmethod
-    def update_psipred(alignment, psipred_dfs, mode):
-        if mode == "msa":
-            for rec in alignment.records_iter():
-                ss_file = psipred_dfs[rec.id]
-                ss_counter = 0
-                for indx, residue in enumerate(rec.seq):
-                    if residue != "-":
-                        psipred_dfs[rec.id].set_value(ss_counter, "indx", indx)
-                        ss_counter += 1
-                psipred_dfs[rec.id] = ss_file
-
-        elif mode == "trimal":
-            for rec in alignment.records_iter():
-                # Instantiate list of max possible size
-                new_psi_pred = [0 for _ in range(len(psipred_dfs[rec.id].index))]
-                indx = 0
-                for row in psipred_dfs[rec.id].itertuples():
-                    if alignment.alignments[0].position_map[int(row[1])][1]:
-                        new_psi_pred[indx] = list(row)[1:]
-                        indx += 1
-                new_psi_pred = new_psi_pred[:indx]
-                psipred_dfs[rec.id] = pd.DataFrame(new_psi_pred, columns=["indx", "aa", "ss", "coil_prob",
-                                                                          "helix_prob", "sheet_prob"])
-        else:
-            raise ValueError("Unrecognized mode '%s': select from ['msa', 'trimal']" % mode)
-        return psipred_dfs
-
-    @staticmethod
-    def trimal(seqbuddy, trimal, alignment):
-        # Scores seem to be improved by removing gaps. ToDo: Need to test this explicitly for the paper
-        # Only remove columns up to a 50% reduction in average seq length and only if all sequences are retained
-        ave_seq_length = Sb.ave_seq_length(seqbuddy)
-        for threshold in trimal:
-            align_copy = Alb.trimal(Alb.make_copy(alignment), threshold=threshold)
-            cleaned_seqs = Sb.clean_seq(Sb.SeqBuddy(str(align_copy)))
-            cleaned_seqs = Sb.delete_small(cleaned_seqs, 1)
-            # Structured this way for unit test purposes
-            if len(alignment.records()) != len(cleaned_seqs):
-                continue
-            elif Sb.ave_seq_length(cleaned_seqs) / ave_seq_length < 0.5:
-                continue
-            else:
-                alignment = align_copy
-                break
-        return alignment
-
-    def prepare_all_by_all(self, seqbuddy, psipred_dfs):
-        ids1 = [rec.id for rec in seqbuddy.records]
-        ids2 = copy(ids1)
-        data = [0 for _ in range(int((len(ids1)**2 - len(ids1)) / 2))]
-        indx = 0
-        for rec1 in ids1:
-            del ids2[ids2.index(rec1)]
-            for rec2 in ids2:
-                data[indx] = (rec1, rec2, psipred_dfs[rec1], psipred_dfs[rec2])
-                indx += 1
-
-        data_len = len(data)
-        n = int(rdmcl.ceil(data_len / self.cpus))
-        data = [data[i:i + n] for i in range(0, data_len, n)]
-        return data_len, data
-
     def process_final_results(self, id_hash, master_id, subjob_num, num_subjobs):
         with open(self.data_file, "r") as ifile:
             sim_scores = pd.read_csv(ifile, index_col=False)
@@ -363,17 +300,7 @@ class Worker(object):
             sim_scores = self.process_subjob(id_hash, sim_scores, subjob_num, num_subjobs, master_id)
 
         if not sim_scores.empty:
-            # Set raw score, which is used by Orphan placement
-            sim_scores['raw_score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
-            # Distribute final scores_components between 0-1.
-            sim_scores['psi'] = (sim_scores['psi'] - sim_scores['psi'].min()) / \
-                                (sim_scores['psi'].max() - sim_scores['psi'].min())
-
-            sim_scores['subsmat'] = (sim_scores['subsmat'] - sim_scores['subsmat'].min()) / \
-                                    (sim_scores['subsmat'].max() - sim_scores['subsmat'].min())
-
-            # ToDo: Experiment testing these magic number weights...
-            sim_scores['score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
+            sim_scores = rdmcl.set_final_sim_scores(sim_scores)
 
             with helpers.ExclusiveConnect(os.path.join(self.output, "write.lock"), max_lock=0):
                 # Place these write commands in ExclusiveConnect to ensure a writing lock

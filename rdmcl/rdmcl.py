@@ -39,7 +39,7 @@ from multiprocessing import Lock, Process
 from random import choice, Random, randint, random
 from math import ceil, log2
 from collections import OrderedDict
-from copy import deepcopy
+from copy import deepcopy, copy
 from hashlib import md5
 
 
@@ -715,7 +715,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
         if not os.path.isdir(os.path.join(outdir, "mcmcmc", master_cluster.name())):
             temp_dir.save(os.path.join(outdir, "mcmcmc", master_cluster.name()))
-        _, alignment = create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=True)
+        _, alignment = retrieve_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=True)
         alignment.write(os.path.join(outdir, "alignments", master_cluster.name()))
         master_cluster.sim_scores.to_csv(os.path.join(outdir, "sim_scores", "%s.scores" % master_cluster.name()),
                                          header=None, index=False, sep="\t")
@@ -959,11 +959,11 @@ def mc_score_sequences(seq_pairs, args):
     # ##################################################################### #
     # Calculate the best possible scores, and divide by the observed scores #
     # ##################################################################### #
-    alb_obj, psi_pred_ss2_dfs, output_dir, gap_open, gap_extend = args
+    alb_obj, output_dir, gap_open, gap_extend = args
     file_name = helpers.md5_hash(str(seq_pairs))
     ofile = open(os.path.join(output_dir, file_name), "w")
     for seq_pair in seq_pairs:
-        id1, id2 = seq_pair
+        id1, id2, ss2df1, ss2df2 = seq_pair
         id_regex = "^%s$|^%s$" % (id1, id2)
         # Alignment comparison
         alb_copy = Alb.make_copy(alb_obj)
@@ -972,7 +972,7 @@ def mc_score_sequences(seq_pairs, args):
         subs_mat_score = compare_pairwise_alignment(alb_copy, gap_open, gap_extend)
 
         # PSI PRED comparison
-        ss_score = compare_psi_pred(psi_pred_ss2_dfs[id1], psi_pred_ss2_dfs[id2])
+        ss_score = compare_psi_pred(ss2df1, ss2df2)
         ofile.write("\n%s,%s,%s,%s" % (id1, id2, subs_mat_score, ss_score))
     ofile.close()
     return
@@ -1025,13 +1025,12 @@ def compare_pairwise_alignment(alb_obj, gap_open, gap_extend):
 
 def mc_create_all_by_all_scores(seqbuddy, args):
     psi_pred_ss2, sql_broker = args
-    create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=True)
+    retrieve_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=True)
     return
 
 
-def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=False):
+def retrieve_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=False):
     """
-    Generate a multiple sequence alignment and pull out all-by-all similarity graph
     :param seqbuddy: SeqBuddy object
     :param psi_pred_ss2: OrderedDict of {seqID: ss2 dataframe path}
     :param sql_broker: Active broker object to search/update SQL database
@@ -1063,70 +1062,125 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=False):
             return worker_result
 
     # If the job is small or couldn't be pushed off on a worker, do it directly
-    # alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), ALIGNMETHOD, params="--globalpair --thread -1", quiet=True)
-    alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), ALIGNMETHOD, ALIGNPARAMS, quiet=True)
+    all_by_all_obj = AllByAllScores(seqbuddy, psi_pred_ss2, sql_broker, quiet=quiet)
+    return all_by_all_obj.create()
 
-    # Need to specify what columns the PsiPred files map to now that there are gaps.
-    psi_pred_ss2_dfs = OrderedDict()
 
-    for rec in alignment.records_iter():
-        ss_file = read_ss2_file(psi_pred_ss2[rec.id])
-        ss_counter = 0
-        for indx, residue in enumerate(rec.seq):
-            if residue != "-":
-                ss_file.set_value(ss_counter, "indx", indx)
-                ss_counter += 1
-        psi_pred_ss2_dfs[rec.id] = ss_file
+class AllByAllScores(object):
+    def __init__(self, seqbuddy, psi_pred_ss2, sql_broker, quiet=False):
+        self.seqbuddy = Sb.make_copy(seqbuddy)
+        self.seq_ids = sorted([rec.id for rec in self.seqbuddy.records])
+        self.psi_pred_ss2 = psi_pred_ss2
+        self.sql_broker = sql_broker
+        self.quiet = quiet
 
-    # Scores seem to be improved by removing gaps. ToDo: Need to test this explicitly for the paper
-    # Only remove columns up to a 50% reduction in average seq length and only if all sequences are retained
-    ave_seq_length = Sb.ave_seq_length(seqbuddy)
-    for threshold in TRIMAL:
-        align_copy = Alb.trimal(Alb.make_copy(alignment), threshold=threshold)
-        cleaned_seqs = Sb.clean_seq(Sb.SeqBuddy(str(align_copy)))
-        cleaned_seqs = Sb.delete_small(cleaned_seqs, 1)
-        if len(alignment.records()) == len(cleaned_seqs) and Sb.ave_seq_length(cleaned_seqs) / ave_seq_length >= 0.5:
-            alignment = align_copy
-            break
+    def create(self):
+        """
+        Generate a multiple sequence alignment and pull out all-by-all similarity graph
+        :return:
+        """
+        print("Create!", self.seq_ids)
+        psi_pred_ss2_dfs = OrderedDict()
 
-    # Re-update PsiPred files now that some columns, possibly including non-gap characters, are removed
-    for rec in alignment.records_iter():
-        new_psi_pred = [0 for _ in range(len(psi_pred_ss2_dfs[rec.id].index))]  # Instantiate list of max possible size
-        indx = 0
-        for row in psi_pred_ss2_dfs[rec.id].itertuples():
-            if alignment.alignments[0].position_map[int(row[1])][1]:
-                new_psi_pred[indx] = list(row)[1:]
-                indx += 1
-        new_psi_pred = new_psi_pred[:indx]
-        psi_pred_ss2_dfs[rec.id] = pd.DataFrame(new_psi_pred, columns=["indx", "aa", "ss", "coil_prob",
-                                                                       "helix_prob", "sheet_prob"])
+        for rec in self.seqbuddy.records:
+            psi_pred_ss2_dfs[rec.id] = read_ss2_file(self.psi_pred_ss2[rec.id])
 
-    ids1 = [rec.id for rec in alignment.records_iter()]
-    ids2 = [rec.id for rec in alignment.records_iter()]
-    all_by_all = [0 for _ in range(int((len(ids1)**2 - len(ids1)) / 2))]
-    indx = 0
-    for rec1 in ids1:
-        del ids2[ids2.index(rec1)]
-        for rec2 in ids2:
-            all_by_all[indx] = (rec1, rec2)
-            indx += 1
+        alignment = Alb.generate_msa(Sb.make_copy(self.seqbuddy), ALIGNMETHOD, ALIGNPARAMS, quiet=True)
 
-    all_by_all_outdir = br.TempDir()
-    if all_by_all:
-        n = int(ceil(len(all_by_all) / CPUS))
-        all_by_all = [all_by_all[i:i + n] for i in range(0, len(all_by_all), n)] if all_by_all else []
-        score_sequences_params = [alignment, psi_pred_ss2_dfs, all_by_all_outdir.path, GAP_OPEN, GAP_EXTEND]
+        # Need to specify what columns the PsiPred files map to now that there are gaps.
+        psi_pred_ss2_dfs = update_psipred(alignment, psi_pred_ss2_dfs, "msa")
+
+        # Scores seem to be improved by removing gaps. ToDo: Need to test this explicitly for the paper
+        # Only remove columns up to a 50% reduction in average seq length and only if all sequences are retained
+        alignment = trimal(self.seqbuddy, TRIMAL, alignment)
+
+        # Re-update PsiPred files now that some columns, possibly including non-gap characters, are removed
+        psi_pred_ss2_dfs = update_psipred(alignment, psi_pred_ss2_dfs, "trimal")
+
+        all_by_all_len, all_by_all = prepare_all_by_all(self.seqbuddy, psi_pred_ss2_dfs, CPUS)
+        all_by_all_outdir = br.TempDir()
+        score_sequences_params = [alignment, all_by_all_outdir.path, GAP_OPEN, GAP_EXTEND]
         with MULTICORE_LOCK:
             br.run_multicore_function(all_by_all, mc_score_sequences, score_sequences_params,
-                                      quiet=quiet, max_processes=CPUS)
-    sim_scores_file = br.TempFile()
-    sim_scores_file.write("seq1,seq2,subsmat,psi")
-    aba_root, aba_dirs, aba_files = next(os.walk(all_by_all_outdir.path))
-    for aba_file in aba_files:
-        with open(os.path.join(aba_root, aba_file), "r") as ifile:
-            sim_scores_file.write(ifile.read())
-    sim_scores = pd.read_csv(sim_scores_file.get_handle("r"), index_col=False)
+                                      quiet=self.quiet, max_processes=CPUS)
+        sim_scores_file = br.TempFile()
+        sim_scores_file.write("seq1,seq2,subsmat,psi")
+        aba_root, aba_dirs, aba_files = next(os.walk(all_by_all_outdir.path))
+        for aba_file in aba_files:
+            with open(os.path.join(aba_root, aba_file), "r") as ifile:
+                sim_scores_file.write(ifile.read())
+        sim_scores = pd.read_csv(sim_scores_file.get_handle("r"), index_col=False)
+        print(sim_scores)
+        sim_scores = set_final_sim_scores(sim_scores)
+        cluster2database(Cluster(self.seq_ids, sim_scores), self.sql_broker, alignment)
+        return sim_scores, alignment
 
+
+def update_psipred(alignment, psipred_dfs, mode):
+    if mode == "msa":
+        for rec in alignment.records_iter():
+            ss_file = psipred_dfs[rec.id]
+            ss_counter = 0
+            for indx, residue in enumerate(rec.seq):
+                if residue != "-":
+                    psipred_dfs[rec.id].set_value(ss_counter, "indx", indx)
+                    ss_counter += 1
+            psipred_dfs[rec.id] = ss_file
+
+    elif mode == "trimal":
+        for rec in alignment.records_iter():
+            # Instantiate list of max possible size
+            new_psi_pred = [0 for _ in range(len(psipred_dfs[rec.id].index))]
+            indx = 0
+            for row in psipred_dfs[rec.id].itertuples():
+                if alignment.alignments[0].position_map[int(row[1])][1]:
+                    new_psi_pred[indx] = list(row)[1:]
+                    indx += 1
+            new_psi_pred = new_psi_pred[:indx]
+            psipred_dfs[rec.id] = pd.DataFrame(new_psi_pred, columns=["indx", "aa", "ss", "coil_prob",
+                                                                      "helix_prob", "sheet_prob"])
+    else:
+        raise ValueError("Unrecognized mode '%s': select from ['msa', 'trimal']" % mode)
+    return psipred_dfs
+
+
+def trimal(seqbuddy, trimal_modes, alignment):
+        # Scores seem to be improved by removing gaps. ToDo: Need to test this explicitly for the paper
+        # Only remove columns up to a 50% reduction in average seq length and only if all sequences are retained
+        ave_seq_length = Sb.ave_seq_length(seqbuddy)
+        for threshold in trimal_modes:
+            align_copy = Alb.trimal(Alb.make_copy(alignment), threshold=threshold)
+            cleaned_seqs = Sb.clean_seq(Sb.SeqBuddy(str(align_copy)))
+            cleaned_seqs = Sb.delete_small(cleaned_seqs, 1)
+            # Structured this way for unit test purposes
+            if len(alignment.records()) != len(cleaned_seqs):
+                continue
+            elif Sb.ave_seq_length(cleaned_seqs) / ave_seq_length < 0.5:
+                continue
+            else:
+                alignment = align_copy
+                break
+        return alignment
+
+
+def prepare_all_by_all(seqbuddy, psipred_dfs, cpus):
+        ids1 = [rec.id for rec in seqbuddy.records]
+        ids2 = copy(ids1)
+        data = [0 for _ in range(int((len(ids1)**2 - len(ids1)) / 2))]
+        indx = 0
+        for rec1 in ids1:
+            del ids2[ids2.index(rec1)]
+            for rec2 in ids2:
+                data[indx] = (rec1, rec2, psipred_dfs[rec1], psipred_dfs[rec2])
+                indx += 1
+
+        data_len = len(data)
+        n = int(ceil(data_len / cpus))
+        data = [data[i:i + n] for i in range(0, data_len, n)]
+        return data_len, data
+
+
+def set_final_sim_scores(sim_scores):
     # Set raw score, which is used by Orphan placement
     sim_scores['raw_score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
     # Distribute final scores_components between 0-1.
@@ -1138,8 +1192,7 @@ def create_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=False):
 
     # ToDo: Experiment testing these magic number weights...
     sim_scores['score'] = (sim_scores['psi'] * 0.3) + (sim_scores['subsmat'] * 0.7)
-    cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment)
-    return sim_scores, alignment
+    return sim_scores
 
 
 class WorkerJob(object):
@@ -1360,7 +1413,7 @@ def mcmcmc_mcl(args, params):
             seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
             child_list[seq_id_hash] = [p, indx, cluster_ids]
         else:
-            sim_scores, alb_obj = create_all_by_all_scores(sb_copy, psi_pred_ss2, sql_broker, quiet=True)
+            sim_scores, alb_obj = retrieve_all_by_all_scores(sb_copy, psi_pred_ss2, sql_broker, quiet=True)
             cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
                               r_seed=rand_gen.randint(1, 999999999999999))
             clusters[indx] = cluster
@@ -1491,7 +1544,7 @@ class Orphans(object):
         regex = "^%s$" % "$|^".join(seq_ids)
         Sb.pull_recs(seqbuddy, regex)
 
-        sim_scores, alb_obj = create_all_by_all_scores(seqbuddy, self.psi_pred_ss2, self.sql_broker, quiet=True)
+        sim_scores, alb_obj = retrieve_all_by_all_scores(seqbuddy, self.psi_pred_ss2, self.sql_broker, quiet=True)
         cluster2database(Cluster(seq_ids, sim_scores), self.sql_broker, alb_obj)
         return sim_scores
 
@@ -1631,8 +1684,8 @@ class Orphans(object):
                 large_cluster.reset_seq_ids(small_cluster.seq_ids + large_cluster.seq_ids)
 
                 seqs = Sb.pull_recs(Sb.make_copy(self.seqbuddy), "^%s$" % "$|^".join(large_cluster.seq_ids))
-                sim_scores, alb_obj = create_all_by_all_scores(seqs, self.psi_pred_ss2,
-                                                               self.sql_broker, quiet=True)
+                sim_scores, alb_obj = retrieve_all_by_all_scores(seqs, self.psi_pred_ss2,
+                                                                 self.sql_broker, quiet=True)
 
                 large_cluster.sim_scores = sim_scores
                 for taxon, seq_ids in small_cluster.taxa.items():
@@ -1988,7 +2041,7 @@ Continue? y/[n] """ % len(sequences)
     num_comparisons = ((len(sequences) ** 2) - len(sequences)) / 2
     logging.warning("Generating initial all-by-all similarity graph (%s comparisons)" % int(num_comparisons))
     logging.info(" written to: {0}{1}sim_scores{1}complete_all_by_all.scores".format(in_args.outdir, os.sep))
-    scores_data, alignbuddy = create_all_by_all_scores(sequences, psi_pred_files, broker)
+    scores_data, alignbuddy = retrieve_all_by_all_scores(sequences, psi_pred_files, broker)
     scores_data.to_csv(os.path.join(in_args.outdir, "sim_scores", "complete_all_by_all.scores"),
                        header=None, index=False, sep="\t")
     logging.info("\t-- finished in %s --\n" % TIMER.split())

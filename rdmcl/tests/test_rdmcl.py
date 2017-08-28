@@ -868,13 +868,13 @@ MPPIQISAS-I
 
 
 def test_mc_create_all_by_all_scores(capsys, monkeypatch):
-    monkeypatch.setattr(rdmcl, "create_all_by_all_scores", lambda *args, **kwargs: print(args, kwargs))
+    monkeypatch.setattr(rdmcl, "retrieve_all_by_all_scores", lambda *args, **kwargs: print(args, kwargs))
     rdmcl.mc_create_all_by_all_scores("seqbuddy", ["arg1", "arg2"])
     out, err = capsys.readouterr()
     assert out == "('seqbuddy', 'arg1', 'arg2') {'quiet': True}\n"
 
 
-def test_create_all_by_all_scores(hf):
+def test_retrieve_all_by_all_scores(hf):
     tmpdir = br.TempDir()
     sql_broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
     sql_broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
@@ -889,14 +889,14 @@ def test_create_all_by_all_scores(hf):
 
     rdmcl.ALIGNMETHOD = "mafft"
     rdmcl.ALIGNPARAMS = "--globalpair"
-    sim_scores, alignbuddy = rdmcl.create_all_by_all_scores(seqbuddy, psi_pred_files, sql_broker)
+    sim_scores, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqbuddy, psi_pred_files, sql_broker)
     assert len(sim_scores.index) == 66  # This is for 12 starting sequences --> (a * (a - 1)) / 2
     compare = sim_scores.loc[:][(sim_scores['seq1'] == "Mle-Panxα2") & (sim_scores['seq2'] == "Mle-Panxα12")]
     assert "Mle-Panxα2  Mle-Panxα12  0.33004  0.341381   0.546307  0.333442" in str(compare), print(compare)
     assert len(alignbuddy.records()) == 12
 
     rdmcl.Sb.pull_recs(seqbuddy, "Mle-Panxα2")
-    sim_scores, alignbuddy = rdmcl.create_all_by_all_scores(seqbuddy, psi_pred_files, sql_broker)
+    sim_scores, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqbuddy, psi_pred_files, sql_broker)
     assert len(sim_scores.index) == 0
     sql_broker.close()
 
@@ -920,6 +920,137 @@ def test_workerjob_init(hf):
     assert worker.heartbeat.hbdb_path == rdmcl.HEARTBEAT_DB
     assert worker.heartbeat.pulse_rate == rdmcl.MASTER_PULSE
     assert worker.queue_size == 0
+
+
+def test_worker_update_psipred(hf):
+    align = hf.get_data("cteno_panxs_aln")
+    align = rdmcl.Alb.extract_regions(align, "105:115")
+    align = rdmcl.Alb.pull_records(align, "Bfo-PanxαA|Bfr-PanxαD")
+    ss2_dfs = hf.get_data("ss2_dfs")
+    ss2_dfs = {"Bfo-PanxαA": ss2_dfs["Bfo-PanxαA"], "Bfr-PanxαD": ss2_dfs["Bfr-PanxαD"]}
+    ss2_dfs["Bfo-PanxαA"] = ss2_dfs["Bfo-PanxαA"].iloc[47:56]
+    for indx, new in [(47, 1), (48, 2), (49, 3), (50, 4), (51, 5), (52, 6), (53, 7), (54, 8), (55, 9)]:
+        ss2_dfs["Bfo-PanxαA"].set_value(indx, "indx", new)
+    ss2_dfs["Bfo-PanxαA"] = ss2_dfs["Bfo-PanxαA"].reset_index(drop=True)
+
+    ss2_dfs["Bfr-PanxαD"] = ss2_dfs["Bfr-PanxαD"].iloc[44:53]
+    for indx, new in [(44, 1), (45, 2), (46, 3), (47, 4), (48, 5), (49, 6), (50, 7), (51, 8), (52, 9)]:
+        ss2_dfs["Bfr-PanxαD"].set_value(indx, "indx", new)
+
+    ss2_dfs["Bfr-PanxαD"] = ss2_dfs["Bfr-PanxαD"].reset_index(drop=True)
+
+    ss2_dfs = rdmcl.update_psipred(align, ss2_dfs, "msa")
+    assert str(ss2_dfs["Bfo-PanxαA"]) == """\
+   indx aa ss  coil_prob  helix_prob  sheet_prob
+0     0  S  H      0.034       0.966       0.003
+1     1  Q  H      0.071       0.926       0.004
+2     2  M  H      0.371       0.649       0.003
+3     3  W  C      0.802       0.211       0.004
+4     4  S  C      0.852       0.151       0.010
+5     5  Q  C      0.765       0.253       0.009
+6     8  D  C      0.733       0.283       0.011
+7     9  D  C      0.890       0.126       0.014
+8    10  A  C      0.914       0.085       0.028"""
+
+    align = rdmcl.Alb.trimal(align, "all")
+    ss2_dfs = rdmcl.update_psipred(align, ss2_dfs, "trimal")
+    assert str(ss2_dfs["Bfo-PanxαA"]) == """\
+   indx aa ss  coil_prob  helix_prob  sheet_prob
+0     0  S  H      0.034       0.966       0.003
+1     3  W  C      0.802       0.211       0.004
+2     4  S  C      0.852       0.151       0.010
+3     5  Q  C      0.765       0.253       0.009
+4     8  D  C      0.733       0.283       0.011
+5     9  D  C      0.890       0.126       0.014
+6    10  A  C      0.914       0.085       0.028""", print(str(ss2_dfs["Bfo-PanxαA"]))
+
+    with pytest.raises(ValueError) as err:
+        rdmcl.update_psipred(align, ss2_dfs, "foo")
+
+    assert "Unrecognized mode 'foo': select from ['msa', 'trimal']" in str(err)
+
+
+def test_trimal():
+    align = rdmcl.Alb.AlignBuddy("""\
+>A
+MSTGTC-------
+>B
+M---TC-------
+>C
+M---TC---AILP
+>D
+-STP---YWAILP
+""", in_format="fasta")
+
+    seqbuddy = rdmcl.Sb.SeqBuddy(rdmcl.Alb.make_copy(align).records(), in_format="fasta")
+    seqbuddy = rdmcl.Sb.clean_seq(seqbuddy)
+
+    # Don't modify if any sequence is reduced to nothing
+    trimal = rdmcl.trimal(seqbuddy, [0.3], rdmcl.Alb.make_copy(align))
+    assert str(trimal) == str(align)
+
+    align = rdmcl.Alb.AlignBuddy("""\
+>A
+MSTGTC-------
+>B
+M---TC-------
+>C
+M---TC---AILP
+>D
+-STPTC-YWAILP
+""", in_format="fasta")
+
+    # Don't modify if average sequence length is reduced by more than half
+    trimal = rdmcl.trimal(seqbuddy, [0.3], rdmcl.Alb.make_copy(align))
+    assert str(trimal) == str(align)
+
+    # Remove some gaps
+    trimal = rdmcl.trimal(seqbuddy, ["all", 0.3, 0.55, "clean"], rdmcl.Alb.make_copy(align))
+    assert str(trimal) == """\
+>A
+MSTGTC----
+>B
+M---TC----
+>C
+M---TCAILP
+>D
+-STPTCAILP
+"""
+
+
+def test_prepare_all_by_all(hf, monkeypatch):
+    cpus = 24
+    seqbuddy = hf.get_data("cteno_panxs")
+    seqbuddy = rdmcl.Sb.pull_recs(seqbuddy, "Oma")  # Only 4 records, which means 6 comparisons
+    ss2_dfs = hf.get_data("ss2_dfs")
+
+    data_len, data = rdmcl.prepare_all_by_all(seqbuddy, ss2_dfs, cpus)
+    assert data_len == 6
+    assert len(data) == 6
+    assert data[0][0][0:2] == ('Oma-PanxαA', 'Oma-PanxαB')
+
+    seqbuddy = hf.get_data("cteno_panxs")  # 134 records = 8911 comparisons
+    data_len, data = rdmcl.prepare_all_by_all(seqbuddy, ss2_dfs, cpus)
+    assert data_len == 8911
+    assert len(data[0]) == int(rdmcl.ceil(data_len / (cpus)))
+
+
+def test_set_final_sim_scores(hf):
+    sim_scores = hf.get_data("cteno_sim_scores")
+    sim_scores = sim_scores.iloc[:10]
+    sim_scores = rdmcl.set_final_sim_scores(sim_scores)
+    assert str(sim_scores) == """\
+         seq1         seq2   subsmat       psi  raw_score     score
+0  Hca-PanxαG   Lla-PanxαC  0.239665  0.000000   0.320014  0.167765
+1  Hca-PanxαG   Mle-Panxα1  0.000000  0.453888   0.301325  0.136167
+2  Hca-PanxαG   Mle-Panxα2  0.129888  0.573451   0.350240  0.262957
+3  Hca-PanxαG   Mle-Panxα3  0.374897  0.635129   0.425122  0.452966
+4  Hca-PanxαG   Mle-Panxα4  1.000000  1.000000   0.638192  1.000000
+5  Hca-PanxαG   Mle-Panxα5  0.189101  0.556072   0.364911  0.299192
+6  Hca-PanxαG   Mle-Panxα6  0.424713  0.597077   0.434980  0.476422
+7  Hca-PanxαG  Mle-Panxα7A  0.190522  0.681612   0.378628  0.337849
+8  Hca-PanxαG   Mle-Panxα8  0.290356  0.511685   0.388444  0.356755
+9  Hca-PanxαG   Mle-Panxα9  0.483807  0.580624   0.449717  0.512852"""
 
 
 # #########  MCL stuff  ########## #
@@ -1006,7 +1137,7 @@ def test_instantiate_orphan(hf):
     cluster1 = ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE', 'Bfr-PanxαA']
     # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster1))
     graph = hf.get_db_graph("14f1cd0e985ed87b4e31bc07453481d2", broker)
-    # graph, alignbuddy = rdmcl.create_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
+    # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
     cluster1 = rdmcl.Cluster(cluster1, graph, parent=parent_cluster)
     # rdmcl.cluster2database(cluster1, broker, alignbuddy)
     cluster1.set_name()
@@ -1014,7 +1145,7 @@ def test_instantiate_orphan(hf):
     cluster2 = ['Lla-PanxαA', 'Mle-Panxα11', 'Oma-PanxαD', 'Pba-PanxαB', 'Tin-PanxαF']
     # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster2))
     graph = hf.get_db_graph("441c3610506fda8a6820da5f67fdc470", broker)
-    # graph, alignbuddy = rdmcl.create_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
+    # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
     cluster2 = rdmcl.Cluster(cluster2, graph, parent=parent_cluster)
     # rdmcl.cluster2database(cluster2, broker, alignbuddy)
     cluster2.set_name()
@@ -1022,7 +1153,7 @@ def test_instantiate_orphan(hf):
     cluster3 = ['Vpa-PanxαD']  # This should be placed in cluster 2
     # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster3))
     graph = hf.get_db_graph("ded0bc087974589c24945bb36197d36f", broker)
-    # graph, alignbuddy = rdmcl.create_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
+    # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
     cluster3 = rdmcl.Cluster(cluster3, graph, parent=parent_cluster)
     # rdmcl.cluster2database(cluster3, broker, alignbuddy)
     cluster3.set_name()
@@ -1030,7 +1161,7 @@ def test_instantiate_orphan(hf):
     cluster4 = ['Hca-PanxαA', 'Lcr-PanxαG']  # This should be placed in cluster 1
     # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster4))
     graph = hf.get_db_graph("035b3933770942c7e32e27c06e619825", broker)
-    # graph, alignbuddy = rdmcl.create_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
+    # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
     cluster4 = rdmcl.Cluster(cluster4, graph, parent=parent_cluster)
     # rdmcl.cluster2database(cluster4, broker, alignbuddy)
     cluster4.set_name()
@@ -1038,7 +1169,7 @@ def test_instantiate_orphan(hf):
     cluster5 = ['Hvu-PanxβA']  # This should not be placed in a cluster
     # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster5))
     graph = hf.get_db_graph("c62b6378d326c2479296c98f0f620d0f", broker)
-    # graph, alignbuddy = rdmcl.create_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
+    # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
     cluster5 = rdmcl.Cluster(cluster5, graph, parent=parent_cluster)
     # rdmcl.cluster2database(cluster5, broker, alignbuddy)
     cluster5.set_name()
