@@ -167,7 +167,7 @@ class Worker(object):
             with open(self.data_file, "w") as ofile:
                 ofile.write("seq1,seq2,subsmat,psi")
 
-            br.run_multicore_function(data, score_sequences, quiet=True, max_processes=self.cpus,
+            br.run_multicore_function(data, rdmcl.mc_score_sequences, quiet=True, max_processes=self.cpus,
                                       func_args=[alignment, gap_open, gap_extend, self.data_file])
 
             self.printer.write("Processing final results")
@@ -408,34 +408,6 @@ class Worker(object):
             os.remove(self.worker_file)
         self.heartbeat.end()
         sys.exit()
-
-
-def score_sequences(data, func_args):
-    # ##################################################################### #
-    # Calculate the best possible scores, and divide by the observed scores #
-    # ##################################################################### #
-
-    results = ["" for _ in data]
-    alb_obj, gap_open, gap_extend, output_file = func_args
-    for indx, recs in enumerate(data):
-        alb_obj_copy = Alb.make_copy(alb_obj)
-        id1, id2, psi1_df, psi2_df = recs
-
-        id_regex = "^%s$|^%s$" % (id1, id2)
-
-        # Alignment comparison
-        alb_obj_copy = Alb.pull_records(alb_obj_copy, id_regex)
-
-        subs_mat_score = rdmcl.compare_pairwise_alignment(alb_obj_copy, gap_open, gap_extend)
-
-        # PSI PRED comparison
-        ss_score = rdmcl.compare_psi_pred(psi1_df, psi2_df)
-        results[indx] = "\n%s,%s,%s,%s" % (id1, id2, subs_mat_score, ss_score)
-
-    with WORKERLOCK:
-        with open(output_file, "a") as ofile:
-            ofile.write("".join(results))
-    return
 
 
 # Used to patch br.DynamicPrint() when the -log flag is thrown

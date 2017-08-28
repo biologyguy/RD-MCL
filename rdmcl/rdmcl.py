@@ -959,10 +959,10 @@ def mc_score_sequences(seq_pairs, args):
     # ##################################################################### #
     # Calculate the best possible scores, and divide by the observed scores #
     # ##################################################################### #
-    alb_obj, output_dir, gap_open, gap_extend = args
-    file_name = helpers.md5_hash(str(seq_pairs))
-    ofile = open(os.path.join(output_dir, file_name), "w")
-    for seq_pair in seq_pairs:
+
+    results = ["" for _ in seq_pairs]
+    alb_obj, gap_open, gap_extend, output_file = args
+    for indx, seq_pair in enumerate(seq_pairs):
         id1, id2, ss2df1, ss2df2 = seq_pair
         id_regex = "^%s$|^%s$" % (id1, id2)
         # Alignment comparison
@@ -973,8 +973,10 @@ def mc_score_sequences(seq_pairs, args):
 
         # PSI PRED comparison
         ss_score = compare_psi_pred(ss2df1, ss2df2)
-        ofile.write("\n%s,%s,%s,%s" % (id1, id2, subs_mat_score, ss_score))
-    ofile.close()
+        results[indx] = "\n%s,%s,%s,%s" % (id1, id2, subs_mat_score, ss_score)
+    with LOCK:
+        with open(output_file, "a") as ofile:
+            ofile.write("".join(results))
     return
 
 
@@ -1079,7 +1081,6 @@ class AllByAllScores(object):
         Generate a multiple sequence alignment and pull out all-by-all similarity graph
         :return:
         """
-        print("Create!", self.seq_ids)
         psi_pred_ss2_dfs = OrderedDict()
 
         for rec in self.seqbuddy.records:
@@ -1098,19 +1099,13 @@ class AllByAllScores(object):
         psi_pred_ss2_dfs = update_psipred(alignment, psi_pred_ss2_dfs, "trimal")
 
         all_by_all_len, all_by_all = prepare_all_by_all(self.seqbuddy, psi_pred_ss2_dfs, CPUS)
-        all_by_all_outdir = br.TempDir()
-        score_sequences_params = [alignment, all_by_all_outdir.path, GAP_OPEN, GAP_EXTEND]
+        all_by_all_outfile = br.TempFile()
+        all_by_all_outfile.write("seq1,seq2,subsmat,psi")
+        score_sequences_params = [alignment, GAP_OPEN, GAP_EXTEND, all_by_all_outfile.path]
         with MULTICORE_LOCK:
             br.run_multicore_function(all_by_all, mc_score_sequences, score_sequences_params,
                                       quiet=self.quiet, max_processes=CPUS)
-        sim_scores_file = br.TempFile()
-        sim_scores_file.write("seq1,seq2,subsmat,psi")
-        aba_root, aba_dirs, aba_files = next(os.walk(all_by_all_outdir.path))
-        for aba_file in aba_files:
-            with open(os.path.join(aba_root, aba_file), "r") as ifile:
-                sim_scores_file.write(ifile.read())
-        sim_scores = pd.read_csv(sim_scores_file.get_handle("r"), index_col=False)
-        print(sim_scores)
+        sim_scores = pd.read_csv(all_by_all_outfile.get_handle("r"), index_col=False)
         sim_scores = set_final_sim_scores(sim_scores)
         cluster2database(Cluster(self.seq_ids, sim_scores), self.sql_broker, alignment)
         return sim_scores, alignment

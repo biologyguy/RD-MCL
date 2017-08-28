@@ -614,61 +614,6 @@ def test_worker_terminate(hf, monkeypatch, capsys):
     assert not work_cursor.execute("SELECT * FROM processing WHERE worker_id=1").fetchall()
     assert work_cursor.execute("SELECT * FROM processing WHERE worker_id=2").fetchall()
 
-
-def test_score_sequences(hf):
-    outfile = br.TempFile()
-    alb_obj = hf.get_data("cteno_panxs_aln")
-    # Grab subset of alignment for manual calculation
-    # Bfo-PanxαA   SQMWSQ--DDA
-    # Bfr-PanxαD   V--RQIVVGGP
-    alb_obj = Alb.extract_regions(alb_obj, "105:115")
-
-    ss2_dfs = hf.get_data("ss2_dfs")
-    ss2_dfs = {"Bfo-PanxαA": ss2_dfs["Bfo-PanxαA"], "Bfr-PanxαD": ss2_dfs["Bfr-PanxαD"]}
-    # Update the ss2 dfs according to the alignment subsequences extracted
-    '''
-    indx aa ss  coil_prob  helix_prob  sheet_prob
-47     1  S  H      0.034       0.966       0.003
-48     2  Q  H      0.071       0.926       0.004
-49     3  M  H      0.371       0.649       0.003
-50     4  W  C      0.802       0.211       0.004
-51     5  S  C      0.852       0.151       0.010
-52     6  Q  C      0.765       0.253       0.009
-53     9  D  C      0.733       0.283       0.011
-54    10  D  C      0.890       0.126       0.014
-55    11  A  C      0.914       0.085       0.028
-    '''
-    '''
-    indx aa ss  coil_prob  helix_prob  sheet_prob
-44     1  V  E      0.136       0.196       0.556
-45     4  R  E      0.178       0.357       0.553
-46     5  Q  H      0.157       0.530       0.525
-47     6  I  H      0.114       0.771       0.319
-48     7  V  H      0.217       0.675       0.212
-49     8  V  C      0.461       0.443       0.166
-50     9  G  C      0.837       0.040       0.077
-51    10  G  C      0.940       0.008       0.063
-52    11  P  C      0.606       0.015       0.402
-    '''
-
-    ss2_dfs["Bfo-PanxαA"] = ss2_dfs["Bfo-PanxαA"].iloc[47:56]
-    for indx, new in [(47, 1), (48, 2), (49, 3), (50, 4), (51, 5), (52, 6), (53, 9), (54, 10), (55, 11)]:
-        ss2_dfs["Bfo-PanxαA"].set_value(indx, "indx", new)
-
-    ss2_dfs["Bfr-PanxαD"] = ss2_dfs["Bfr-PanxαD"].iloc[44:53]
-    for indx, new in [(44, 1), (45, 4), (46, 5), (47, 6), (48, 7), (49, 8), (50, 9), (51, 10), (52, 11)]:
-        ss2_dfs["Bfr-PanxαD"].set_value(indx, "indx", new)
-
-    gap_open = -5
-    gap_extend = 0
-
-    # For score, subsmat = -0.363
-    launch_worker.score_sequences([("Bfo-PanxαA", "Bfr-PanxαD", ss2_dfs["Bfo-PanxαA"], ss2_dfs["Bfr-PanxαD"])],
-                                  [alb_obj, gap_open, gap_extend, outfile.path])
-
-    assert outfile.read() == "\nBfo-PanxαA,Bfr-PanxαD,-0.3627272727272728,0.4183636363636363"
-
-
 # #########  User Interface  ########## #
 parser = argparse.ArgumentParser(prog="launch_worker", description="",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
