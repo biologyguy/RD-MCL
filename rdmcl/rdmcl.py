@@ -1330,7 +1330,7 @@ class WorkerJob(object):
                 cursor.execute("DELETE FROM processing WHERE master_id=?", (self.heartbeat.id,))
                 cursor.execute("DELETE FROM waiting WHERE master_id=?", (self.heartbeat.id,))
                 try:
-                    os.remove("%s/%s.seqs" % (WORKER_OUT, self.job_id))
+                    os.remove(os.path.join(WORKER_OUT, "%s.seqs" % self.job_id))
                 except FileNotFoundError:
                     pass
                 return False
@@ -1359,8 +1359,8 @@ class WorkerJob(object):
         return True
 
     def restart_job(self):
-        if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, self.job_id)):
-            self.seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, self.job_id), out_format="fasta")
+        if not os.path.isfile(os.path.join(WORKER_OUT, "%s.seqs" % self.job_id)):
+            self.seqbuddy.write(os.path.join(WORKER_OUT, "%s.seqs" % self.job_id), out_format="fasta")
 
         with helpers.ExclusiveConnect(WORKER_DB) as cursor:
             cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id, align_m, align_p,"

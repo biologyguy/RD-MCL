@@ -12,6 +12,7 @@ from buddysuite import buddy_resources as br
 from copy import copy, deepcopy
 import shutil
 import argparse
+import re
 
 
 # #########  Mock classes and functions  ########## #
@@ -1375,12 +1376,15 @@ def test_workerjob_check_finished(hf, monkeypatch):
 
 def test_workerjob_process_finished(hf, monkeypatch, capsys):
     monkeypatch.setattr(rdmcl, "HeartBeat", MockHeartBeat)
+    monkeypatch.setattr(rdmcl, "cluster2database", lambda *_: True)
     temp_dir = br.TempDir()
     work_db = temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
     rdmcl.WORKER_DB = work_db
     rdmcl.WORKER_OUT = temp_dir.path
 
     seqbuddy = hf.get_data("cteno_panxs")
+    alignment = hf.get_data("cteno_panxs_aln")
+    sim_scores = hf.get_data("cteno_sim_scores")
     worker = rdmcl.WorkerJob(seqbuddy, "sql_broker")
     worker.heartbeat.id = 1
 
@@ -1388,6 +1392,135 @@ def test_workerjob_process_finished(hf, monkeypatch, capsys):
     assert not worker.process_finished()
     out, err = capsys.readouterr()
     assert "Lost a file, looping through again" in out
+
+    # Run through but don't delete files
+    seqs_path = os.path.join(temp_dir.path, "%s.seqs" % worker.job_id)
+    seqbuddy.write(seqs_path)
+    aln_path = os.path.join(temp_dir.path, "%s.aln" % worker.job_id)
+    alignment.write(aln_path)
+    graph_path = temp_dir.subfile("%s.graph" % worker.job_id)
+    sim_scores.to_csv(graph_path, header=None, index=False)
+
+    ret_sim_scores, ret_alignment = worker.process_finished()
+    assert str(ret_sim_scores) == str(sim_scores)
+    assert str(ret_alignment) == str(alignment)
+
+    # Fully complete, delete all files
+    new_seq_path = re.sub(r'(%s)' % worker.job_id, r'%s_\1' % worker.heartbeat.id, seqs_path)
+    shutil.move(seqs_path, new_seq_path)
+    new_aln_path = re.sub(r'(%s)' % worker.job_id, r'%s_\1' % worker.heartbeat.id, aln_path)
+    shutil.move(aln_path, new_aln_path)
+    new_graph_path = re.sub(r'(%s)' % worker.job_id, r'%s_\1' % worker.heartbeat.id, graph_path)
+    shutil.move(graph_path, new_graph_path)
+
+    assert os.path.isfile(new_seq_path)
+    assert os.path.isfile(new_aln_path)
+    assert os.path.isfile(new_graph_path)
+
+    ret_sim_scores, ret_alignment = worker.process_finished()
+    assert str(ret_sim_scores) == str(sim_scores), print(ret_sim_scores)
+    assert str(ret_alignment) == str(alignment), print(ret_alignment)
+
+    assert not os.path.isfile(new_seq_path)
+    assert not os.path.isfile(new_aln_path)
+    assert not os.path.isfile(new_graph_path)
+
+
+def test_workerjob_check_if_active(hf, monkeypatch, capsys):
+    monkeypatch.setattr(rdmcl, "HeartBeat", MockHeartBeat)
+    temp_dir = br.TempDir()
+
+    seqbuddy = hf.get_data("cteno_panxs")
+    worker = rdmcl.WorkerJob(seqbuddy, "sql_broker")
+    worker.heartbeat.id = 1
+
+    work_db = temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    work_con = sqlite3.connect(work_db)
+    work_cursor = work_con.cursor()
+    rdmcl.WORKER_DB = work_db
+    rdmcl.WORKER_OUT = temp_dir.path
+
+    hb_db = temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
+    hb_con = sqlite3.connect(os.path.join(temp_dir.path, "heartbeat_db.sqlite"))
+    hb_cursor = hb_con.cursor()
+    rdmcl.HEARTBEAT_DB = hb_db
+
+    # No workers no seq file, die
+    work_cursor.execute("INSERT INTO queue (master_id) VALUES (1)")
+    work_cursor.execute("INSERT INTO processing (master_id) VALUES (1)")
+    work_cursor.execute("INSERT INTO waiting (master_id) VALUES (1)")
+    work_cursor.execute("INSERT INTO queue (master_id) VALUES (2)")
+    work_cursor.execute("INSERT INTO processing (master_id) VALUES (2)")
+    work_cursor.execute("INSERT INTO waiting (master_id) VALUES (2)")
+    work_con.commit()
+    assert not worker.check_if_active()
+    assert not work_cursor.execute("SELECT * FROM queue WHERE master_id=1").fetchone()
+    assert not work_cursor.execute("SELECT * FROM processing WHERE master_id=1").fetchone()
+    assert not work_cursor.execute("SELECT * FROM waiting WHERE master_id=1").fetchone()
+    assert work_cursor.execute("SELECT * FROM queue WHERE master_id=2").fetchone()
+    assert work_cursor.execute("SELECT * FROM processing WHERE master_id=2").fetchone()
+    assert work_cursor.execute("SELECT * FROM waiting WHERE master_id=2").fetchone()
+
+    # No workers, delete seqs file
+    temp_dir.subfile("%s.seqs" % worker.job_id)
+    worker.heartbeat.id = 2
+    assert not worker.check_if_active()
+    assert not work_cursor.execute("SELECT * FROM queue").fetchone()
+    assert not work_cursor.execute("SELECT * FROM processing").fetchone()
+    assert not work_cursor.execute("SELECT * FROM waiting").fetchone()
+
+    # Workers alive, but job is missing
+    monkeypatch.setattr(rdmcl.WorkerJob, "restart_job", lambda *_: print("restarting job"))
+    hb_cursor.execute("INSERT INTO heartbeat (thread_id, thread_type, pulse) VALUES (?, ?, ?)", (1, "worker", 10e12,))
+    hb_con.commit()
+    assert worker.check_if_active()
+    out, err = capsys.readouterr()
+    assert out == "a2aaca4f79bd56fbf8debfdc281660fd vanished!\nrestarting job\n"
+
+    # Job already queued
+    work_cursor.execute("INSERT INTO queue (hash, master_id) VALUES ('a2aaca4f79bd56fbf8debfdc281660fd', 2)")
+    work_con.commit()
+    assert worker.check_if_active()
+    out, err = capsys.readouterr()
+    assert not out
+
+    # Job already complete
+    work_cursor.execute("INSERT INTO complete (hash, master_id) VALUES ('a2aaca4f79bd56fbf8debfdc281660fd', 2)")
+    work_cursor.execute("DELETE FROM queue WHERE hash='a2aaca4f79bd56fbf8debfdc281660fd'")
+    work_con.commit()
+    assert worker.check_if_active()
+    out, err = capsys.readouterr()
+    assert not out
+
+    # Confirm a processing job has an active worker on it
+    work_cursor.execute("INSERT INTO processing (hash, master_id) VALUES ('a2aaca4f79bd56fbf8debfdc281660fd', 7)")
+    work_con.commit()
+    assert worker.check_if_active()
+    out, err = capsys.readouterr()
+    assert out == "restarting job\n", print(out)
+
+
+def test_workerjob_restart_job(hf, monkeypatch, capsys):
+    monkeypatch.setattr(rdmcl, "HeartBeat", MockHeartBeat)
+    temp_dir = br.TempDir()
+
+    seqbuddy = hf.get_data("cteno_panxs")
+    worker = rdmcl.WorkerJob(seqbuddy, "sql_broker")
+    worker.heartbeat.id = 1
+
+    work_db = temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    work_con = sqlite3.connect(work_db)
+    work_cursor = work_con.cursor()
+    rdmcl.WORKER_DB = work_db
+    rdmcl.WORKER_OUT = temp_dir.path
+
+    work_cursor.execute("INSERT INTO processing (hash) VALUES ('a2aaca4f79bd56fbf8debfdc281660fd')")
+    work_con.commit()
+    assert not worker.restart_job()
+    assert not work_cursor.execute("SELECT * FROM processing WHERE hash='a2aaca4f79bd56fbf8debfdc281660fd'").fetchone()
+    assert work_cursor.execute("SELECT * FROM queue WHERE hash='a2aaca4f79bd56fbf8debfdc281660fd'").fetchone()
+    assert work_cursor.execute("SELECT * FROM waiting WHERE hash='a2aaca4f79bd56fbf8debfdc281660fd'").fetchone()
+    assert os.path.isfile(os.path.join(temp_dir.path, 'a2aaca4f79bd56fbf8debfdc281660fd.seqs'))
 
 
 # #########  MCL stuff  ########## #
