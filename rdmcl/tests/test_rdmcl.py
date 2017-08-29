@@ -1180,7 +1180,8 @@ def test_set_final_sim_scores(hf):
 9  Hca-PanxαG   Mle-Panxα9  0.483807  0.580624   0.449717  0.512852"""
 
 
-def test_workerjob_init(hf):
+def test_workerjob_init(hf, monkeypatch):
+    monkeypatch.setattr(rdmcl, "HeartBeat", MockHeartBeat)
     seqbuddy = hf.get_data("cteno_panxs")
     seq_ids = hf.get_data("cteno_ids")
     seq_ids_hash = hf.string2hash(", ".join(seq_ids))
@@ -1253,9 +1254,10 @@ def test_workerjob_run(hf, monkeypatch, capsys):
     assert not worker.run()
 
 
-def test_workerjob_queue_job(hf, monkeypatch, capsys):
+def test_workerjob_queue_job(hf, monkeypatch):
+    monkeypatch.setattr(rdmcl, "HeartBeat", MockHeartBeat)
     temp_dir = br.TempDir()
-    work_db = temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    work_db = temp_dir.copy_to(os.path.join(hf.resource_path, "work_db.sqlite"))
     rdmcl.WORKER_DB = work_db
     rdmcl.WORKER_OUT = temp_dir.path
 
@@ -1272,7 +1274,8 @@ def test_workerjob_queue_job(hf, monkeypatch, capsys):
                       'gappyout 0.5 0.75 0.9 0.95 clean', -5.0, 0.0)], print(queue)
 
 
-def test_workerjob_pull_from_db(hf, monkeypatch, capsys):
+def test_workerjob_pull_from_db(hf, monkeypatch):
+    monkeypatch.setattr(rdmcl, "HeartBeat", MockHeartBeat)
     temp_dir = br.TempDir()
     broker_db = temp_dir.copy_to(os.path.join(hf.resource_path, "db.sqlite"))
     sql_broker = helpers.SQLiteBroker(broker_db)
@@ -1326,6 +1329,65 @@ MTGLILIL
     worker.pull_from_db()
     assert not work_cursor.execute("SELECT * FROM complete").fetchall()
     assert not work_cursor.execute("SELECT * FROM waiting").fetchall()
+
+
+def test_workerjob_check_finished(hf, monkeypatch):
+    monkeypatch.setattr(rdmcl, "HeartBeat", MockHeartBeat)
+    temp_dir = br.TempDir()
+    work_db = temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    rdmcl.WORKER_DB = work_db
+    rdmcl.WORKER_OUT = temp_dir.path
+
+    work_con = sqlite3.connect(work_db)
+    work_cursor = work_con.cursor()
+
+    seqbuddy = hf.get_data("cteno_panxs")
+    worker = rdmcl.WorkerJob(seqbuddy, "sql_broker")
+    worker.heartbeat.id = 1
+
+    work_cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, "
+                        "gap_open, gap_extend) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        ('a2aaca4f79bd56fbf8debfdc281660fd', '', None, 'clustalo', '',
+                         'gappyout 0.5 0.75 0.9 0.95 clean', -5.0, 0.0,))
+    work_cursor.execute("INSERT INTO waiting (hash, master_id) VALUES (?, ?)", ('a2aaca4f79bd56fbf8debfdc281660fd', 1,))
+    work_cursor.execute("INSERT INTO waiting (hash, master_id) VALUES (?, ?)", ('a2aaca4f79bd56fbf8debfdc281660fd', 2,))
+    work_con.commit()
+
+    # Not finished
+    assert worker.queue_size == 0
+    assert not worker.check_finished()
+    assert worker.queue_size == 1
+    assert work_cursor.execute("SELECT  COUNT(*) FROM waiting").fetchone()[0] == 2
+    # Other jobs waiting
+    work_cursor.execute("INSERT INTO complete (hash, worker_id, master_id) "
+                        "VALUES (?, ?, ?)", ('a2aaca4f79bd56fbf8debfdc281660fd', 1, 3,))
+    work_con.commit()
+    assert worker.check_finished()
+    assert work_cursor.execute("SELECT  COUNT(*) FROM waiting").fetchone()[0] == 1
+    assert work_cursor.execute("SELECT  COUNT(*) FROM complete").fetchone()[0] == 1
+
+    # Final cleanup
+    worker.heartbeat.id = 2
+    assert worker.check_finished()
+    assert work_cursor.execute("SELECT  COUNT(*) FROM waiting").fetchone()[0] == 0
+    assert work_cursor.execute("SELECT  COUNT(*) FROM complete").fetchone()[0] == 0
+
+
+def test_workerjob_process_finished(hf, monkeypatch, capsys):
+    monkeypatch.setattr(rdmcl, "HeartBeat", MockHeartBeat)
+    temp_dir = br.TempDir()
+    work_db = temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    rdmcl.WORKER_DB = work_db
+    rdmcl.WORKER_OUT = temp_dir.path
+
+    seqbuddy = hf.get_data("cteno_panxs")
+    worker = rdmcl.WorkerJob(seqbuddy, "sql_broker")
+    worker.heartbeat.id = 1
+
+    # Hit race conditions (FileNoteFound)
+    assert not worker.process_finished()
+    out, err = capsys.readouterr()
+    assert "Lost a file, looping through again" in out
 
 
 # #########  MCL stuff  ########## #
