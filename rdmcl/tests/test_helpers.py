@@ -150,13 +150,14 @@ def test_logger(hf):
         assert ofile.read() == "Some info\nSome Warnings\n"
 
 
-def test_timer():
+def test_timer(monkeypatch):
+    monkeypatch.setattr(helpers, "time", lambda *_: 1)
     timer = helpers.Timer()
-    sleep(1)
+    monkeypatch.setattr(helpers, "time", lambda *_: 2)
     assert timer.split(prefix="start_", postfix="_end") == 'start_1 sec_end'
-    sleep(1)
+    monkeypatch.setattr(helpers, "time", lambda *_: 3)
     assert timer.split(prefix="start_", postfix="_end") == 'start_1 sec_end'
-    sleep(1)
+    monkeypatch.setattr(helpers, "time", lambda *_: 4)
     assert timer.total_elapsed(prefix="start_", postfix="_end") == 'start_3 sec_end'
 
 
