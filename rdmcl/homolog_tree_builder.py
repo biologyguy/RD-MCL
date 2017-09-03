@@ -242,6 +242,8 @@ def main():
     parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
     parser_flags.add_argument("-ts", "--taxa_sep", action="store", default="-", metavar="",
                               help="Specify the string that separates taxa ids from gene names (default='-')")
+    parser_flags.add_argument("-cc", "--color_cluster", action="store_true",
+                              help="Color tips by cluster, instead of by species")
 
     # Developer testing
     dev_flags = parser.add_argument_group(title="\033[1mDeveloper commands\033[m")
@@ -256,22 +258,31 @@ def main():
     cluster_file = prepare_clusters(in_args.cluster_file, hierarchy=True)
 
     colors = KellysColors().color_iter()
-    taxa_color_map = {}
-    for rank, node in cluster_file.items():
-        for leaf in node:
-            taxa = leaf.split(in_args.taxa_sep)[0]
-            if taxa not in taxa_color_map:
-                taxa_color_map[taxa] = next(colors)
+    color_map = {}
+
+    if in_args.color_cluster:
+        for rank, node in cluster_file.items():
+            if rank not in color_map:
+                color_map[rank] = next(colors)
+    else:
+        for rank, node in cluster_file.items():
+            for leaf in node:
+                taxa = leaf.split(in_args.taxa_sep)[0]
+                if taxa not in color_map:
+                    color_map[taxa] = next(colors)
 
     nodes = []
     for rank, node in cluster_file.items():
         leaves = []
         for leaf in node:
-            if in_args.ctenos_panxs:
-                leaves.append(Leaf(leaf, 1.0, ctenos.get_color(leaf)))
+            if in_args.color_cluster:
+                leaves.append(Leaf(leaf, 1.0, color_map[rank]))
             else:
-                taxa = leaf.split(in_args.taxa_sep)[0]
-                leaves.append(Leaf(leaf, 1.0, taxa_color_map[taxa]))
+                if in_args.ctenos_panxs:
+                    leaves.append(Leaf(leaf, 1.0, ctenos.get_color(leaf)))
+                else:
+                    taxa = leaf.split(in_args.taxa_sep)[0]
+                    leaves.append(Leaf(leaf, 1.0, color_map[taxa]))
 
         nodes.append(Node(leaves, rank=rank, ave_support=0,
                           std_support=0))
