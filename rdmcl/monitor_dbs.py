@@ -24,9 +24,9 @@ class Monitor(object):
 
     def _run(self, check_file_path):
         printer = DynamicPrint()
-        output = [("#Master", 10), ("AveMhb", 10), ("#Worker", 10), ("AveWhb", 10), ("#queue", 10),
-                  ("#proc", 10), ("#comp", 10), ("#HashWait", 11),
-                  ("#IdWait", 10), ("ConnectTime", 10)]
+        output = [("#Master", 9), ("AveMhb", 9), ("#Worker", 9), ("AveWhb", 9), ("#queue", 9),
+                  ("#subq", 8), ("#proc", 8), ("#subp", 8), ("#comp", 8), ("#HashWait", 10),
+                  ("#IdWait", 9), ("ConnectTime", 9)]
 
         output = [str(x[0]).ljust(x[1]) for x in output]
         printer.write("".join(output))
@@ -42,8 +42,8 @@ class Monitor(object):
                 with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
                     heartbeat = cursor.execute("SELECT * FROM heartbeat").fetchall()
                 with helpers.ExclusiveConnect(self.wdb_path) as cursor:
-                    queue = cursor.execute("SELECT master_id FROM queue").fetchall()
-                    processing = cursor.execute("SELECT master_id, worker_id FROM processing").fetchall()
+                    queue = cursor.execute("SELECT hash FROM queue").fetchall()
+                    processing = cursor.execute("SELECT hash FROM processing").fetchall()
                     complete = cursor.execute("SELECT master_id, worker_id FROM complete").fetchall()
                     waiting = cursor.execute("SELECT * FROM waiting").fetchall()
                 connect_time = round(time() - split_time, 3)
@@ -62,9 +62,15 @@ class Monitor(object):
                     master_wait.setdefault(master_id, 0)
                     master_wait[master_id] += 1
 
-                output = [(len_mas, 10), (master_hb, 10), (len_wor, 10), (worker_hb, 10), (len(queue), 10),
-                          (len(processing), 10), (len(complete), 10), (len(hash_wait), 11),
-                          (len(master_wait), 10), (connect_time, 10)]
+                subqueue_len = len([None for x in queue if "_" in x[0]])
+                queue_len = len(queue) - subqueue_len
+
+                subproc_len = len([None for x in processing if "_" in x[0]])
+                proc_len = len(processing) - subproc_len
+
+                output = [(len_mas, 9), (master_hb, 9), (len_wor, 9), (worker_hb, 9), (queue_len, 9),
+                          (subqueue_len, 8), (proc_len, 8), (subproc_len, 8), (len(complete), 8),
+                          (len(hash_wait), 10), (len(master_wait), 9), (connect_time, 9)]
                 output = [str(x[0]).ljust(x[1]) for x in output]
 
                 printer.write("".join(output))
