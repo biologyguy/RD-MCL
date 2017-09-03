@@ -2147,10 +2147,6 @@ Continue? y/[n] """ % len(sequences)
 
         # Fold singletons and doublets back into groups.
         if not in_args.suppress_singlet_folding:
-            orphans = Orphans(seqbuddy=sequences, clusters=final_clusters,
-                              sql_broker=broker, psi_pred_ss2=psi_pred_files)
-            orphans.place_orphans()
-            final_clusters = orphans.clusters
             with open(os.path.join(in_args.outdir, "orphans.log"), "a") as orphan_log_file:
                 orphan_log_file.write("""\
    #################################
@@ -2158,6 +2154,11 @@ Continue? y/[n] """ % len(sequences)
    #################################
 
 """)
+            orphans = Orphans(seqbuddy=sequences, clusters=final_clusters,
+                              sql_broker=broker, psi_pred_ss2=psi_pred_files)
+            orphans.place_orphans()
+            final_clusters = orphans.clusters
+            with open(os.path.join(in_args.outdir, "orphans.log"), "a") as orphan_log_file:
                 orphan_log_file.write(orphans.tmp_file.read())
 
         if in_args.suppress_iteration:
