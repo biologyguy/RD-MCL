@@ -36,19 +36,18 @@ WORKERLOCK = Lock()
 
 
 class Worker(object):
-    def __init__(self, location, heartrate=60, max_wait=120, cpus=cpu_count(), job_size_coff=300,
-                 log=False, quiet=False):
+    def __init__(self, location, heartrate=60, max_wait=600, dead_thread_wait=120, cpus=cpu_count(),
+                 job_size_coff=300, log=False, quiet=False):
         self.working_dir = os.path.abspath(location)
         self.wrkdb_path = os.path.join(self.working_dir, "work_db.sqlite")
         self.hbdb_path = os.path.join(self.working_dir, "heartbeat_db.sqlite")
         self.output = os.path.join(self.working_dir, ".worker_output")
         os.makedirs(self.output, exist_ok=True)
 
-        self.masterclear_path = os.path.split(self.wrkdb_path)[0]
-        self.masterclear_path = os.path.join(self.masterclear_path, "MasterClear")
         self.heartrate = heartrate
         self.heartbeat = rdmcl.HeartBeat(self.hbdb_path, self.heartrate, thread_type="worker")
         self.max_wait = max_wait
+        self.dead_thread_wait = dead_thread_wait
         self.cpus = cpus - 1 if cpus > 1 else 1
         self.job_size_coff = job_size_coff
         self.worker_file = ""
@@ -93,13 +92,10 @@ class Worker(object):
             # Make sure there are some masters still kicking around
             self.check_masters(idle)
 
-            # Check for MasterClear override (file with a number in it, specifying how many seconds is considered dead)
-            max_wait = self.masterclear()
-
-            # Check for and clean up dead threads and orphaned jobs every hundredth(ish) time through
+            # Check for and clean up dead threads and orphaned jobs every twentieth(ish) time through
             rand_check = random()
-            if rand_check > 0.99 or max_wait != self.max_wait:
-                self.clean_dead_threads(max_wait)
+            if rand_check > 0.95:
+                self.clean_dead_threads()
 
             # Fetch a job from the queue
             data = self.fetch_queue_job()
@@ -197,69 +193,75 @@ class Worker(object):
                                (br.pretty_time(self.max_wait), idle))
         return
 
-    def masterclear(self):
-        max_wait = int(self.max_wait)
-        with WORKERLOCK:
-            # Check MasterClear signal (file in working dir with # of second specified for master heartbeat)
-            if os.path.isfile(self.masterclear_path):
-                with open(self.masterclear_path, "r") as ifile:
-                    try:
-                        max_wait = int(ifile.read())
-                        self.printer.write("MasterClear signal %s" % max_wait)
-                        self.printer.new_line(1)
-                    except ValueError as err:
-                        self.printer.write(str(err))
-                        self.printer.new_line(1)
-                os.remove(self.masterclear_path)
-            else:
-                pass
-        return max_wait
-
-    def clean_dead_threads(self, max_wait):
+    def clean_dead_threads(self):
         with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
-            wait_time = time.time() - max_wait - cursor.lag
-            dead_masters = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
-                                          "AND pulse < ?", (wait_time,)).fetchall()
-            dead_workers = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='worker' "
-                                          "AND pulse < ?", (wait_time,)).fetchall()
+            wait_time = time.time() - self.dead_thread_wait - cursor.lag
+            dead_masters = list(cursor.execute("SELECT thread_id FROM heartbeat WHERE thread_type='master' "
+                                               "AND pulse < ?", (wait_time,)).fetchall())
+            master_ids = cursor.execute("SELECT thread_id FROM heartbeat WHERE thread_type='master'").fetchall()
+
             if dead_masters:
                 dead_masters = [str(x[0]) for x in dead_masters]
                 dead_masters = ", ".join(dead_masters)
                 cursor.execute("DELETE FROM heartbeat WHERE thread_id IN (%s)" % dead_masters)
+            else:
+                dead_masters = ""
+            dead_workers = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='worker' "
+                                          "AND pulse < ?", (wait_time,)).fetchall()
             if dead_workers:
                 dead_workers = [str(x[0]) for x in dead_workers]
                 dead_workers = ", ".join(dead_workers)
                 cursor.execute("DELETE FROM heartbeat WHERE thread_id IN (%s)" % dead_workers)
 
-            master_ids = cursor.execute("SELECT thread_id FROM heartbeat WHERE thread_type='master'").fetchall()
-
-        with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
-            if dead_masters:
-                cursor.execute("DELETE FROM queue WHERE master_id IN (%s)" % dead_masters)
-                cursor.execute("DELETE FROM waiting WHERE master_id IN (%s)" % dead_masters)
-
-                complete_jobs = cursor.execute("SELECT hash FROM complete").fetchall()
-                for job_hash in complete_jobs:
-                    if not cursor.execute("SELECT hash FROM waiting WHERE hash=?", (job_hash[0],)).fetchall():
-                        cursor.execute("DELETE FROM complete WHERE hash=?", (job_hash[0],))
-
-            if dead_workers:
-                cursor.execute("DELETE FROM processing WHERE worker_id IN (%s)" % dead_workers)
-
+        with helpers.ExclusiveConnect(self.wrkdb_path, max_lock=120) as cursor:
+            # Add orphaned entries to the list
             if master_ids:
                 master_ids = ", ".join([str(x[0]) for x in master_ids])
-                orphaned_jobs = cursor.execute("SELECT hash FROM complete "
-                                               "WHERE master_id NOT IN (%s)" % master_ids).fetchall()
-                if orphaned_jobs:
-                    orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in orphaned_jobs])
+                orphans = []
+                orphans += list(cursor.execute("SELECT master_id FROM queue "
+                                               "WHERE master_id NOT IN (%s)" % master_ids).fetchall())
+                orphans += list(cursor.execute("SELECT master_id FROM complete "
+                                               "WHERE master_id NOT IN (%s)" % master_ids).fetchall())
+                orphans += list(cursor.execute("SELECT master_id FROM processing "
+                                               "WHERE master_id NOT IN (%s)" % master_ids).fetchall())
+                orphans += list(cursor.execute("SELECT master_id FROM waiting "
+                                               "WHERE master_id NOT IN (%s)" % master_ids).fetchall())
 
-                    waiting = cursor.execute("SELECT hash FROM waiting "
-                                             "WHERE hash IN (%s)" % orphaned_job_hashes).fetchall()
-                    orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in waiting])
-                    orphaned_jobs = cursor.execute("SELECT hash FROM complete "
-                                                   "WHERE hash NOT IN (%s)" % orphaned_job_hashes).fetchall()
-                    orphaned_job_hashes = "'%s'" % "', '".join([x[0] for x in orphaned_jobs])
-                    cursor.execute("DELETE FROM complete WHERE hash IN (%s)" % orphaned_job_hashes)
+                if orphans:
+                    orphans = "'%s'" % "', '".join([str(x[0]) for x in orphans])
+                    dead_masters += ", %s" % orphans if dead_masters else orphans
+
+            dead_hashes = []
+            if dead_masters:
+                dead_hashes += list(cursor.execute("SELECT hash FROM queue "
+                                                   "WHERE master_id IN (%s)" % dead_masters).fetchall())
+                dead_hashes += list(cursor.execute("SELECT hash FROM complete "
+                                                   "WHERE master_id IN (%s)" % dead_masters).fetchall())
+                dead_hashes += list(cursor.execute("SELECT hash FROM processing "
+                                                   "WHERE master_id IN (%s)" % dead_masters).fetchall())
+                dead_hashes += list(cursor.execute("SELECT hash FROM waiting "
+                                                   "WHERE master_id IN (%s)" % dead_masters).fetchall())
+
+                cursor.execute("DELETE FROM queue WHERE master_id IN (%s)" % dead_masters)
+                cursor.execute("DELETE FROM complete WHERE master_id IN (%s)" % dead_masters)
+                cursor.execute("DELETE FROM processing WHERE master_id IN (%s)" % dead_masters)
+                cursor.execute("DELETE FROM waiting WHERE master_id IN (%s)" % dead_masters)
+
+            # Also remove any jobs in the 'processing' table where the worker is dead
+            if dead_workers:
+                dead_hashes += list(cursor.execute("SELECT hash FROM processing "
+                                                   "WHERE worker_id IN (%s)" % dead_workers).fetchall())
+                cursor.execute("DELETE FROM processing WHERE worker_id IN (%s)" % dead_workers)
+
+            if dead_hashes:
+                dead_hashes = set([x[0] for x in dead_hashes])
+                for id_hash in dead_hashes:
+                    for del_file in ["%s.%s" % (id_hash, x) for x in ["graph", "aln", "seqs"]]:
+                        try:
+                            os.remove(os.path.join(self.output, del_file))
+                        except FileNotFoundError:
+                            pass
+                        shutil.rmtree(os.path.join(self.output, id_hash), ignore_errors=True)
         return
 
     def fetch_queue_job(self):
@@ -307,13 +309,14 @@ class Worker(object):
                 sim_scores.to_csv(os.path.join(self.output, "%s.graph" % id_hash), header=None, index=False)
 
             with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
-                # Confirm that the job is still being waited on before adding to the `complete` table
+                # Confirm that the job is still being waited on and wasn't killed before adding to the `complete` table
                 waiting = cursor.execute("SELECT master_id FROM waiting WHERE hash=?", (id_hash,)).fetchall()
-
-                if waiting:
+                processing = cursor.execute("SELECT worker_id FROM processing WHERE hash=?",
+                                            (id_hash,)).fetchall()
+                if waiting and processing:
                     cursor.execute("INSERT INTO complete (hash, worker_id, master_id) "
                                    "VALUES (?, ?, ?)", (id_hash, self.heartbeat.id, master_id,))
-                else:
+                elif not waiting:
                     for del_file in ["%s.%s" % (id_hash, x) for x in ["graph", "aln", "seqs"]]:
                         try:
                             os.remove(os.path.join(self.output, del_file))
@@ -321,7 +324,6 @@ class Worker(object):
                             pass
 
                 cursor.execute("DELETE FROM processing WHERE hash=?", (id_hash,))
-                cursor.execute("DELETE FROM processing WHERE hash LIKE '%%_%s'" % id_hash)
                 cursor.execute("DELETE FROM complete WHERE hash LIKE '%%_%s'" % id_hash)
             if os.path.isdir(os.path.join(self.output, id_hash)):
                 shutil.rmtree(os.path.join(self.output, id_hash))
@@ -378,23 +380,32 @@ class Worker(object):
 
     def process_subjob(self, id_hash, sim_scores, subjob_num, num_subjobs, master_id):
         subjob_out_dir = os.path.join(self.output, id_hash)
-        full_id_hash = "%s_%s_%s" % (subjob_num, num_subjobs, id_hash)
-        sim_scores.to_csv(os.path.join(subjob_out_dir, "%s_of_%s.sim_df" % (subjob_num, num_subjobs)), index=False)
-
-        with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
-            cursor.execute("INSERT INTO complete (hash, worker_id, master_id) "
-                           "VALUES (?, ?, ?)", (full_id_hash, self.heartbeat.id, master_id,))
-            cursor.execute("DELETE FROM processing WHERE hash=?", (full_id_hash,))
-            complete_count = cursor.execute("SELECT COUNT(*) FROM complete "
-                                            "WHERE hash LIKE '%%_%s'" % id_hash).fetchone()[0]
-
-        sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi"])
-        if complete_count == num_subjobs:
-            for indx in range(1, num_subjobs + 1):
-                next_df = os.path.join(subjob_out_dir, "%s_of_%s.sim_df" % (indx, num_subjobs))
-                sim_scores = sim_scores.append(pd.read_csv(next_df, index_col=False))
+        if not os.path.isdir(subjob_out_dir):
+            return pd.DataFrame()
         else:
-            sim_scores = pd.DataFrame()
+            full_id_hash = "%s_%s_%s" % (subjob_num, num_subjobs, id_hash)
+            sim_scores.to_csv(os.path.join(subjob_out_dir, "%s_of_%s.sim_df" % (subjob_num, num_subjobs)), index=False)
+
+            with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+                # Confirm that the job is still being waited on and wasn't killed before adding to the `complete` table
+                waiting = cursor.execute("SELECT master_id FROM waiting WHERE hash=?", (id_hash,)).fetchall()
+                processing = cursor.execute("SELECT worker_id FROM processing WHERE hash=? AND worker_id=?",
+                                            (full_id_hash, self.heartbeat.id,)).fetchall()
+                if waiting and processing:
+                    cursor.execute("INSERT INTO complete (hash, worker_id, master_id) "
+                                   "VALUES (?, ?, ?)", (full_id_hash, self.heartbeat.id, master_id,))
+
+                cursor.execute("DELETE FROM processing WHERE hash=? AND worker_id=?", (full_id_hash, self.heartbeat.id,))
+                complete_count = cursor.execute("SELECT COUNT(*) FROM complete "
+                                                "WHERE hash LIKE '%%_%s'" % id_hash).fetchone()[0]
+
+            sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi"])
+            if complete_count == num_subjobs:
+                for indx in range(1, num_subjobs + 1):
+                    next_df = os.path.join(subjob_out_dir, "%s_of_%s.sim_df" % (indx, num_subjobs))
+                    sim_scores = sim_scores.append(pd.read_csv(next_df, index_col=False))
+            else:
+                return pd.DataFrame()
         return sim_scores
 
     def terminate(self, message):
@@ -432,8 +443,10 @@ def argparse_init():
                         help="Specify the directory where sqlite databases will be fed by RD-MCL", )
     parser.add_argument("-hr", "--heart_rate", type=int, default=60,
                         help="Specify how often the worker should check in")
-    parser.add_argument("-mw", "--max_wait", action="store", type=int, default=120,
+    parser.add_argument("-mw", "--max_wait", action="store", type=int, default=600,
                         help="Specify the maximum time a worker will stay alive without seeing a master")
+    parser.add_argument("-dtw", "--dead_thread_wait", action="store", type=int, default=120,
+                        help="Specify the maximum time a worker will wait to see a heartbeat before killing a thread")
     parser.add_argument("-cpu", "--max_cpus", type=int, action="store", default=cpu_count(), metavar="",
                         help="Specify the maximum number of cores the worker can use (default=%s)" % cpu_count())
     parser.add_argument("-js", "--job_size", type=int, action="store", default=cpu_count(), metavar="",
@@ -477,7 +490,8 @@ def main():
     cur.close()
     connection.close()
 
-    wrkr = Worker(in_args.workdb, heartrate=in_args.heart_rate, max_wait=in_args.max_wait, cpus=in_args.max_cpus,
+    wrkr = Worker(in_args.workdb, heartrate=in_args.heart_rate, max_wait=in_args.max_wait,
+                  dead_thread_wait=in_args.dead_thread_wait, cpus=in_args.max_cpus,
                   job_size_coff=in_args.job_size, log=in_args.log, quiet=in_args.quiet)
     valve = br.SafetyValve(5)
     while True:  # The only way out is through Worker.terminate
