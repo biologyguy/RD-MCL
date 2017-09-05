@@ -85,6 +85,7 @@ class SQLiteBroker(object):
         self.broker_queue = SimpleQueue()
         self.broker = None
         self.lock_wait_time = lock_wait_time
+        # ToDo: Set up a process pool to limit number of query threads
 
     def create_table(self, table_name, fields):
         """
@@ -158,11 +159,20 @@ class SQLiteBroker(object):
 
         values = () if not values else values
         recvpipe, sendpipe = Pipe(False)
-        try:
-            self.broker_queue.put({'mode': 'sql', 'sql': sql, 'values': values, 'pipe': sendpipe})
-        except (sqlite3.Error, sqlite3.OperationalError, sqlite3.IntegrityError, sqlite3.DatabaseError) as err:
-            if errors:
-                raise err
+        valve = SafetyValve(150)
+        while True:
+            valve.step("To many threads being called, tried for 5 minutes but couldn't find an open thread.")
+            try:
+                self.broker_queue.put({'mode': 'sql', 'sql': sql, 'values': values, 'pipe': sendpipe})
+                break
+            except (sqlite3.Error, sqlite3.OperationalError, sqlite3.IntegrityError, sqlite3.DatabaseError) as err:
+                if errors:
+                    raise err
+            except RuntimeError as err:
+                if "can't start new thread" in str(err):
+                    sleep(2)
+                else:
+                    raise err
         response = json.loads(recvpipe.recv())
         return response
 
