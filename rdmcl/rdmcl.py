@@ -1660,19 +1660,12 @@ class Orphans(object):
             for sm_clust in small_clusters:
                 for _, lg_clust in self.large_clusters.items():
                     if WORKER_DB and os.path.isfile(WORKER_DB):
-                        p = Process(target=self.mc_temp_merge_clusters, args=([sm_clust, lg_clust],))
-                        p.start()
-                        process_list.append(p)
+                        process_list.append([sm_clust, lg_clust])
                     else:
                         self.temp_merge_clusters(sm_clust, lg_clust)
 
-            while process_list:
-                for i in range(len(process_list)):
-                    if process_list[i].is_alive():
-                        continue
-                    else:
-                        process_list.pop(i)
-                        break
+            if WORKER_DB and os.path.isfile(WORKER_DB):
+                br.run_multicore_function(process_list, self.mc_temp_merge_clusters, quiet=True)
 
             if multi_core:
                 br.run_multicore_function(small_clusters, self.mc_check_orphans, [tmp_file.path],
