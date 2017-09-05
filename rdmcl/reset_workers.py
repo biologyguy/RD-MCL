@@ -37,6 +37,3 @@ if __name__ == '__main__':
             cursor.execute("DELETE FROM processing")
             cursor.execute("DELETE FROM complete")
             cursor.execute("DELETE FROM waiting")
-
-            with open(os.path.join(in_args.wrkdb, "MasterClear"), "w") as ofile:
-                ofile.write("240")

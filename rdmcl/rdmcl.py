@@ -1534,6 +1534,11 @@ class Orphans(object):
             else:
                 self.small_clusters[cluster.name()] = cluster
 
+    def mc_temp_merge_clusters(self, args):
+        clust1, clust2 = args
+        self.temp_merge_clusters(clust1, clust2)
+        return
+
     def temp_merge_clusters(self, clust1, clust2):
         # Read or create an alignment containing the sequences in the clusters being merged
         seq_ids = sorted(clust1.seq_ids + clust2.seq_ids)
@@ -1650,10 +1655,24 @@ class Orphans(object):
             small_clusters = [clust for clust_name, clust in self.small_clusters.items()]
 
             # Create each large/small combination and add to database if necessary. This has overhead here, but prevents
-            # over subscribing available CPU resources in mc_check_orphans()
+            # over subscribing available CPU resources in mc_check_orphans(). Send to queue if workers.
+            process_list = []
             for sm_clust in small_clusters:
                 for _, lg_clust in self.large_clusters.items():
-                    self.temp_merge_clusters(sm_clust, lg_clust)
+                    if WORKER_DB and os.path.isfile(WORKER_DB):
+                        p = Process(target=self.mc_temp_merge_clusters, args=([sm_clust, lg_clust],))
+                        p.start()
+                        process_list.append(p)
+                    else:
+                        self.temp_merge_clusters(sm_clust, lg_clust)
+
+            while process_list:
+                for i in range(len(process_list)):
+                    if process_list[i].is_alive():
+                        continue
+                    else:
+                        process_list.pop(i)
+                        break
 
             if multi_core:
                 br.run_multicore_function(small_clusters, self.mc_check_orphans, [tmp_file.path],
