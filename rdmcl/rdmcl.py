@@ -1893,6 +1893,10 @@ Please do so now:
         sys.exit()
     logging.info("AlignBuddy version: %s.%s" % (Alb.VERSION.major, Sb.VERSION.minor))
 
+    if not os.path.isfile(in_args.sequences):
+        logging.error("Sequence file not found")
+        sys.exit()
+
     sequences = Sb.SeqBuddy(in_args.sequences)
     tmp_alb = Alb.generate_msa(Sb.SeqBuddy(deepcopy(sequences.records[:4])), in_args.align_method, quiet=True)
 
