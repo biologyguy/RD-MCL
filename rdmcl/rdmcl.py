@@ -1665,7 +1665,7 @@ class Orphans(object):
                         self.temp_merge_clusters(sm_clust, lg_clust)
 
             if WORKER_DB and os.path.isfile(WORKER_DB):
-                br.run_multicore_function(process_list, self.mc_temp_merge_clusters, quiet=True)
+                br.run_multicore_function(process_list, self.mc_temp_merge_clusters, quiet=True, max_processes=5)
 
             if multi_core:
                 br.run_multicore_function(small_clusters, self.mc_check_orphans, [tmp_file.path],
