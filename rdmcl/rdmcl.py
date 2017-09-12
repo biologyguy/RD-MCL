@@ -1895,6 +1895,7 @@ Please do so now:
         sys.exit()
 
     sequences = Sb.SeqBuddy(in_args.sequences)
+    sequences = Sb.clean_seq(sequences)  # Prevent any stray characters
     tmp_alb = Alb.generate_msa(Sb.SeqBuddy(deepcopy(sequences.records[:4])), in_args.align_method, quiet=True)
 
     if tmp_alb.align_tool["tool"] == "MAFFT" and float(tmp_alb.align_tool["version"]) < 7.245:
