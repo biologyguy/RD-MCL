@@ -135,8 +135,12 @@ class Cluster(object):
         expected_num_edges = int(((len(seq_ids)**2) - len(seq_ids)) / 2)
         if len(sim_scores.index) != expected_num_edges:
             seq_id_hash = helpers.md5_hash(str(", ".join(seq_ids)))
+            sim_scores_ids = sim_scores.seq1.append(sim_scores.seq2)
+            sim_scores_ids = sorted(list(sim_scores_ids.unique()))
+
             with open("%s.error" % seq_id_hash, "w") as ofile:
-                ofile.write("Parent: %s\nCollapse: %s\n\n%s\n\n%s" % (parent, collapse, seq_ids, sim_scores))
+                ofile.write("Parent: %s\nCollapse: %s\n\nSeq IDs\n%s\n\nSimScore IDs\n%s" %
+                            (parent, collapse, seq_ids, sim_scores_ids))
             raise ValueError("The number of incoming sequence ids (%s) does not match the expected graph size of %s"
                              " rows (observed %s rows).\nError report at %s.error" %
                              (len(seq_ids), expected_num_edges, len(sim_scores.index), seq_id_hash))
