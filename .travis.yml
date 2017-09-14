@@ -23,4 +23,4 @@ install:
   - mkdir /home/travis/build/biologyguy/RD-MCL/rdmcl/psipred/
   - cp -r /home/travis/miniconda/share/psipred_4.01/data /home/travis/build/biologyguy/RD-MCL/rdmcl/psipred/
 script:
-  - travis_wait 35 source test.sh
+  - travis_wait 40 source test.sh

@@ -69,15 +69,15 @@ I discuss the rationale and high level implementation details of RD-MCL
 
 [![Alt text](https://img.youtube.com/vi/52STQpKv8j4/0.jpg)](https://www.youtube.com/watch?v=52STQpKv8j4)
 
-## Running many RD-MCL jobs on a cluster (not relevant for single jobs)
+## Distributing RD-MCL on a cluster
 RD-MCL will parallelize creation of all-by-all graphs while searching MCL parameter space. Once a graph has been
- created it is saved in a database, thus preventing repetition of the 'hard' work in case the same cluster is identified
- again at a later time. This means that the computational burden of a given run will tend to decrease with time and many
- cores may end up sitting idle as the job wears on. This could get you in trouble with your sys-admins and
- fellow users if running many RD-MCL jobs on shared resources, because it will look like you're tying up a bunch of
- CPUs without actually making use of them...
+ created it is saved in a database, thus preventing repetition of the 'hard' work if/when the same cluster is identified
+ again at a later time. This means that the computational burden of a given run will tend to be high at the beginning of 
+ that run and decrease with time.
  
-Instead, set up one or more dedicated worker nodes with the `launch_worker` script bundled with RD-MCL:
+To spread the work out across multiple nodes during the 'hard' part, launch workers with the 
+ [launch_worker](https://github.com/biologyguy/RD-MCL/wiki/launch_worker) script
+ bundled with RD-MCL:
  
     $: launch_worker --workdb <path/to/desired/directory>
  
@@ -88,8 +88,16 @@ Make sure to sequester entire nodes for this script, as it will use all the core
     $: rdmcl --max_cpus 4 --workdb <path/to/same/directory/as/launch_worker>
  
 RD-MCL will now send its expensive all-by-all work to a queue and wait around for one of the workers to do the 
- calculations. A good starting point is about one worker with ≥16 cores for every ten rdmcl jobs of <100 sequences.
+ calculations. You can keep track of how busy the workers are by running the 
+ [monitor script](https://github.com/biologyguy/RD-MCL/wiki/monitor_dbs) in the same directory as the workers:
 
+``` bash
+$: monitor_dbs
+
+Press return to terminate.
+#Master  AveMhb   #Worker  AveWhb   #queue   #subq   #proc   #subp   #comp   #HashWait #IdWait  ConnectTime
+29       19.0     16       51.0     1        362     22      12      29      25        25       0.01
+```
 
 ## References
 ¹ Fitch, W. M. [Distinguishing homologous from analogous proteins](https://doi.org/10.2307/2412448).
