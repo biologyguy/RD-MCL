@@ -266,7 +266,7 @@ def test_cluster_score_diminishing_returns(hf):
     child_ids = ['BOL-PanxαA', 'BOL-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Edu-PanxαA', 'Hca-PanxαB',
                  'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
     child = rdmcl.Cluster(child_ids, hf.get_sim_scores(child_ids), parent=parent)
-    assert child._score_diminishing_returns() == child.cluster_score == 41.01504629629628
+    assert child._score_diminishing_returns() == child.cluster_score == 39.713011188271594
 
     # Single sequence
     child_ids = ['BOL-PanxαA']
@@ -283,7 +283,40 @@ def test_cluster_score_diminishing_returns(hf):
 
     # Edge case where child is full size of parent
     child = rdmcl.Cluster(parent.seq_ids, parent.sim_scores, parent=parent)
-    assert round(child._score_diminishing_returns(), 12) == 247.16187426928
+    assert round(child._score_diminishing_returns(), 12) == 100.877456025217
+
+
+def test_get_dim_ret_base_score(hf):
+    parent = rdmcl.Cluster(*hf.base_cluster_args())
+
+    # More taxa than paralogs => DRB < 0.5
+    assert parent.get_dim_ret_base_score() == 0.20679012345679013
+
+    # Num taxa == num paralogs => DRB = 0.5
+    removed_taxa = ['Lla', 'Bfr', 'Oma', 'Bab', 'Bch', 'Hru', 'Cfu', 'Mle', 'Hvu', 'Lcr']
+    del_list = []
+    for indx, seq_id in enumerate(parent.seq_ids):
+        if seq_id[:3] in removed_taxa:
+            del_list.append(indx)
+    for indx in sorted(del_list, reverse=True):
+        del parent.seq_ids[indx]
+    for taxon in removed_taxa:
+        del parent.taxa[taxon]
+
+    assert parent.get_dim_ret_base_score() == 0.5
+
+    # More paralogs than taxa => DRB > 0.5
+    removed_taxa = ['Tin', 'Pba', 'Vpa', 'BOL']
+    del_list = []
+    for indx, seq_id in enumerate(parent.seq_ids):
+        if seq_id[:3] in removed_taxa:
+            del_list.append(indx)
+    for indx in sorted(del_list, reverse=True):
+        del parent.seq_ids[indx]
+    for taxon in removed_taxa:
+        del parent.taxa[taxon]
+
+    assert parent.get_dim_ret_base_score() == 0.7777777777777778
 
 
 def test_cluster_score_direct_replicate_penalty(hf):
@@ -1524,7 +1557,10 @@ def test_workerjob_restart_job(hf, monkeypatch, capsys):
 
 
 # #########  MCL stuff  ########## #
-def test_mcmcmc_mcl(hf):
+def test_mcmcmc_mcl(hf, monkeypatch):
+    # Need to monkeypatch Cluster, mc_create_all_by_all_scores, Progress.update, helpers.MarkovClustering,
+    # and retrieve_all_by_all_scores()
+
     ext_tmp_dir = br.TempDir()
     ext_tmp_dir.subfile("max.txt")
     cluster_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Hca-PanxαB',
@@ -1798,7 +1834,6 @@ parser.add_argument("-ts", "--taxa_sep", action="store", default="-",
                     help="Specify a string that separates taxa ids from gene names")
 parser.add_argument("-cpu", "--max_cpus", type=int, action="store", default=rdmcl.CPUS,
                     help="Specify the maximum number of cores RD-MCL can use.")
-parser.add_argument("-drb", "--dr_base", help="Set the base for diminishing returns function", type=float)
 parser.add_argument("-cnv", "--converge", type=float,
                     help="Set minimum Gelman-Rubin PSRF value for convergence")
 parser.add_argument("-rs", "--r_seed", help="Specify a random seed for repeating a specific run", type=int)
@@ -1914,7 +1949,7 @@ group_0_0_1\t3.75\tLcr-PanxαK\tMle-Panxα7A
     with open(os.path.join(out_dir.path, "final_clusters.txt"), "r") as ifile:
         content = ifile.read()
         assert content == """\
-group_0_0\t12.2708\tBOL-PanxαA\tLcr-PanxαH\tMle-Panxα10A\tMle-Panxα9\tVpa-PanxαB
+group_0_0\t11.5286\tBOL-PanxαA\tLcr-PanxαH\tMle-Panxα10A\tMle-Panxα9\tVpa-PanxαB
 group_0_1\t11.3333\tBOL-PanxαF\tLcr-PanxαI\tMle-Panxα4\tVpa-PanxαA
 group_0_2\t6.4167\tBOL-PanxαC\tMle-Panxα12\tVpa-PanxαG
 """, print(content)

@@ -94,7 +94,6 @@ GAP_OPEN = -5
 GAP_EXTEND = 0
 BLOSUM62 = helpers.make_full_mat(SeqMat(MatrixInfo.blosum62))
 MCMC_CHAINS = 3
-DR_BASE = 0.75
 GELMAN_RUBIN = 1.1
 WORKER_OUT = ""
 WORKER_DB = ""
@@ -373,12 +372,20 @@ class Cluster(object):
             subscore *= len(subcluster) / len(base_cluster.taxa) + 1
 
             # Reduce subscores as we encounter replicate taxa
-            subscore *= DR_BASE ** indx
-
+            subscore *= self.get_dim_ret_base_score() ** indx
             score += subscore
 
         self.cluster_score = score
         return self.cluster_score
+
+    def get_dim_ret_base_score(self):
+        ave_num_paralogs = len(self.seq_ids) / len(self.taxa)
+        if ave_num_paralogs < len(self.taxa):  # If more taxa than paralogs => DRB < 0.5, easier
+            return (ave_num_paralogs / len(self.taxa)) * 0.5
+        elif ave_num_paralogs == len(self.taxa):  # If num taxa == num paralogs => DRB = 0.5
+            return 0.5
+        else:  # If more paralogs than taxa => DRB > 0.5
+            return 1 - ((len(self.taxa) / ave_num_paralogs) * 0.5)
 
     def _score_direct_replicate_penalty(self):
         # Final scores can be negative, which is problematic
@@ -1773,9 +1780,6 @@ def argparse_init():
                               help="Specify how many MCMC chains to run (default=3)")
     parser_flags.add_argument("-wlk", "--walkers", default=3, type=int, metavar="",
                               help="Specify how many Metropolis-Hastings walkers are in each chain (default=3)")
-    parser_flags.add_argument("-drb", "--dr_base", type=float, metavar="",
-                              help="Set the base for the diminishing-returns "
-                                   "orthogroup scoring function (default=%s)" % DR_BASE)
     parser_flags.add_argument("-cnv", "--converge", type=float, metavar="",
                               help="Set minimum Gelman-Rubin PSRF value for convergence (default=%s)" % GELMAN_RUBIN)
     parser_flags.add_argument("-cpu", "--max_cpus", type=int, action="store", default=CPUS, metavar="",
@@ -2063,11 +2067,6 @@ Continue? y/[n] """ % len(sequences)
     scores_data.to_csv(os.path.join(in_args.outdir, "sim_scores", "complete_all_by_all.scores"),
                        header=None, index=False, sep="\t")
     logging.info("\t-- finished in %s --\n" % TIMER.split())
-
-    if in_args.dr_base:
-        global DR_BASE
-        DR_BASE = in_args.dr_base
-    logging.warning("Diminishing returns scoring base: %s" % DR_BASE)
 
     # First prepare the really raw first alignment in the database, without any collapsing.
     uncollapsed_group_0 = Cluster([rec.id for rec in sequences.records], scores_data,
