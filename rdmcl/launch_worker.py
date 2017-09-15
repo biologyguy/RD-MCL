@@ -265,22 +265,27 @@ class Worker(object):
         return
 
     def fetch_queue_job(self):
-        with helpers.ExclusiveConnect(self.wrkdb_path, priority=True) as cursor:
-            data = cursor.execute('SELECT * FROM queue').fetchone()
-            if data:
-                id_hash, psipred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend = data
-                if trimal:
-                    trimal = trimal.split()
-                    for indx, arg in enumerate(trimal):
-                        try:
-                            trimal[indx] = float(arg)
-                        except ValueError:
-                            pass
+        while True:
+            with helpers.ExclusiveConnect(self.wrkdb_path, priority=True) as cursor:
+                data = cursor.execute('SELECT * FROM queue').fetchone()
+                if data:
+                    id_hash, psipred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend = data
+                    if trimal:
+                        trimal = trimal.split()
+                        for indx, arg in enumerate(trimal):
+                            try:
+                                trimal[indx] = float(arg)
+                            except ValueError:
+                                pass
 
-                cursor.execute("INSERT INTO processing (hash, worker_id, master_id)"
-                               " VALUES (?, ?, ?)", (id_hash, self.heartbeat.id, master_id,))
-                cursor.execute("DELETE FROM queue WHERE hash=?", (id_hash,))
-                data = [id_hash, psipred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend]
+                    cursor.execute("DELETE FROM queue WHERE hash=?", (id_hash,))
+                    if cursor.execute('SELECT worker_id FROM processing WHERE hash=?', (id_hash,)).fetchone():
+                        continue
+
+                    cursor.execute("INSERT INTO processing (hash, worker_id, master_id)"
+                                   " VALUES (?, ?, ?)", (id_hash, self.heartbeat.id, master_id,))
+                    data = [id_hash, psipred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend]
+                break
         return data
 
     def prepare_psipred_dfs(self, seqbuddy, psipred_dir):

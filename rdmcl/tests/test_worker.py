@@ -320,9 +320,14 @@ def test_worker_fetch_queue_job(hf):
     work_cursor.execute("INSERT INTO "
                         "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
                         "VALUES ('foo', './', 2, '', '', 'gappyout 50 90 clean', 0, 0)")
+    work_cursor.execute("INSERT INTO "
+                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('bar', './', 2, '', '', 'gappyout 50 90 clean', 0, 0)")
+    work_cursor.execute("INSERT INTO processing (hash, worker_id, master_id)"
+                        " VALUES (?, ?, ?)", ("foo", 1, 2,))
     work_con.commit()
     queued_job = worker.fetch_queue_job()
-    assert queued_job == ['foo', './', 2, '', '', ['gappyout', 50.0, 90.0, 'clean'], 0, 0]
+    assert queued_job == ['bar', './', 2, '', '', ['gappyout', 50.0, 90.0, 'clean'], 0, 0]
     assert not work_cursor.execute("SELECT * FROM queue").fetchall()
 
 
