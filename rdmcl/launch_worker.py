@@ -113,64 +113,73 @@ class Worker(object):
                 self.split_time = time.time()
                 continue
 
-            idle_countdown = 1
-            seqbuddy = Sb.SeqBuddy("%s/%s.seqs" % (self.output, id_hash), in_format="fasta")
+            try:
+                idle_countdown = 1
+                seqbuddy = Sb.SeqBuddy("%s/%s.seqs" % (self.output, id_hash), in_format="fasta")
 
-            # Prepare alignment
-            if len(seqbuddy) == 1:
-                raise ValueError("Queued job of size 1 encountered: %s" % id_hash)
-            else:
-                if num_subjobs == 1:
-                    self.printer.write("Creating MSA (%s seqs)" % len(seqbuddy))
-                    alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), align_m,
-                                                 params=align_p, quiet=True)
+                # Prepare alignment
+                if len(seqbuddy) == 1:
+                    raise ValueError("Queued job of size 1 encountered: %s" % id_hash)
                 else:
-                    self.printer.write("Reading MSA (%s seqs)" % len(seqbuddy))
-                    alignment = Alb.AlignBuddy(os.path.join(self.output, "%s.aln" % id_hash))
+                    if num_subjobs == 1:
+                        self.printer.write("Creating MSA (%s seqs)" % len(seqbuddy))
+                        alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), align_m,
+                                                     params=align_p, quiet=True)
+                    else:
+                        self.printer.write("Reading MSA (%s seqs)" % len(seqbuddy))
+                        alignment = Alb.AlignBuddy(os.path.join(self.output, "%s.aln" % id_hash))
 
-            # Prepare psipred dataframes
-            psipred_dfs = self.prepare_psipred_dfs(seqbuddy, psipred_dir)
+                # Prepare psipred dataframes
+                psipred_dfs = self.prepare_psipred_dfs(seqbuddy, psipred_dir)
 
-            if num_subjobs == 1:  # This is starting a full job from scratch, not a sub-job
-                # Need to specify what columns the PsiPred files map to now that there are gaps.
-                psipred_dfs = rdmcl.update_psipred(alignment, psipred_dfs, "msa")
+                if num_subjobs == 1:  # This is starting a full job from scratch, not a sub-job
+                    # Need to specify what columns the PsiPred files map to now that there are gaps.
+                    psipred_dfs = rdmcl.update_psipred(alignment, psipred_dfs, "msa")
 
-                # TrimAl
-                self.printer.write("Trimal (%s seqs)" % len(seqbuddy))
-                alignment = rdmcl.trimal(seqbuddy, trimal, alignment)
+                    # TrimAl
+                    self.printer.write("Trimal (%s seqs)" % len(seqbuddy))
+                    alignment = rdmcl.trimal(seqbuddy, trimal, alignment)
 
-                with helpers.ExclusiveConnect(os.path.join(self.output, "write.lock"), max_lock=0):
-                    # Place these write commands in ExclusiveConnect to ensure a writing lock
-                    if not os.path.isfile(os.path.join(self.output, "%s.aln" % id_hash)):
-                        alignment.write(os.path.join(self.output, "%s.aln" % id_hash), out_format="fasta")
+                    with helpers.ExclusiveConnect(os.path.join(self.output, "write.lock"), max_lock=0):
+                        # Place these write commands in ExclusiveConnect to ensure a writing lock
+                        if not os.path.isfile(os.path.join(self.output, "%s.aln" % id_hash)):
+                            alignment.write(os.path.join(self.output, "%s.aln" % id_hash), out_format="fasta")
 
-                # Re-update PsiPred files now that some columns, possibly including non-gap characters, are removed
-                self.printer.write("Updating %s psipred dataframes" % len(seqbuddy))
-                psipred_dfs = rdmcl.update_psipred(alignment, psipred_dfs, "trimal")
+                    # Re-update PsiPred files now that some columns, possibly including non-gap characters, are removed
+                    self.printer.write("Updating %s psipred dataframes" % len(seqbuddy))
+                    psipred_dfs = rdmcl.update_psipred(alignment, psipred_dfs, "trimal")
 
-            # Prepare all-by-all list
-            self.printer.write("Preparing all-by-all data")
-            data_len, data = rdmcl.prepare_all_by_all(seqbuddy, psipred_dfs, self.cpus)
+                # Prepare all-by-all list
+                self.printer.write("Preparing all-by-all data")
+                data_len, data = rdmcl.prepare_all_by_all(seqbuddy, psipred_dfs, self.cpus)
 
-            if num_subjobs == 1 and data_len > self.cpus * self.job_size_coff:
-                data_len, data, subjob_num, num_subjobs = self.spawn_subjobs(id_hash, data, psipred_dfs, master_id,
-                                                                             gap_open, gap_extend)
-            elif subjob_num > 1:
-                data_len, data = self.load_subjob(id_hash, subjob_num, num_subjobs, psipred_dfs)
+                if num_subjobs == 1 and data_len > self.cpus * self.job_size_coff:
+                    data_len, data, subjob_num, num_subjobs = self.spawn_subjobs(id_hash, data, psipred_dfs, master_id,
+                                                                                 gap_open, gap_extend)
+                elif subjob_num > 1:
+                    data_len, data = self.load_subjob(id_hash, subjob_num, num_subjobs, psipred_dfs)
 
-            # Launch multicore
-            self.printer.write("Running all-by-all data (%s comparisons)" % data_len)
-            with open(self.data_file, "w") as ofile:
-                ofile.write("seq1,seq2,subsmat,psi")
+                # Launch multicore
+                self.printer.write("Running all-by-all data (%s comparisons)" % data_len)
+                with open(self.data_file, "w") as ofile:
+                    ofile.write("seq1,seq2,subsmat,psi")
 
-            br.run_multicore_function(data, rdmcl.mc_score_sequences, quiet=True, max_processes=self.cpus,
-                                      func_args=[alignment, gap_open, gap_extend, self.data_file])
+                br.run_multicore_function(data, rdmcl.mc_score_sequences, quiet=True, max_processes=self.cpus,
+                                          func_args=[alignment, gap_open, gap_extend, self.data_file])
 
-            self.printer.write("Processing final results")
-            self.process_final_results(id_hash, master_id, subjob_num, num_subjobs)
+                self.printer.write("Processing final results")
+                self.process_final_results(id_hash, master_id, subjob_num, num_subjobs)
 
-            self.running += time.time() - self.split_time
-            self.split_time = time.time()
+                self.running += time.time() - self.split_time
+                self.split_time = time.time()
+
+            except (OSError, FileNotFoundError, br.GuessError, ValueError):
+                if num_subjobs == 1:
+                        self.terminate("something wrong with primary cluster %s" % full_name)
+                else:
+                    with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+                        cursor.execute("DELETE FROM processing WHERE hash=?", (full_name,))
+                    continue
 
         # Broken out of while loop, clean up and terminate worker
         if os.path.isfile(self.data_file):
@@ -294,7 +303,7 @@ class Worker(object):
         for rec in seqbuddy.records:
             psipred_file = os.path.join(psipred_dir, "%s.ss2" % rec.id)
             if not os.path.isfile(psipred_file):
-                self.terminate("missing psi ss2 file (%s)" % psipred_file)
+                raise FileNotFoundError(psipred_file)
             psipred_dfs[rec.id] = rdmcl.read_ss2_file(psipred_file)
         return psipred_dfs
 
@@ -396,7 +405,9 @@ class Worker(object):
                 waiting = cursor.execute("SELECT master_id FROM waiting WHERE hash=?", (id_hash,)).fetchall()
                 processing = cursor.execute("SELECT worker_id FROM processing WHERE hash=? AND worker_id=?",
                                             (full_id_hash, self.heartbeat.id,)).fetchall()
-                if waiting and processing:
+                complete = cursor.execute("SELECT hash FROM complete WHERE hash=?", (full_id_hash,)).fetchall()
+
+                if waiting and processing and not complete:
                     cursor.execute("INSERT INTO complete (hash, worker_id, master_id) "
                                    "VALUES (?, ?, ?)", (full_id_hash, self.heartbeat.id, master_id,))
 

@@ -144,6 +144,42 @@ def test_start_worker_1seq_error(hf):
     assert "Queued job of size 1 encountered: foo" in str(err)
 
 
+def test_start_worker_missing_ss2(hf, monkeypatch, capsys):
+    temp_dir = br.TempDir()
+    temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
+    worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=1)
+
+    work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
+    work_cursor = work_con.cursor()
+    work_cursor.execute("INSERT INTO "
+                        "waiting (hash, master_id) "
+                        "VALUES ('foo', 2)")
+
+    # This first one will raise a FileNotFoundError and will `continue` because it's a subjob
+    work_cursor.execute("INSERT INTO "
+                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('1_2_foo', ?, 2, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
+                        (os.path.join(hf.resource_path, "psi_pred"),))
+
+    # This second one will also raise a FileNotFoundError but it will terminate because it's a primary job
+    work_cursor.execute("INSERT INTO "
+                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('foo', ?, 2, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
+                        (os.path.join(hf.resource_path, "psi_pred"),))
+    work_con.commit()
+    seqbuddy = hf.get_data("cteno_panxs")
+    seqbuddy.records[0].id = "Foo"
+    seqbuddy.records = seqbuddy.records[:3]
+    seqbuddy.write(os.path.join(worker.output, "foo.seqs"))
+    monkeypatch.setattr(Alb, "generate_msa", lambda *_, **__: "Blahh")
+    monkeypatch.setattr(Alb, "AlignBuddy", lambda *_, **__: "Blahh")
+    with pytest.raises(SystemExit):
+        worker.start()
+    out, err = capsys.readouterr()
+    assert "Terminating Worker_2 because of something wrong with primary cluster foo" in out
+
+
 def test_start_worker_deleted_check(hf, capsys, monkeypatch):
     temp_dir = br.TempDir()
     temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
@@ -202,7 +238,11 @@ def test_start_worker_deal_with_subjobs(hf, capsys, monkeypatch):
     out, err = capsys.readouterr()
     assert "Terminating Worker_2 because of unit test kill" in out, print(out)
 
-    # A second run is pulling a subjob off the queue
+    # A second run is pulling a subjob off the queue (first one fails because no MSA available)
+    work_cursor.execute("INSERT INTO "
+                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('2_3_bar', ?, 2, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
+                        (os.path.join(hf.resource_path, "psi_pred"),))
     work_cursor.execute("INSERT INTO "
                         "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
                         "VALUES ('2_3_foo', ?, 2, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
@@ -349,10 +389,9 @@ Name: 0, dtype: object"""
 
     capsys.readouterr()
     seqbuddy.records[0].id = "Foo"
-    with pytest.raises(SystemExit):
+    with pytest.raises(FileNotFoundError) as err:
         worker.prepare_psipred_dfs(seqbuddy, os.path.join(hf.resource_path, "psi_pred"))
-    out, err = capsys.readouterr()
-    assert "Terminating Worker_None because of missing psi ss2 file" in out
+    assert "Foo.ss2" in str(err)
 
 
 def test_worker_process_final_results(hf, monkeypatch, capsys):
