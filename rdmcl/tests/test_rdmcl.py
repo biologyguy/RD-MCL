@@ -1865,7 +1865,7 @@ in_args = parser.parse_args([])
 
 def test_argparse_init(monkeypatch, hf):
     out_dir = br.TempDir()
-    argv = ['rdmcl.py', os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa"), out_dir.path]
+    argv = ['rdmcl.py', os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa"), "-o", out_dir.path]
     monkeypatch.setattr(rdmcl.sys, "argv", argv)
     temp_in_args = rdmcl.argparse_init()
     assert temp_in_args.mcmc_steps == 0

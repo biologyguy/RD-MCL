@@ -1762,13 +1762,13 @@ def argparse_init():
     positional = parser.add_argument_group(title="\033[1mPositional argument\033[m")
 
     positional.add_argument("sequences", help="Location of sequence file (most formats are fine)", action="store")
-    outdir = os.path.join(os.getcwd(), "rdmcd-%s" % time.strftime("%d-%m-%Y"))
-    positional.add_argument("outdir", action="store", help="Where should results be written? (default=%s)" % outdir,
-                            nargs="?", default=outdir)
 
     # Optional commands
     parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
 
+    outdir = os.path.join(os.getcwd(), "rdmcd-%s" % time.strftime("%d-%m-%Y"))
+    parser_flags.add_argument("-o", "--outdir", action="store", nargs="?", default=outdir,
+                              help="Where should results be written? (default=%s)" % outdir)
     parser_flags.add_argument("-rs", "--r_seed", type=int, metavar="",
                               help="Specify a random seed for repeating a specific run")
     parser_flags.add_argument("-sql", "--sqlite_db", action="store", metavar="",
