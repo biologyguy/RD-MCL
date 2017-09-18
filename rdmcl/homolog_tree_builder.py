@@ -132,6 +132,7 @@ def purturb_rgb(rgb, degree=10):
 
 
 class KellysColors(object):
+    # https://eleanormaclure.files.wordpress.com/2011/03/colour-coding.pdf
     def __init__(self):
         self.kelly_colors = OrderedDict(deep_yellowish_brown=(89, 51, 21),
                                         strong_reddish_brown=(127, 24, 13),

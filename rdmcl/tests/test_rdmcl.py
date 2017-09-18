@@ -1503,12 +1503,12 @@ def test_workerjob_check_if_active(hf, monkeypatch, capsys):
     assert not work_cursor.execute("SELECT * FROM waiting").fetchone()
 
     # Workers alive, but job is missing
-    monkeypatch.setattr(rdmcl.WorkerJob, "restart_job", lambda *_: print("restarting job"))
+    monkeypatch.setattr(rdmcl.WorkerJob, "restart_job", lambda *_: print("restarting job (from monkeypatch)"))
     hb_cursor.execute("INSERT INTO heartbeat (thread_id, thread_type, pulse) VALUES (?, ?, ?)", (1, "worker", 10e12,))
     hb_con.commit()
     assert worker.check_if_active()
     out, err = capsys.readouterr()
-    assert out == "a2aaca4f79bd56fbf8debfdc281660fd vanished!\nrestarting job\n"
+    assert out == "a2aaca4f79bd56fbf8debfdc281660fd vanished!\nrestarting job (from monkeypatch)\n"
 
     # Job already queued
     work_cursor.execute("INSERT INTO queue (hash, master_id) VALUES ('a2aaca4f79bd56fbf8debfdc281660fd', 2)")
@@ -1528,9 +1528,11 @@ def test_workerjob_check_if_active(hf, monkeypatch, capsys):
     # Confirm a processing job has an active worker on it
     work_cursor.execute("INSERT INTO processing (hash, master_id) VALUES ('a2aaca4f79bd56fbf8debfdc281660fd', 7)")
     work_con.commit()
+    capsys.readouterr()
     assert worker.check_if_active()
     out, err = capsys.readouterr()
-    assert out == "restarting job\n", print(out)
+    assert out == "Dead worker on a2aaca4f79bd56fbf8debfdc281660fd, restarting job\nrestarting job " \
+                  "(from monkeypatch)\n", print(out)
 
 
 def test_workerjob_restart_job(hf, monkeypatch, capsys):

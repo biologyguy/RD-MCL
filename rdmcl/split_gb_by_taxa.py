@@ -45,7 +45,6 @@ def main():
     parser.add_argument("-l", "--level", action="store", default=5, type=int,
                         help="Specify how deeply to print output")
     parser.add_argument("-ids", "--print_ids", action="store_true", help="Output the sequence ids")
-    # parser.add_argument("-m", "--multi_arg", nargs="+", help="", default=[])
 
     in_args = parser.parse_args()
 
@@ -65,7 +64,7 @@ def main():
             recs_wo_taxonomy.append(rec)
         else:
             if "organism" in rec.annotations:
-                rec.annotations['organism'] = re.sub("[. ]", "", rec.annotations['organism'])
+                rec.annotations['organism'] = re.sub("[ ]+", " ", rec.annotations['organism'])
                 if rec.annotations['organism']:
                     organism = rec.annotations['organism'].split()[1:]
                     organism = " ".join(organism)

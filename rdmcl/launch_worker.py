@@ -173,9 +173,9 @@ class Worker(object):
                 self.running += time.time() - self.split_time
                 self.split_time = time.time()
 
-            except (OSError, FileNotFoundError, br.GuessError, ValueError):
+            except (OSError, FileNotFoundError, br.GuessError, ValueError) as err:
                 if num_subjobs == 1:
-                        self.terminate("something wrong with primary cluster %s" % full_name)
+                        self.terminate("something wrong with primary cluster %s\n%s" % (full_name, err))
                 else:
                     with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
                         cursor.execute("DELETE FROM processing WHERE hash=?", (full_name,))

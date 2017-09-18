@@ -116,7 +116,7 @@ def test_start_worker_fetch_queue(hf, capsys):
     assert "Processing final results" in out
 
 
-def test_start_worker_1seq_error(hf):
+def test_start_worker_1seq_error(hf, capsys):
     temp_dir = br.TempDir()
     temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
     temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
@@ -138,10 +138,11 @@ def test_start_worker_1seq_error(hf):
     seqbuddy = Sb.pull_recs(seqbuddy, "Oma-PanxαC")
     seqbuddy.write(os.path.join(worker.output, "foo.seqs"))
 
-    with pytest.raises(ValueError) as err:
+    with pytest.raises(SystemExit):
         worker.start()
 
-    assert "Queued job of size 1 encountered: foo" in str(err)
+    out, err = capsys.readouterr()
+    assert "Queued job of size 1 encountered: foo" in out
 
 
 def test_start_worker_missing_ss2(hf, monkeypatch, capsys):

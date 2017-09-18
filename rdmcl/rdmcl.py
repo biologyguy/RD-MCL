@@ -1358,6 +1358,7 @@ class WorkerJob(object):
             worker_id = processing_check[1]
             if worker_id not in workers:
                 # Doesn't look like it... Might as well queue it back up
+                print("Dead worker on %s, restarting job" % self.job_id)
                 self.restart_job()
 
         elif queue_check or complete_check:
