@@ -58,8 +58,7 @@ ENTRY_POINTS = {
         'homolog_tree_builder = rdmcl.homolog_tree_builder:main',
         'launch_worker = rdmcl.launch_worker:main',
         'monitor_dbs = rdmcl.monitor_dbs:main',
-        'reset_workers = rdmcl.reset_workers:main',
-        'split_gb_by_taxa = rdmcl.split_gb_by_taxa:main'
+        'reset_workers = rdmcl.reset_workers:main'
     ]
 }
 
