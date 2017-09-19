@@ -73,5 +73,6 @@ def main():
 
     print(to_string(taxonomy_dict, level=0, max_level=in_args.level))
 
+
 if __name__ == '__main__':
     main()

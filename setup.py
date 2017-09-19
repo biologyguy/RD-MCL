@@ -22,6 +22,7 @@ class CleanCommand(Command):
     def run():
         os.system('rm -vrf ./build ./dist ./*.pyc ./*.tgz ./*.egg-info')
 
+
 PACKAGES = [
     'rdmcl',
 ]
@@ -53,8 +54,12 @@ ENTRY_POINTS = {
     'console_scripts': [
         'rdmcl = rdmcl.rdmcl:main',
         'compare_homolog_groups = rdmcl.compare_homolog_groups:main',
+        'group_by_cluster = rdmcl.group_by_cluster:main',
         'homolog_tree_builder = rdmcl.homolog_tree_builder:main',
-        'launch_worker = rdmcl.launch_worker:main'
+        'launch_worker = rdmcl.launch_worker:main',
+        'monitor_dbs = rdmcl.monitor_dbs:main',
+        'reset_workers = rdmcl.reset_workers:main',
+        'split_gb_by_taxa = rdmcl.split_gb_by_taxa:main'
     ]
 }
 

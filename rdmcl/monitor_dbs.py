@@ -91,7 +91,7 @@ class Monitor(object):
         return
 
 
-if __name__ == '__main__':
+def main():
     import argparse
 
     parser = argparse.ArgumentParser(prog="monitor_dbs", description="",
@@ -107,3 +107,7 @@ if __name__ == '__main__':
 
     monitor = Monitor(heartbeatdb, workdb)
     monitor.start()
+
+
+if __name__ == '__main__':
+    main()

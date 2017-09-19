@@ -18,7 +18,6 @@ import re
 import time
 from random import random
 from collections import OrderedDict
-from copy import copy
 import shutil
 import traceback
 
@@ -411,7 +410,8 @@ class Worker(object):
                     cursor.execute("INSERT INTO complete (hash, worker_id, master_id) "
                                    "VALUES (?, ?, ?)", (full_id_hash, self.heartbeat.id, master_id,))
 
-                cursor.execute("DELETE FROM processing WHERE hash=? AND worker_id=?", (full_id_hash, self.heartbeat.id,))
+                cursor.execute("DELETE FROM processing WHERE hash=? AND worker_id=?",
+                               (full_id_hash, self.heartbeat.id,))
                 complete_count = cursor.execute("SELECT COUNT(*) FROM complete "
                                                 "WHERE hash LIKE '%%_%s'" % id_hash).fetchone()[0]
 
@@ -533,6 +533,7 @@ def main():
                     _line = re.sub('"{0}.*{0}(.*)?"'.format(os.sep), r'"\1"', _line)
                 tb += _line
             print("\nWorker_%s crashed!\n" % wrkr.heartbeat.id, tb)
+
 
 if __name__ == '__main__':
     main()

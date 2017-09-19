@@ -13,7 +13,7 @@ except ImportError:
     import helpers
 
 
-if __name__ == '__main__':
+def main():
     import argparse
 
     parser = argparse.ArgumentParser(prog="reset_workers", description="",
@@ -37,3 +37,7 @@ if __name__ == '__main__':
             cursor.execute("DELETE FROM processing")
             cursor.execute("DELETE FROM complete")
             cursor.execute("DELETE FROM waiting")
+
+
+if __name__ == '__main__':
+    main()
