@@ -13,15 +13,16 @@ except ImportError:
 from buddysuite import SeqBuddy as Sb
 from buddysuite import AlignBuddy as Alb
 import re
+import sys
 
 
-def make_msa(cluster, trimal):
+def make_msa(cluster, aligner, trimal):
     trimal = trimal if trimal else ["clean"]
 
     if len(cluster) < 2:
         alignment = cluster
     else:
-        alignment = Alb.generate_msa(Sb.make_copy(cluster), "clustalo", quiet=True)
+        alignment = Alb.generate_msa(Sb.make_copy(cluster), aligner, quiet=True)
         ave_seq_length = Sb.ave_seq_length(cluster)
         for threshold in trimal:
             align_copy = Alb.trimal(Alb.make_copy(alignment), threshold=threshold)
@@ -48,6 +49,8 @@ def main():
     parser.add_argument("sequence_file", action="store", help="path to original sequence file")
     parser.add_argument("mode", action="store", nargs="?", choices=["list", "aln", "alignment", "cons", "consensus"],
                         help="Choose the output type", default="list")
+    parser.add_argument("--aligner", "-a", action="store", default="clustalo",
+                        help="Specify a multiple sequence alignment program")
     parser.add_argument("--groups", "-g", action="append", nargs="+", help="List the specific groups to process")
     parser.add_argument("--max_group_size", "-max", action="store", type=int, help="Max cluster size to process")
     parser.add_argument("--min_group_size", "-min", action="store", type=int, help="Min cluster size to process")
@@ -92,7 +95,11 @@ def main():
             rank_output += "\n"
 
         elif in_args.mode in ["aln", "alignment", "cons", "consensus"]:
-            rank_output = make_msa(subset, in_args.trimal)
+            try:
+                rank_output = make_msa(subset, in_args.aligner, in_args.trimal)
+            except (SystemError, AttributeError) as err:
+                print(err)
+                sys.exit()
             rank_output.out_format = "phylip-relaxed"
 
         if in_args.mode in ["cons", "consensus"]:
