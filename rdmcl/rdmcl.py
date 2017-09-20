@@ -1901,6 +1901,7 @@ Please do so now:
 
     sequences = Sb.SeqBuddy(in_args.sequences)
     sequences = Sb.clean_seq(sequences)  # Prevent any stray characters
+    sequences = Sb.order_recs_by_len(sequences)  # Ensures all records are aligned on conserved domain during pileup
     tmp_alb = Alb.generate_msa(Sb.SeqBuddy(deepcopy(sequences.records[:4])), in_args.align_method, quiet=True)
 
     if tmp_alb.align_tool["tool"] == "MAFFT" and float(tmp_alb.align_tool["version"]) < 7.245:
@@ -1913,11 +1914,16 @@ Please do so now:
     global ALIGNPARAMS
     ALIGNPARAMS = in_args.align_params
 
+    if not ALIGNPARAMS:
+        # If using clustal omega, mafft, or pagan, set the pileup flag
+        tool = br.identify_msa_program(ALIGNMETHOD)
+        if tool and tool["name"] in ["clustalo", "mafft"]:
+            ALIGNPARAMS = "--pileup"
+        elif tool and tool["name"] == "pagan":
+            ALIGNPARAMS = "--pileup-alignment"
+
     logging.info("\nAlignment method: %s %s" % (tmp_alb.align_tool["tool"], tmp_alb.align_tool["version"]))
-    if in_args.align_params:
-        logging.info("Additional alignment parameters: %s" % in_args.align_params)
-    else:
-        logging.info("Additional alignment parameters: None")
+    logging.info("Alignment calls: $: %s %s" % (ALIGNMETHOD, ALIGNPARAMS))
 
     global TRIMAL
     if in_args.trimal:
