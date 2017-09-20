@@ -14,6 +14,8 @@ from buddysuite import SeqBuddy as Sb
 from buddysuite import AlignBuddy as Alb
 import re
 import sys
+from collections import OrderedDict
+import os
 
 
 def make_msa(cluster, aligner, trimal):
@@ -47,8 +49,8 @@ def main():
 
     parser.add_argument("clusters", action="store", help="path to clusters file")
     parser.add_argument("sequence_file", action="store", help="path to original sequence file")
-    parser.add_argument("mode", action="store", nargs="?", help="Choose the output type", default="list",
-                        choices=["list", "seq", "sequences", "aln", "alignment", "con", "consensus"])
+    parser.add_argument("mode", action="store", nargs="?", default="list",
+                        help="Choose the output type [list, seq, sequences, aln, alignment, con, consensus]")
     parser.add_argument("--aligner", "-a", action="store", default="clustalo",
                         help="Specify a multiple sequence alignment program")
     parser.add_argument("--groups", "-g", action="append", nargs="+", help="List the specific groups to process")
@@ -59,13 +61,19 @@ def main():
     parser.add_argument("--write", "-w", action="store", help="Specify directory to write file(s)")
     in_args = parser.parse_args()
 
+    mode = in_args.mode.lower()
+    mode = "seq" if "sequences".startswith(mode) else mode
+    mode = "aln" if "alignment".startswith(mode) else mode
+    mode = "con" if "consensus".startswith(mode) else mode
+    mode = "list" if "list".startswith(mode) else mode
+
     if in_args.groups:
         in_args.groups = [x.lower() for x in in_args.groups[0]]
         in_args.groups = "^%s$" % "$|^".join(in_args.groups)
 
     cluster_file = prepare_clusters(in_args.clusters, hierarchy=True)
     seqbuddy = Sb.SeqBuddy(in_args.sequence_file)
-    output = []
+    output = OrderedDict()
 
     for rank, node in cluster_file.items():
         rank = rank.split()[0]
@@ -87,19 +95,19 @@ def main():
         subset = Sb.order_ids(subset)
 
         rank_output = ""
-        if in_args.mode == "list":
+        if mode == "list":
             rank_output += rank
             for rec in subset.records:
                 rec.description = re.sub("^%s" % rec.id, "", rec.description)
                 rank_output += "\n%s %s" % (rec.id, rec.description)
             rank_output += "\n"
 
-        elif in_args.mode in ["seq", "sequences"]:
+        elif mode == "seq":
             for rec in subset.records:
                 rec.description = "%s %s" % (rank, rec.description)
             rank_output += str(subset)
 
-        elif in_args.mode in ["aln", "alignment", "con", "consensus"]:
+        elif mode in ["aln", "con"]:
             try:
                 rank_output = make_msa(subset, in_args.aligner, in_args.trimal)
             except (SystemError, AttributeError) as err:
@@ -107,20 +115,29 @@ def main():
                 sys.exit()
             rank_output.out_format = "phylip-relaxed"
 
-        if in_args.mode in ["con", "consensus"]:
+        if mode == "con":
             rec = Alb.consensus_sequence(rank_output).records()[0]
             rec.id = rank
             rec.name = rank
             rec.description = ""
             rank_output.out_format = "fasta"
 
-        output.append(str(rank_output))
+        output[rank] = str(rank_output)
 
     if not in_args.write:
-        print("\n".join(output).strip())
+        print("\n".join(data for rank, data in output.items()).strip())
 
     else:
-        pass
+        outdir = os.path.abspath(in_args.write)
+        os.makedirs(outdir, exist_ok=True)
+        extension = ".%s" % seqbuddy.out_format[:3] if mode == "seq" \
+            else ".txt" if mode == "list" \
+            else ".phy" if mode == "aln" \
+            else ".fa"
+
+        for rank, data in output.items():
+            with open(os.path.join(outdir, rank + extension), "w") as ofile:
+                ofile.write(data)
 
 
 if __name__ == '__main__':
