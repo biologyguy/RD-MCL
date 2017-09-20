@@ -47,8 +47,8 @@ def main():
 
     parser.add_argument("clusters", action="store", help="path to clusters file")
     parser.add_argument("sequence_file", action="store", help="path to original sequence file")
-    parser.add_argument("mode", action="store", nargs="?", choices=["list", "aln", "alignment", "cons", "consensus"],
-                        help="Choose the output type", default="list")
+    parser.add_argument("mode", action="store", nargs="?", help="Choose the output type", default="list",
+                        choices=["list", "seq", "sequences", "aln", "alignment", "con", "consensus"])
     parser.add_argument("--aligner", "-a", action="store", default="clustalo",
                         help="Specify a multiple sequence alignment program")
     parser.add_argument("--groups", "-g", action="append", nargs="+", help="List the specific groups to process")
@@ -94,7 +94,12 @@ def main():
                 rank_output += "\n%s %s" % (rec.id, rec.description)
             rank_output += "\n"
 
-        elif in_args.mode in ["aln", "alignment", "cons", "consensus"]:
+        elif in_args.mode in ["seq", "sequences"]:
+            for rec in subset.records:
+                rec.description = "%s %s" % (rank, rec.description)
+            rank_output += str(subset)
+
+        elif in_args.mode in ["aln", "alignment", "con", "consensus"]:
             try:
                 rank_output = make_msa(subset, in_args.aligner, in_args.trimal)
             except (SystemError, AttributeError) as err:
@@ -102,7 +107,7 @@ def main():
                 sys.exit()
             rank_output.out_format = "phylip-relaxed"
 
-        if in_args.mode in ["cons", "consensus"]:
+        if in_args.mode in ["con", "consensus"]:
             rec = Alb.consensus_sequence(rank_output).records()[0]
             rec.id = rank
             rec.name = rank
@@ -113,6 +118,9 @@ def main():
 
     if not in_args.write:
         print("\n".join(output).strip())
+
+    else:
+        pass
 
 
 if __name__ == '__main__':
