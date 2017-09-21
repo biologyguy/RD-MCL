@@ -25,7 +25,7 @@ class Monitor(object):
     def _run(self, check_file_path):
         printer = DynamicPrint()
         output = [("#Master", 9), ("AveMhb", 9), ("#Worker", 9), ("AveWhb", 9), ("#queue", 9),
-                  ("#subq", 8), ("#proc", 8), ("#subp", 8), ("#comp", 8), ("#HashWait", 10),
+                  ("#subq", 8), ("#proc", 8), ("#subp", 8), ("#comp", 8), ("#ProcComp", 10), ("#HashWait", 10),
                   ("#IdWait", 9), ("ConnectTime", 9)]
 
         output = [str(x[0]).ljust(x[1]) for x in output]
@@ -44,7 +44,8 @@ class Monitor(object):
                 with helpers.ExclusiveConnect(self.wdb_path) as cursor:
                     queue = cursor.execute("SELECT hash FROM queue").fetchall()
                     processing = cursor.execute("SELECT hash FROM processing").fetchall()
-                    complete = cursor.execute("SELECT master_id, worker_id FROM complete").fetchall()
+                    complete = cursor.execute("SELECT hash FROM complete").fetchall()
+                    proc_comp = cursor.execute("SELECT hash FROM proc_comp").fetchall()
                     waiting = cursor.execute("SELECT * FROM waiting").fetchall()
                 connect_time = round(time() - split_time, 3)
                 master_hb = [hb[2] for hb in heartbeat if hb[1] == "master"]
@@ -69,7 +70,7 @@ class Monitor(object):
                 proc_len = len(processing) - subproc_len
 
                 output = [(len_mas, 9), (master_hb, 9), (len_wor, 9), (worker_hb, 9), (queue_len, 9),
-                          (subqueue_len, 8), (proc_len, 8), (subproc_len, 8), (len(complete), 8),
+                          (subqueue_len, 8), (proc_len, 8), (subproc_len, 8), (len(complete), 8), (len(proc_comp), 10),
                           (len(hash_wait), 10), (len(master_wait), 9), (connect_time, 9)]
                 output = [str(x[0]).ljust(x[1]) for x in output]
 

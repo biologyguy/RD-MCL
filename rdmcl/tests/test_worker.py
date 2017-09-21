@@ -92,8 +92,8 @@ def test_start_worker_fetch_queue(hf, capsys):
                         "waiting (hash, master_id) "
                         "VALUES ('foo', 2)")
     work_cursor.execute("INSERT INTO "
-                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
-                        "VALUES ('foo', ?, 2, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
+                        "queue (hash, psi_pred_dir, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('foo', ?, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
                         (os.path.join(hf.resource_path, "psi_pred"),))
 
     work_con.commit()
@@ -128,8 +128,8 @@ def test_start_worker_1seq_error(hf, capsys):
                         "waiting (hash, master_id) "
                         "VALUES ('foo', 2)")
     work_cursor.execute("INSERT INTO "
-                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
-                        "VALUES ('foo', ?, 2, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
+                        "queue (hash, psi_pred_dir, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('foo', ?, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
                         (os.path.join(hf.resource_path, "psi_pred"),))
     work_con.commit()
 
@@ -159,14 +159,14 @@ def test_start_worker_missing_ss2(hf, monkeypatch, capsys):
 
     # This first one will raise a FileNotFoundError and will `continue` because it's a subjob
     work_cursor.execute("INSERT INTO "
-                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
-                        "VALUES ('1_2_foo', ?, 2, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
+                        "queue (hash, psi_pred_dir, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('1_2_foo', ?, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
                         (os.path.join(hf.resource_path, "psi_pred"),))
 
     # This second one will also raise a FileNotFoundError but it will terminate because it's a primary job
     work_cursor.execute("INSERT INTO "
-                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
-                        "VALUES ('foo', ?, 2, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
+                        "queue (hash, psi_pred_dir, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('foo', ?, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
                         (os.path.join(hf.resource_path, "psi_pred"),))
     work_con.commit()
     seqbuddy = hf.get_data("cteno_panxs")
@@ -208,8 +208,8 @@ def test_start_worker_deal_with_subjobs(hf, capsys, monkeypatch):
                         "waiting (hash, master_id) "
                         "VALUES ('foo', 2)")
     work_cursor.execute("INSERT INTO "
-                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
-                        "VALUES ('foo', ?, 2, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
+                        "queue (hash, psi_pred_dir, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('foo', ?, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
                         (os.path.join(hf.resource_path, "psi_pred"),))
 
     work_con.commit()
@@ -241,12 +241,12 @@ def test_start_worker_deal_with_subjobs(hf, capsys, monkeypatch):
 
     # A second run is pulling a subjob off the queue (first one fails because no MSA available)
     work_cursor.execute("INSERT INTO "
-                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
-                        "VALUES ('2_3_bar', ?, 2, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
+                        "queue (hash, psi_pred_dir, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('2_3_bar', ?, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
                         (os.path.join(hf.resource_path, "psi_pred"),))
     work_cursor.execute("INSERT INTO "
-                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
-                        "VALUES ('2_3_foo', ?, 2, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
+                        "queue (hash, psi_pred_dir, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('2_3_foo', ?, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
                         (os.path.join(hf.resource_path, "psi_pred"),))
     work_con.commit()
 
@@ -288,48 +288,53 @@ def test_worker_clean_dead_threads(hf):
 
     work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
     work_cursor = work_con.cursor()
-    work_cursor.execute("INSERT INTO "
-                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
-                        "VALUES ('foo', './', ?, '', '', 'gappyout 50 90 clean', 0, 0)", (master_id,))
-    work_cursor.execute("INSERT INTO "
-                        "waiting (hash, master_id) "
-                        "VALUES ('bar', %s)" % master_id)
-    work_cursor.execute("INSERT INTO "
-                        "processing (hash, worker_id, master_id) "
-                        "VALUES ('bar', ?, ?)", (worker_id, master_id,))
-    work_cursor.execute("INSERT INTO complete (hash, worker_id, master_id) "
-                        "VALUES ('baz', ?, ?)", (worker_id, master_id,))
+    work_cursor.execute("INSERT INTO queue (hash, psi_pred_dir, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('foo', './', '', '', 'gappyout 50 90 clean', 0, 0)")
+    work_cursor.execute("INSERT INTO waiting (hash, master_id) VALUES ('foo', %s)" % master_id)
+    work_cursor.execute("INSERT INTO waiting (hash, master_id) VALUES ('bar', %s)" % master_id)
+    work_cursor.execute("INSERT INTO waiting (hash, master_id) VALUES ('baz', %s)" % master_id)
+    work_cursor.execute("INSERT INTO processing (hash, worker_id) VALUES ('bar', ?)", (worker_id,))
+    work_cursor.execute("INSERT INTO complete (hash) VALUES ('baz')")
     work_con.commit()
 
     # Everyone should be alive and well!
     worker.clean_dead_threads()
     assert hb_cursor.execute("SELECT * FROM heartbeat WHERE thread_id=%s" % master_id).fetchone()
     assert hb_cursor.execute("SELECT * FROM heartbeat WHERE thread_id=%s" % worker_id).fetchone()
-    assert work_cursor.execute("SELECT * FROM queue WHERE master_id=%s" % master_id).fetchone()
-    assert work_cursor.execute("SELECT * FROM waiting WHERE master_id=%s" % master_id).fetchone()
-    assert work_cursor.execute("SELECT * FROM processing WHERE worker_id=%s" % worker_id).fetchone()
-    assert work_cursor.execute("SELECT * FROM complete WHERE worker_id=%s" % worker_id).fetchone()
+    assert len(work_cursor.execute("SELECT * FROM queue WHERE hash='foo'").fetchall()) == 1
+    assert len(work_cursor.execute("SELECT hash FROM waiting WHERE master_id=%s" % master_id).fetchall()) == 3
+    assert len(work_cursor.execute("SELECT * FROM processing WHERE worker_id=%s" % worker_id).fetchall()) == 1
+    assert len(work_cursor.execute("SELECT * FROM complete WHERE hash='baz'").fetchall()) == 1
+
+    # Delete orphaned complete/queue jobs
+    work_cursor.execute("INSERT INTO queue (hash, psi_pred_dir, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('apple', './', '', '', 'gappyout 50 90 clean', 0, 0)")
+    work_cursor.execute("INSERT INTO complete (hash) VALUES ('orange')")
+    work_con.commit()
+    graph_file = temp_dir.subfile(os.path.join(".worker_output", "apple.graph"))
+    align_file = temp_dir.subfile(os.path.join(".worker_output", "orange.aln"))
+    seqs_file = temp_dir.subfile(os.path.join(".worker_output", "orange.seqs"))
+    worker.clean_dead_threads()
+    assert not work_cursor.execute("SELECT * FROM queue WHERE hash='apple'").fetchone()
+    assert not work_cursor.execute("SELECT * FROM complete WHERE hash='orange'").fetchone()
+    assert not os.path.isfile(graph_file)
+    assert not os.path.isfile(align_file)
+    assert not os.path.isfile(seqs_file)
 
     # Orphans
-    work_cursor.execute("INSERT INTO "
-                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
-                        "VALUES ('apple', './', 100, '', '', 'gappyout 50 90 clean', 0, 0)")
-    work_cursor.execute("INSERT INTO "
-                        "waiting (hash, master_id) "
-                        "VALUES ('orange', 100)")
-    work_cursor.execute("INSERT INTO "
-                        "processing (hash, worker_id, master_id) "
-                        "VALUES ('orange', ?, 100)", (worker_id,))
-    work_cursor.execute("INSERT INTO complete (hash, worker_id, master_id) "
-                        "VALUES ('lemon', ?, 100)", (worker_id,))
+    work_cursor.execute("INSERT INTO queue (hash, psi_pred_dir, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('apple', './', '', '', 'gappyout 50 90 clean', 0, 0)")
+    work_cursor.execute("INSERT INTO waiting (hash, master_id) VALUES ('orange', 100)")
+    work_cursor.execute("INSERT INTO processing (hash, worker_id) VALUES ('orange', ?)", (worker_id,))
+    work_cursor.execute("INSERT INTO complete (hash) VALUES ('lemon')")
     work_con.commit()
     worker.clean_dead_threads()
     assert hb_cursor.execute("SELECT * FROM heartbeat WHERE thread_id=%s" % master_id).fetchone()
     assert hb_cursor.execute("SELECT * FROM heartbeat WHERE thread_id=%s" % worker_id).fetchone()
-    assert not work_cursor.execute("SELECT * FROM queue WHERE hash='apple' OR master_id=100").fetchone()
+    assert not work_cursor.execute("SELECT * FROM queue WHERE hash='apple'").fetchone()
     assert not work_cursor.execute("SELECT * FROM waiting WHERE master_id='orange' OR master_id=100").fetchone()
-    assert not work_cursor.execute("SELECT * FROM processing WHERE worker_id='orange' OR master_id=100").fetchone()
-    assert not work_cursor.execute("SELECT * FROM complete WHERE worker_id='lemon' OR master_id=100").fetchone()
+    assert not work_cursor.execute("SELECT * FROM processing WHERE worker_id='orange'").fetchone()
+    assert not work_cursor.execute("SELECT * FROM complete WHERE hash='lemon'").fetchone()
 
     # Dead worker
     hb_cursor.execute("INSERT INTO heartbeat (thread_type, pulse) VALUES ('worker', 100)")
@@ -348,7 +353,6 @@ def test_worker_clean_dead_threads(hf):
     assert not hb_cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master'").fetchone()
     assert not work_cursor.execute("SELECT * FROM queue").fetchone()
     assert not work_cursor.execute("SELECT * FROM waiting").fetchone()
-    assert not work_cursor.execute("SELECT * FROM processing").fetchone()
 
 
 def test_worker_fetch_queue_job(hf):
@@ -359,16 +363,16 @@ def test_worker_fetch_queue_job(hf):
     work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
     work_cursor = work_con.cursor()
     work_cursor.execute("INSERT INTO "
-                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
-                        "VALUES ('foo', './', 2, '', '', 'gappyout 50 90 clean', 0, 0)")
+                        "queue (hash, psi_pred_dir, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('foo', './', '', '', 'gappyout 50 90 clean', 0, 0)")
     work_cursor.execute("INSERT INTO "
-                        "queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
-                        "VALUES ('bar', './', 2, '', '', 'gappyout 50 90 clean', 0, 0)")
-    work_cursor.execute("INSERT INTO processing (hash, worker_id, master_id)"
-                        " VALUES (?, ?, ?)", ("foo", 1, 2,))
+                        "queue (hash, psi_pred_dir, align_m, align_p, trimal, gap_open, gap_extend) "
+                        "VALUES ('bar', './', '', '', 'gappyout 50 90 clean', 0, 0)")
+    work_cursor.execute("INSERT INTO processing (hash, worker_id)"
+                        " VALUES (?, ?)", ("foo", 1,))
     work_con.commit()
     queued_job = worker.fetch_queue_job()
-    assert queued_job == ['bar', './', 2, '', '', ['gappyout', 50.0, 90.0, 'clean'], 0, 0]
+    assert queued_job == ['bar', './', '', '', ['gappyout', 50.0, 90.0, 'clean'], 0, 0]
     assert not work_cursor.execute("SELECT * FROM queue").fetchall()
 
 
@@ -412,25 +416,17 @@ def test_worker_process_final_results(hf, monkeypatch, capsys):
     worker.data_file = os.path.join(temp_dir.path, ".Worker_2.dat")
     worker.heartbeat.id = 2
 
-    work_cursor.execute("INSERT INTO "
-                        "waiting (hash, master_id) "
-                        "VALUES ('foo', 3)")
-    work_cursor.execute("INSERT INTO "
-                        "processing (hash, worker_id, master_id) "
-                        "VALUES ('foo', 2, 3)")
-    work_cursor.execute("INSERT INTO "
-                        "processing (hash, worker_id, master_id) "
-                        "VALUES ('1_3_foo', 2, 3)")
-    work_cursor.execute("INSERT INTO "
-                        "complete (hash, worker_id, master_id) "
-                        "VALUES ('2_3_foo', 2, 3)")
+    work_cursor.execute("INSERT INTO waiting (hash, master_id) VALUES ('foo', 3)")
+    work_cursor.execute("INSERT INTO processing (hash, worker_id) VALUES ('foo', 2)")
+    work_cursor.execute("INSERT INTO processing (hash, worker_id) VALUES ('1_3_foo', 2)")
+    work_cursor.execute("INSERT INTO complete (hash) VALUES ('2_3_foo')")
     work_con.commit()
 
     # Process an empty result without subjobs
     with open(worker.data_file, "w") as ifile:
         ifile.write("seq1,seq2,subsmat,psi")
 
-    assert worker.process_final_results("foo", 3, 1, 1) is None
+    assert worker.process_final_results("foo", 1, 1) is None
     assert work_cursor.execute("SELECT * FROM waiting WHERE hash='foo'").fetchone()
     assert work_cursor.execute("SELECT * FROM processing WHERE hash='foo'").fetchone()
     assert work_cursor.execute("SELECT * FROM processing WHERE hash LIKE '%%_foo'").fetchone()
@@ -450,7 +446,7 @@ def test_worker_process_final_results(hf, monkeypatch, capsys):
 
     monkeypatch.setattr(launch_worker.Worker, "process_subjob", patch_process_subjob)
 
-    assert worker.process_final_results("foo", 3, 1, 3) is None
+    assert worker.process_final_results("foo", 1, 3) is None
     assert work_cursor.execute("SELECT * FROM waiting WHERE hash='foo'").fetchone()
     assert work_cursor.execute("SELECT * FROM processing WHERE hash='foo'").fetchone()
     assert len(work_cursor.execute("SELECT * FROM processing WHERE hash LIKE '%%_foo'").fetchall()) == 1
@@ -460,7 +456,7 @@ def test_worker_process_final_results(hf, monkeypatch, capsys):
     assert not os.path.isfile(graph_file)
     assert os.path.isdir(subjob_dir)
     out, err = capsys.readouterr()
-    assert out.strip() == str(sim_scores).strip()
+    assert out.strip() == str(sim_scores).strip(), print(out + err)
 
     # Process an actual result
     result = """
@@ -473,7 +469,7 @@ Oma-PanxαC,Oma-PanxαD,0.47123287364498306,0.6647632735397735
 """
     with open(worker.data_file, "a") as ifile:
         ifile.write(result)
-    assert worker.process_final_results("foo", 3, 1, 1) is None
+    assert worker.process_final_results("foo", 1, 1) is None
     assert work_cursor.execute("SELECT * FROM waiting WHERE hash='foo'").fetchone()
     assert not work_cursor.execute("SELECT * FROM processing WHERE hash='foo'").fetchone()
     assert work_cursor.execute("SELECT * FROM complete WHERE hash='foo'").fetchone()
@@ -488,7 +484,7 @@ Oma-PanxαC,Oma-PanxαD,0.47123287364498306,0.6647632735397735
     work_cursor.execute("DELETE FROM complete WHERE hash='foo'")
     work_con.commit()
     os.remove(seqs_file)
-    assert worker.process_final_results("foo", 3, 1, 1) is None
+    assert worker.process_final_results("foo", 1, 1) is None
     assert not work_cursor.execute("SELECT * FROM waiting WHERE hash='foo'").fetchone()
     assert not work_cursor.execute("SELECT * FROM processing WHERE hash='foo'").fetchone()
     assert not work_cursor.execute("SELECT * FROM complete WHERE hash='foo'").fetchone()
@@ -521,7 +517,7 @@ def test_worker_spawn_subjobs(hf):
 
     data = [pairs[i:i + 5] for i in range(0, len(pairs), 5)]  # This gives two groups of five
 
-    data_len, data, subjob_num, num_subjobs = worker.spawn_subjobs("foo", data, ss2_dfs, 3, -5, 0)
+    data_len, data, subjob_num, num_subjobs = worker.spawn_subjobs("foo", data, ss2_dfs, 3, -5)
 
     assert data_len == len(data[0]) == 2
     assert len(data[1]) == 2
@@ -546,20 +542,18 @@ Bch-PanxαD Bch-PanxαE
 
     queue = work_cursor.execute("SELECT * FROM queue").fetchall()
     assert len(queue) == 2
-    hash_id, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend = queue[0]
+    hash_id, psi_pred_dir, align_m, align_p, trimal, gap_open, gap_extend = queue[0]
     assert hash_id == "2_3_foo"
     assert psi_pred_dir == subjob_dir
-    assert master_id == 3
     assert align_m is align_p is trimal is None
     assert gap_open, gap_extend == (-5, 0)
 
     processing = work_cursor.execute("SELECT * FROM processing").fetchall()
     assert len(processing) == 1
 
-    hash_id, worker_id, master_id = processing[0]
+    hash_id, worker_id = processing[0]
     assert hash_id == "1_3_foo"
     assert worker_id == worker.heartbeat.id
-    assert master_id == 3
 
 
 def test_worker_load_subjob(hf):
@@ -593,12 +587,8 @@ def test_worker_process_subjob(hf):
 
     work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
     work_cursor = work_con.cursor()
-    work_cursor.execute("INSERT INTO "
-                        "processing (hash, worker_id, master_id) "
-                        "VALUES ('2_3_foo', 1, 3)")
-    work_cursor.execute("INSERT INTO "
-                        "waiting (hash, master_id) "
-                        "VALUES ('foo', 3)")
+    work_cursor.execute("INSERT INTO processing (hash, worker_id) VALUES ('2_3_foo', 1)")
+    work_cursor.execute("INSERT INTO waiting (hash, master_id) VALUES ('foo', 3)")
     work_con.commit()
 
     # First test what happens when there are remaining subjobs
@@ -608,7 +598,7 @@ Oma-PanxαA,Oma-PanxαB,0.2440918473487719,0.4821566689314651
 Oma-PanxαA,Oma-PanxαC,0.5135617078978646,0.7301561315022769
 """
     sim_scores_df = pd.read_csv(StringIO(sim_scores))
-    sim_scores_df = worker.process_subjob("foo", sim_scores_df, 2, 3, 3)
+    sim_scores_df = worker.process_subjob("foo", sim_scores_df, 2, 3)
     assert sim_scores_df.empty
     assert work_cursor.execute("SELECT * FROM complete").fetchone()[0] == "2_3_foo"
     assert not work_cursor.execute("SELECT * FROM processing").fetchall()
@@ -618,15 +608,10 @@ Oma-PanxαA,Oma-PanxαC,0.5135617078978646,0.7301561315022769
 
     # Now test the final processing after all subjobs complete
     work_cursor.execute("INSERT INTO "
-                        "complete (hash, worker_id, master_id) "
-                        "VALUES ('1_3_foo', 1, 3)")
+                        "complete (hash) VALUES ('1_3_foo')")
 
-    work_cursor.execute("INSERT INTO "
-                        "processing (hash, worker_id, master_id) "
-                        "VALUES ('3_3_foo', 1, 3)")
-    work_cursor.execute("INSERT INTO "
-                        "waiting (hash, master_id) "
-                        "VALUES ('3_3_foo', 3)")
+    work_cursor.execute("INSERT INTO processing (hash, worker_id) VALUES ('3_3_foo', 1)")
+    work_cursor.execute("INSERT INTO waiting (hash, master_id) VALUES ('3_3_foo', 3)")
     work_con.commit()
 
     with open(os.path.join(subjob_dir, "1_of_3.sim_df"), "w") as ofile:
@@ -642,7 +627,7 @@ Oma-PanxαB,Oma-PanxαD,0.2382962711779895,0.44814103743455824
 Oma-PanxαC,Oma-PanxαD,0.4712328736449831,0.6647632735397735
 """
     sim_scores_df = pd.read_csv(StringIO(sim_scores))
-    sim_scores_df = worker.process_subjob("foo", sim_scores_df, 3, 3, 3)
+    sim_scores_df = worker.process_subjob("foo", sim_scores_df, 3, 3)
 
     assert str(sim_scores_df) == """\
          seq1        seq2   subsmat       psi
@@ -660,12 +645,8 @@ def test_worker_terminate(hf, monkeypatch, capsys):
     temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
     work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
     work_cursor = work_con.cursor()
-    work_cursor.execute("INSERT INTO "
-                        "processing (hash, worker_id, master_id) "
-                        "VALUES ('2_3_foo', 1, 3)")
-    work_cursor.execute("INSERT INTO "
-                        "processing (hash, worker_id, master_id) "
-                        "VALUES ('1_3_foo', 2, 3)")
+    work_cursor.execute("INSERT INTO processing (hash, worker_id) VALUES ('2_3_foo', 1)")
+    work_cursor.execute("INSERT INTO processing (hash, worker_id) VALUES ('1_3_foo', 2)")
     work_con.commit()
 
     worker = launch_worker.Worker(temp_dir.path)
@@ -683,6 +664,7 @@ def test_worker_terminate(hf, monkeypatch, capsys):
     assert not os.path.isfile(worker.worker_file)
     assert not work_cursor.execute("SELECT * FROM processing WHERE worker_id=1").fetchall()
     assert work_cursor.execute("SELECT * FROM processing WHERE worker_id=2").fetchall()
+
 
 # #########  User Interface  ########## #
 parser = argparse.ArgumentParser(prog="launch_worker", description="",
@@ -727,18 +709,14 @@ def test_main(monkeypatch, capsys):
 
     tables = {'queue': [(0, 'hash', 'TEXT', 0, None, 1),
                         (1, 'psi_pred_dir', 'TEXT', 0, None, 0),
-                        (2, 'master_id', 'INTEGER', 0, None, 0),
-                        (3, 'align_m', 'TEXT', 0, None, 0),
-                        (4, 'align_p', 'TEXT', 0, None, 0),
-                        (5, 'trimal', 'TEXT', 0, None, 0),
-                        (6, 'gap_open', 'FLOAT', 0, None, 0),
-                        (7, 'gap_extend', 'FLOAT', 0, None, 0)],
+                        (2, 'align_m', 'TEXT', 0, None, 0),
+                        (3, 'align_p', 'TEXT', 0, None, 0),
+                        (4, 'trimal', 'TEXT', 0, None, 0),
+                        (5, 'gap_open', 'FLOAT', 0, None, 0),
+                        (6, 'gap_extend', 'FLOAT', 0, None, 0)],
               'processing': [(0, 'hash', 'TEXT', 0, None, 1),
-                             (1, 'worker_id', 'INTEGER', 0, None, 0),
-                             (2, 'master_id', 'INTEGER', 0, None, 0)],
-              'complete': [(0, 'hash', 'TEXT', 0, None, 1),
-                           (1, 'worker_id', 'INTEGER', 0, None, 0),
-                           (2, 'master_id', 'INTEGER', 0, None, 0)],
+                             (1, 'worker_id', 'INTEGER', 0, None, 0)],
+              'complete': [(0, 'hash', 'TEXT', 0, None, 1)],
               'waiting': [(0, 'hash', 'TEXT', 0, None, 0),
                           (1, 'master_id', 'INTEGER', 0, None, 0)]}
 

@@ -651,6 +651,9 @@ def test_orthogroup_caller(hf):
     seqbuddy = rdmcl.Sb.SeqBuddy(hf.resource_path + "Cteno_pannexins.fa")
     rdmcl.Sb.pull_recs(seqbuddy, "^%s$" % "$|^".join(seq_ids))
 
+    # psi_pred_ss2_paths = hf.get_data("ss2_paths")
+    # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqbuddy, psi_pred_ss2_paths, broker)
+
     cluster = rdmcl.Cluster(seq_ids, hf.get_db_graph("94650a087fe83a6ad6c6584e76025b68", broker))
     cluster.collapsed_genes = OrderedDict([('Lcr-PanxαA', ['Lcr-PanxαL']), ('Lcr-PanxαE', ['Lcr-PanxαJ']),
                                            ('Mle-Panxα10A', ['Mle-Panxα9']),
@@ -999,12 +1002,13 @@ def test_retrieve_all_by_all_scores_from_db(hf, monkeypatch):
     # These patches shouldn't execute, they're here to make sure the control flow doesn't go passed the query statement
     monkeypatch.setattr(rdmcl, "WorkerJob", mock_keyboardinterupt)
     monkeypatch.setattr(rdmcl.AllByAllScores, "create", mock_keyboardinterupt)
+    # sim_scores, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqbuddy, hf.get_data("ss2_paths"), sql_broker)
     sim_scores, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqbuddy, "psi_pred_files", sql_broker)
     assert len(alignbuddy.records()) == 3
     assert str(sim_scores) == """\
          seq1        seq2   subsmat       psi  raw_score     score
-0  Bfo-PanxαF  Mle-Panxα6  1.000000  1.000000   0.913305  1.000000
-1  Bfo-PanxαF  Hca-PanxαD  0.117138  0.000000   0.820955  0.081997
+0  Bfo-PanxαF  Hca-PanxαD  0.117138  0.000000   0.820955  0.081997
+1  Bfo-PanxαF  Mle-Panxα6  1.000000  1.000000   0.913305  1.000000
 2  Hca-PanxαD  Mle-Panxα6  0.000000  0.192926   0.814353  0.057878""", print(sim_scores)
     sql_broker.close()
 
@@ -1304,7 +1308,7 @@ def test_workerjob_queue_job(hf, monkeypatch):
     assert not worker.queue_job()
     assert os.path.isfile(os.path.join(temp_dir.path, "%s.seqs" % worker.job_id))
     queue = work_cursor.execute("SELECT * FROM queue").fetchall()
-    assert queue == [('a2aaca4f79bd56fbf8debfdc281660fd', '', None, 'clustalo', '',
+    assert queue == [('a2aaca4f79bd56fbf8debfdc281660fd', '', 'clustalo', '',
                       'gappyout 0.5 0.75 0.9 0.95 clean', -5.0, 0.0)], print(queue)
 
 
@@ -1342,7 +1346,7 @@ MTGLILIL
 >Mle-Panxα1
 MTGLILIL
 """
-    sql_broker.query("INSERT INTO data_table (hash, graph, alignment) VALUES (?, ?, ?)", (worker.job_id,
+    sql_broker.query("INSERT INTO data_table (hash, graph, alignment) VALUES (?, ?, ?)", (worker.seq_id_hash,
                                                                                           graph, alignment,))
     work_cursor.execute("INSERT INTO complete (hash) VALUES (?)", (worker.job_id,))
     work_cursor.execute("INSERT INTO waiting (hash, master_id) VALUES (?, ?)", (worker.job_id, 1))
@@ -1356,12 +1360,10 @@ MTGLILIL
 1  Hca-PanxαG  Mle-Panxα1  0.000000  0.453888   0.301325  0.136167"""
     assert str(pulled_data[1]) == alignment
 
-    assert len(work_cursor.execute("SELECT * FROM complete").fetchall()) == 1
     assert len(work_cursor.execute("SELECT * FROM waiting").fetchall()) == 1
 
     worker.heartbeat.id = 2
     worker.pull_from_db()
-    assert not work_cursor.execute("SELECT * FROM complete").fetchall()
     assert not work_cursor.execute("SELECT * FROM waiting").fetchall()
 
 
@@ -1379,9 +1381,9 @@ def test_workerjob_check_finished(hf, monkeypatch):
     worker = rdmcl.WorkerJob(seqbuddy, "sql_broker")
     worker.heartbeat.id = 1
 
-    work_cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id, align_m, align_p, trimal, "
-                        "gap_open, gap_extend) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                        ('a2aaca4f79bd56fbf8debfdc281660fd', '', None, 'clustalo', '',
+    work_cursor.execute("INSERT INTO queue (hash, psi_pred_dir, align_m, align_p, trimal, "
+                        "gap_open, gap_extend) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        ('a2aaca4f79bd56fbf8debfdc281660fd', '', 'clustalo', '',
                          'gappyout 0.5 0.75 0.9 0.95 clean', -5.0, 0.0,))
     work_cursor.execute("INSERT INTO waiting (hash, master_id) VALUES (?, ?)", ('a2aaca4f79bd56fbf8debfdc281660fd', 1,))
     work_cursor.execute("INSERT INTO waiting (hash, master_id) VALUES (?, ?)", ('a2aaca4f79bd56fbf8debfdc281660fd', 2,))
@@ -1392,22 +1394,18 @@ def test_workerjob_check_finished(hf, monkeypatch):
     assert not worker.check_finished()
     assert worker.queue_size == 1
     assert work_cursor.execute("SELECT  COUNT(*) FROM waiting").fetchone()[0] == 2
+
     # Other jobs waiting
-    work_cursor.execute("INSERT INTO complete (hash, worker_id, master_id) "
-                        "VALUES (?, ?, ?)", ('a2aaca4f79bd56fbf8debfdc281660fd', 1, 3,))
+    work_cursor.execute("INSERT INTO complete (hash) "
+                        "VALUES (?)", ('a2aaca4f79bd56fbf8debfdc281660fd',))
     work_con.commit()
     assert worker.check_finished()
     assert work_cursor.execute("SELECT  COUNT(*) FROM waiting").fetchone()[0] == 1
-    assert work_cursor.execute("SELECT  COUNT(*) FROM complete").fetchone()[0] == 1
-
-    # Final cleanup
-    worker.heartbeat.id = 2
-    assert worker.check_finished()
-    assert work_cursor.execute("SELECT  COUNT(*) FROM waiting").fetchone()[0] == 0
     assert work_cursor.execute("SELECT  COUNT(*) FROM complete").fetchone()[0] == 0
+    assert work_cursor.execute("SELECT  COUNT(*) FROM proc_comp").fetchone()[0] == 1
 
 
-def test_workerjob_process_finished(hf, monkeypatch, capsys):
+def test_workerjob_process_finished(hf, monkeypatch):
     monkeypatch.setattr(rdmcl, "HeartBeat", MockHeartBeat)
     monkeypatch.setattr(rdmcl, "cluster2database", lambda *_: True)
     temp_dir = br.TempDir()
@@ -1421,10 +1419,10 @@ def test_workerjob_process_finished(hf, monkeypatch, capsys):
     worker = rdmcl.WorkerJob(seqbuddy, "sql_broker")
     worker.heartbeat.id = 1
 
-    # Hit race conditions (FileNoteFound)
-    assert not worker.process_finished()
-    out, err = capsys.readouterr()
-    assert "Lost a file, looping through again" in out
+    work_con = sqlite3.connect(work_db)
+    work_cursor = work_con.cursor()
+    work_cursor.execute("INSERT INTO proc_comp (hash, master_id) VALUES (?, ?)", (worker.job_id, worker.heartbeat.id))
+    work_con.commit()
 
     # Run through but don't delete files
     seqs_path = os.path.join(temp_dir.path, "%s.seqs" % worker.job_id)
@@ -1434,29 +1432,17 @@ def test_workerjob_process_finished(hf, monkeypatch, capsys):
     graph_path = temp_dir.subfile("%s.graph" % worker.job_id)
     sim_scores.to_csv(graph_path, header=None, index=False)
 
+    assert os.path.isfile(seqs_path)
+    assert os.path.isfile(aln_path)
+    assert os.path.isfile(graph_path)
+
     ret_sim_scores, ret_alignment = worker.process_finished()
     assert str(ret_sim_scores) == str(sim_scores)
     assert str(ret_alignment) == str(alignment)
 
-    # Fully complete, delete all files
-    new_seq_path = re.sub(r'(%s)' % worker.job_id, r'%s_\1' % worker.heartbeat.id, seqs_path)
-    shutil.move(seqs_path, new_seq_path)
-    new_aln_path = re.sub(r'(%s)' % worker.job_id, r'%s_\1' % worker.heartbeat.id, aln_path)
-    shutil.move(aln_path, new_aln_path)
-    new_graph_path = re.sub(r'(%s)' % worker.job_id, r'%s_\1' % worker.heartbeat.id, graph_path)
-    shutil.move(graph_path, new_graph_path)
-
-    assert os.path.isfile(new_seq_path)
-    assert os.path.isfile(new_aln_path)
-    assert os.path.isfile(new_graph_path)
-
-    ret_sim_scores, ret_alignment = worker.process_finished()
-    assert str(ret_sim_scores) == str(sim_scores), print(ret_sim_scores)
-    assert str(ret_alignment) == str(alignment), print(ret_alignment)
-
-    assert not os.path.isfile(new_seq_path)
-    assert not os.path.isfile(new_aln_path)
-    assert not os.path.isfile(new_graph_path)
+    assert not os.path.isfile(seqs_path)
+    assert not os.path.isfile(aln_path)
+    assert not os.path.isfile(graph_path)
 
 
 def test_workerjob_check_if_active(hf, monkeypatch, capsys):
@@ -1479,46 +1465,39 @@ def test_workerjob_check_if_active(hf, monkeypatch, capsys):
     rdmcl.HEARTBEAT_DB = hb_db
 
     # No workers no seq file, die
-    work_cursor.execute("INSERT INTO queue (master_id) VALUES (1)")
-    work_cursor.execute("INSERT INTO processing (master_id) VALUES (1)")
-    work_cursor.execute("INSERT INTO waiting (master_id) VALUES (1)")
-    work_cursor.execute("INSERT INTO queue (master_id) VALUES (2)")
-    work_cursor.execute("INSERT INTO processing (master_id) VALUES (2)")
-    work_cursor.execute("INSERT INTO waiting (master_id) VALUES (2)")
+    work_cursor.execute("INSERT INTO waiting (hash, master_id) VALUES (?, ?)", (worker.job_id, 1,))
+    work_cursor.execute("INSERT INTO waiting (hash, master_id) VALUES (?, ?)", (worker.job_id, 2,))
     work_con.commit()
     assert not worker.check_if_active()
-    assert not work_cursor.execute("SELECT * FROM queue WHERE master_id=1").fetchone()
-    assert not work_cursor.execute("SELECT * FROM processing WHERE master_id=1").fetchone()
     assert not work_cursor.execute("SELECT * FROM waiting WHERE master_id=1").fetchone()
-    assert work_cursor.execute("SELECT * FROM queue WHERE master_id=2").fetchone()
-    assert work_cursor.execute("SELECT * FROM processing WHERE master_id=2").fetchone()
     assert work_cursor.execute("SELECT * FROM waiting WHERE master_id=2").fetchone()
 
     # No workers, delete seqs file
-    temp_dir.subfile("%s.seqs" % worker.job_id)
+    seq_file = temp_dir.subfile("%s.seqs" % worker.job_id)
     worker.heartbeat.id = 2
     assert not worker.check_if_active()
-    assert not work_cursor.execute("SELECT * FROM queue").fetchone()
-    assert not work_cursor.execute("SELECT * FROM processing").fetchone()
     assert not work_cursor.execute("SELECT * FROM waiting").fetchone()
+    assert not os.path.isfile(seq_file)
 
     # Workers alive, but job is missing
-    monkeypatch.setattr(rdmcl.WorkerJob, "restart_job", lambda *_: print("restarting job (from monkeypatch)"))
+    monkeypatch.setattr(rdmcl.WorkerJob, "pull_from_db", lambda *_: print("Missing job (from monkeypatch)"))
+    monkeypatch.setattr(rdmcl.WorkerJob, "queue_job", lambda *_: print("restarting job (from monkeypatch)"))
     hb_cursor.execute("INSERT INTO heartbeat (thread_id, thread_type, pulse) VALUES (?, ?, ?)", (1, "worker", 10e12,))
     hb_con.commit()
     assert worker.check_if_active()
     out, err = capsys.readouterr()
-    assert out == "a2aaca4f79bd56fbf8debfdc281660fd vanished!\nrestarting job (from monkeypatch)\n"
+    assert "a2aaca4f79bd56fbf8debfdc281660fd vanished!\nrestarting job (from monkeypatch)\n" in out
+    assert "Missing job (from monkeypatch)" in out
 
     # Job already queued
-    work_cursor.execute("INSERT INTO queue (hash, master_id) VALUES ('a2aaca4f79bd56fbf8debfdc281660fd', 2)")
+    work_cursor.execute("INSERT INTO queue (hash) VALUES ('a2aaca4f79bd56fbf8debfdc281660fd')")
     work_con.commit()
     assert worker.check_if_active()
     out, err = capsys.readouterr()
     assert not out
 
     # Job already complete
-    work_cursor.execute("INSERT INTO complete (hash, master_id) VALUES ('a2aaca4f79bd56fbf8debfdc281660fd', 2)")
+    work_cursor.execute("INSERT INTO complete (hash) VALUES ('a2aaca4f79bd56fbf8debfdc281660fd')")
     work_cursor.execute("DELETE FROM queue WHERE hash='a2aaca4f79bd56fbf8debfdc281660fd'")
     work_con.commit()
     assert worker.check_if_active()
@@ -1526,15 +1505,24 @@ def test_workerjob_check_if_active(hf, monkeypatch, capsys):
     assert not out
 
     # Confirm a processing job has an active worker on it
-    work_cursor.execute("INSERT INTO processing (hash, master_id) VALUES ('a2aaca4f79bd56fbf8debfdc281660fd', 7)")
+    work_cursor.execute("INSERT INTO processing (hash) VALUES ('a2aaca4f79bd56fbf8debfdc281660fd')")
     work_con.commit()
     capsys.readouterr()
     assert worker.check_if_active()
     out, err = capsys.readouterr()
-    assert out == "Dead worker on a2aaca4f79bd56fbf8debfdc281660fd, restarting job\nrestarting job " \
-                  "(from monkeypatch)\n", print(out)
+    assert out == "restarting job (from monkeypatch)\n", print(out)
 
+    # Confirm a proc_comp job has an active master on it
+    work_cursor.execute("DELETE FROM processing WHERE hash='a2aaca4f79bd56fbf8debfdc281660fd'")
+    work_cursor.execute("DELETE FROM complete WHERE hash='a2aaca4f79bd56fbf8debfdc281660fd'")
+    work_cursor.execute("INSERT INTO proc_comp (hash, master_id) VALUES ('a2aaca4f79bd56fbf8debfdc281660fd', 5)")
+    work_con.commit()
+    capsys.readouterr()
+    assert worker.check_if_active()
+    assert work_cursor.execute("SELECT * FROM complete WHERE hash='a2aaca4f79bd56fbf8debfdc281660fd'").fetchone()
+    assert not work_cursor.execute("SELECT * FROM proc_comp WHERE hash='a2aaca4f79bd56fbf8debfdc281660fd'").fetchone()
 
+'''
 def test_workerjob_restart_job(hf, monkeypatch, capsys):
     monkeypatch.setattr(rdmcl, "HeartBeat", MockHeartBeat)
     temp_dir = br.TempDir()
@@ -1556,10 +1544,11 @@ def test_workerjob_restart_job(hf, monkeypatch, capsys):
     assert work_cursor.execute("SELECT * FROM queue WHERE hash='a2aaca4f79bd56fbf8debfdc281660fd'").fetchone()
     assert work_cursor.execute("SELECT * FROM waiting WHERE hash='a2aaca4f79bd56fbf8debfdc281660fd'").fetchone()
     assert os.path.isfile(os.path.join(temp_dir.path, 'a2aaca4f79bd56fbf8debfdc281660fd.seqs'))
+'''
 
 
 # #########  MCL stuff  ########## #
-def test_mcmcmc_mcl(hf, monkeypatch):
+def test_mcmcmc_mcl(hf):
     # Need to monkeypatch Cluster, mc_create_all_by_all_scores, Progress.update, helpers.MarkovClustering,
     # and retrieve_all_by_all_scores()
 
@@ -1573,16 +1562,16 @@ def test_mcmcmc_mcl(hf, monkeypatch):
     taxa_sep = "-"
     sql_broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
     sql_broker.start_broker()
-    
+
+    # psi_pred_ss2_paths = hf.get_data("ss2_paths")
+    # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqbuddy, psi_pred_ss2_paths, sql_broker)
+
     cluster = rdmcl.Cluster(cluster_ids, hf.get_db_graph("3c15516819aa19b069b0e8858444f876", sql_broker))
-    psi_pred_ss2_dfs = OrderedDict()
-    for rec in seqbuddy.records:
-        psi_pred_ss2_dfs[rec.id] = rdmcl.read_ss2_file("%spsi_pred%s%s.ss2" % (hf.resource_path, os.sep, rec.id))
     os.makedirs(os.path.join(ext_tmp_dir.path, "progress"))
     progress = rdmcl.Progress(os.path.join(ext_tmp_dir.path, "progress"), cluster)
 
     args = (6.372011782427792, 0.901221218627, 1)  # inflation, gq, r_seed
-    params = [ext_tmp_dir.path, seqbuddy, cluster, taxa_sep, sql_broker, psi_pred_ss2_dfs, progress, 3]
+    params = [ext_tmp_dir.path, seqbuddy, cluster, taxa_sep, sql_broker, hf.get_data("ss2_paths"), progress, 3]
 
     assert rdmcl.mcmcmc_mcl(args, params) == 19.538461538461537
     with open(os.path.join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
@@ -1634,9 +1623,10 @@ def test_instantiate_orphan(hf):
     broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
     broker.start_broker()
     psi_pred_ss2_dfs = hf.get_data("ss2_dfs")
-    # psi_pred_ss2_paths = hf.get_data("ss2_paths")
 
     parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
+    # psi_pred_ss2_paths = hf.get_data("ss2_paths")
+    # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(parent_sb, psi_pred_ss2_paths, broker)
     graph = hf.get_db_graph("6935966a6b9967c3006785488d968230", broker)
 
     parent_ids = [rec.id for rec in parent_sb.records]
@@ -1644,42 +1634,37 @@ def test_instantiate_orphan(hf):
 
     cluster1 = ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE', 'Bfr-PanxαA']
     # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster1))
-    graph = hf.get_db_graph("14f1cd0e985ed87b4e31bc07453481d2", broker)
     # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
+    graph = hf.get_db_graph("14f1cd0e985ed87b4e31bc07453481d2", broker)
     cluster1 = rdmcl.Cluster(cluster1, graph, parent=parent_cluster)
-    # rdmcl.cluster2database(cluster1, broker, alignbuddy)
     cluster1.set_name()
 
     cluster2 = ['Lla-PanxαA', 'Mle-Panxα11', 'Oma-PanxαD', 'Pba-PanxαB', 'Tin-PanxαF']
     # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster2))
-    graph = hf.get_db_graph("441c3610506fda8a6820da5f67fdc470", broker)
     # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
+    graph = hf.get_db_graph("441c3610506fda8a6820da5f67fdc470", broker)
     cluster2 = rdmcl.Cluster(cluster2, graph, parent=parent_cluster)
-    # rdmcl.cluster2database(cluster2, broker, alignbuddy)
     cluster2.set_name()
 
     cluster3 = ['Vpa-PanxαD']  # This should be placed in cluster 2
     # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster3))
-    graph = hf.get_db_graph("ded0bc087974589c24945bb36197d36f", broker)
     # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
+    graph = hf.get_db_graph("ded0bc087974589c24945bb36197d36f", broker)
     cluster3 = rdmcl.Cluster(cluster3, graph, parent=parent_cluster)
-    # rdmcl.cluster2database(cluster3, broker, alignbuddy)
     cluster3.set_name()
 
     cluster4 = ['Hca-PanxαA', 'Lcr-PanxαG']  # This should be placed in cluster 1
     # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster4))
-    graph = hf.get_db_graph("035b3933770942c7e32e27c06e619825", broker)
     # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
+    graph = hf.get_db_graph("035b3933770942c7e32e27c06e619825", broker)
     cluster4 = rdmcl.Cluster(cluster4, graph, parent=parent_cluster)
-    # rdmcl.cluster2database(cluster4, broker, alignbuddy)
     cluster4.set_name()
 
     cluster5 = ['Hvu-PanxβA']  # This should not be placed in a cluster
     # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster5))
-    graph = hf.get_db_graph("c62b6378d326c2479296c98f0f620d0f", broker)
     # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
+    graph = hf.get_db_graph("c62b6378d326c2479296c98f0f620d0f", broker)
     cluster5 = rdmcl.Cluster(cluster5, graph, parent=parent_cluster)
-    # rdmcl.cluster2database(cluster5, broker, alignbuddy)
     cluster5.set_name()
     clusters = [cluster1, cluster2, cluster3, cluster4, cluster5]
 
@@ -1705,7 +1690,7 @@ def test_instantiate_orphan(hf):
     assert len([seq_id for sub_clust in small_clusters + large_clusters for seq_id in sub_clust]) == 14
     assert type(orphans.tmp_file) == rdmcl.br.TempFile
     all_sim_scores_str = str(orphans.lrg_cluster_sim_scores)
-    assert round(orphans.lrg_cluster_sim_scores.iloc[0], 12) == 0.961941661285
+    assert round(orphans.lrg_cluster_sim_scores.iloc[0], 12) == 0.822746474418
     assert round(orphans.lrg_cluster_sim_scores.iloc[-1], 12) == 0.946958793306
     assert len(orphans.lrg_cluster_sim_scores) == 20  # This is for the two large clusters --> Σ(a*(a-1))/2
     broker.close()
@@ -1940,6 +1925,8 @@ group_0_0_1\t3.75\tLcr-PanxαK\tMle-Panxα7A
     test_in_args.mcmc_steps = 10
     test_in_args.r_seed = 1
     rdmcl.full_run(test_in_args)
+
+    # shutil.copyfile(os.path.join(out_dir.path, "sqlite_db.sqlite"), "unit_test_db")
 
     for expected_dir in ["alignments", "mcmcmc", "psi_pred", "sim_scores"]:
         assert os.path.isdir(os.path.join(out_dir.path, expected_dir))

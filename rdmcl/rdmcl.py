@@ -1220,19 +1220,21 @@ class WorkerJob(object):
             workers = cursor.execute("SELECT * FROM heartbeat "
                                      "WHERE thread_type='worker' "
                                      "AND pulse>%s" % (time.time() - MAX_WORKER_WAIT - cursor.lag)).fetchone()
+        result = False
         if workers:
             self.running = True
             self.queue_job()
             while self.running:
                 db_result = self.pull_from_db()
                 if db_result:
-                    return db_result
+                    result = db_result
+                    break
 
-                ######################
                 if self.check_finished():
                     result = self.process_finished()
                     if result:
-                        return result
+                        result = result
+                        break
 
                 elif random() > 0.75:  # Occasionally check to make sure the job is still active
                     if not self.check_if_active():
@@ -1243,7 +1245,7 @@ class WorkerJob(object):
                 pause_time = 1 + (60 * ((cursor.lag + self.queue_size) / (60 + cursor.lag + self.queue_size)))
                 time.sleep(pause_time)
         self.heartbeat.end()
-        return False
+        return result
 
     def queue_job(self):
         with helpers.ExclusiveConnect(WORKER_DB) as cursor:
@@ -1256,26 +1258,25 @@ class WorkerJob(object):
                 if not os.path.isfile("%s/%s.seqs" % (WORKER_OUT, self.job_id)):
                     self.seqbuddy.write("%s/%s.seqs" % (WORKER_OUT, self.job_id), out_format="fasta")
                 cursor.execute("INSERT INTO queue "
-                               "(hash, psi_pred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend) "
-                               "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                               (self.job_id, PSIPREDDIR, self.heartbeat.id,
-                                ALIGNMETHOD, ALIGNPARAMS, " ".join([str(x) for x in TRIMAL]),
+                               "(hash, psi_pred_dir, align_m, align_p, trimal, gap_open, gap_extend) "
+                               "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                               (self.job_id, PSIPREDDIR, ALIGNMETHOD, ALIGNPARAMS, " ".join([str(x) for x in TRIMAL]),
                                 GAP_OPEN, GAP_EXTEND,))
 
-            cursor.execute("INSERT INTO waiting (hash, master_id) VALUES (?, ?)", (self.job_id, self.heartbeat.id,))
+            if not cursor.execute("SELECT * FROM waiting WHERE hash=? AND master_id=?",
+                                  (self.job_id, self.heartbeat.id,)).fetchone():
+                cursor.execute("INSERT INTO waiting (hash, master_id) VALUES (?, ?)", (self.job_id, self.heartbeat.id,))
         return
 
     def pull_from_db(self):
-        query = self.sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash=?", (self.job_id,))
+        # Remember that job_id and seq_id_hash are different! job_id includes details about alignment
+        query = self.sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash=?", (self.seq_id_hash,))
         if not query or len(query[0]) != 2:
             return False
         sim_scores, alignment = query[0]
         sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None)
         sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
         with helpers.ExclusiveConnect(WORKER_DB) as cursor:
-            waiting_check = cursor.execute("SELECT * FROM waiting WHERE hash=?", (self.job_id,)).fetchall()
-            if len(waiting_check) <= 1:
-                cursor.execute("DELETE FROM complete WHERE hash=?", (self.job_id,))
             cursor.execute("DELETE FROM waiting WHERE hash=? AND master_id=?", (self.job_id,
                                                                                 self.heartbeat.id,))
         self.heartbeat.end()
@@ -1287,45 +1288,24 @@ class WorkerJob(object):
             if not cursor.execute("SELECT * FROM complete WHERE hash=?", (self.job_id,)).fetchone():
                 return False
 
-            waiting_check = cursor.execute("SELECT * FROM waiting WHERE hash=?", (self.job_id,)).fetchall()
-            if len(waiting_check) <= 1:
-                cursor.execute("DELETE FROM complete WHERE hash=?", (self.job_id,))
-
-                # Need to remove these files, but don't want to set up race condition. rename for now.
-                for del_file in [".aln", ".graph", ".seqs"]:
-                    try:
-                        shutil.move(os.path.join(WORKER_OUT, "%s%s" % (self.job_id, del_file)),
-                                    os.path.join(WORKER_OUT, "%s_%s%s" % (self.heartbeat.id,
-                                                                          self.job_id, del_file)))
-                    except FileNotFoundError as err:
-                        print(err)
-
+            cursor.execute("DELETE FROM complete WHERE hash=?", (self.job_id,))
+            cursor.execute("INSERT INTO proc_comp (hash, master_id) VALUES (?, ?)",
+                           (self.job_id, self.heartbeat.id))
             cursor.execute("DELETE FROM waiting WHERE hash=? AND master_id=?", (self.job_id, self.heartbeat.id,))
         return True
 
     def process_finished(self):
-        location = os.path.join(WORKER_OUT, "%s_%s" % (self.heartbeat.id, self.job_id)) \
-            if os.path.isfile(os.path.join(WORKER_OUT, "%s_%s.aln" % (self.heartbeat.id, self.job_id))) \
-            else os.path.join(WORKER_OUT, self.job_id)
+        location = os.path.join(WORKER_OUT, self.job_id)
+        alignment = Alb.AlignBuddy("%s.aln" % location, in_format="fasta")
+        sim_scores = pd.read_csv("%s.graph" % location, index_col=False, header=None)
+        sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+        cluster2database(Cluster(self.seq_ids, sim_scores), self.sql_broker, alignment)
 
-        try:
-            alignment = Alb.AlignBuddy("%s.aln" % location, in_format="fasta")
-            sim_scores = pd.read_csv("%s.graph" % location, index_col=False, header=None)
-            sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
-            # Race condition here: a completed job may have been removed from the wrk_db, but still isn't in
-            # main db. This could cause a worker to repeat a job, but it shouldn't break anything
-            cluster2database(Cluster(self.seq_ids, sim_scores), self.sql_broker, alignment)
-
-            # Only remove the files if they have been sent to TempDir
-            if os.path.isfile(os.path.join(WORKER_OUT, "%s_%s.aln" % (self.heartbeat.id, self.job_id))):
-                for del_file in [".aln", ".graph", ".seqs"]:
-                    os.remove(os.path.join(WORKER_OUT, "%s_%s%s" % (self.heartbeat.id, self.job_id, del_file)))
-            self.heartbeat.end()
-            return sim_scores, alignment
-        except FileNotFoundError:
-            # The race condition hit us... Loop through again and pick up from the main database
-            print("Lost a file, looping through again")
-            return False
+        for del_file in [".aln", ".graph", ".seqs"]:
+            os.remove(os.path.join(WORKER_OUT, "%s%s" % (self.job_id, del_file)))
+        with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+            cursor.execute("DELETE FROM proc_comp WHERE hash=?", (self.job_id,))
+        return sim_scores, alignment
 
     def check_if_active(self):
         with helpers.ExclusiveConnect(HEARTBEAT_DB, priority=True) as hb_cursor:
@@ -1333,12 +1313,14 @@ class WorkerJob(object):
             worker_heartbeat_check = hb_cursor.execute("SELECT * FROM heartbeat "
                                                        "WHERE thread_type='worker' AND pulse>%s"
                                                        % min_pulse).fetchall()
+            master_heartbeat_check = hb_cursor.execute("SELECT * FROM heartbeat "
+                                                       "WHERE thread_type='master' AND pulse>%s"
+                                                       % min_pulse).fetchall()
 
         with helpers.ExclusiveConnect(WORKER_DB) as cursor:
             if not worker_heartbeat_check:
-                # No workers are still around. Time to kill everything and move on serially
-                cursor.execute("DELETE FROM queue WHERE master_id=?", (self.heartbeat.id,))
-                cursor.execute("DELETE FROM processing WHERE master_id=?", (self.heartbeat.id,))
+                # No workers are still around. Time to clean up and move on serially
+                cursor.execute("DELETE FROM queue WHERE hash=?", (self.job_id,))
                 cursor.execute("DELETE FROM waiting WHERE master_id=?", (self.heartbeat.id,))
                 try:
                     os.remove(os.path.join(WORKER_OUT, "%s.seqs" % self.job_id))
@@ -1350,6 +1332,7 @@ class WorkerJob(object):
             processing_check = cursor.execute("SELECT * FROM processing WHERE hash=?",
                                               (self.job_id,)).fetchone()
             complete_check = cursor.execute("SELECT * FROM complete WHERE hash=?", (self.job_id,)).fetchone()
+            comp_proc_check = cursor.execute("SELECT * FROM proc_comp WHERE hash=?", (self.job_id,)).fetchone()
 
         if processing_check:
             # Make sure the respective worker is still alive to finish processing this job
@@ -1358,34 +1341,31 @@ class WorkerJob(object):
             worker_id = processing_check[1]
             if worker_id not in workers:
                 # Doesn't look like it... Might as well queue it back up
-                print("Dead worker on %s, restarting job" % self.job_id)
-                self.restart_job()
+                self.queue_job()
 
-        elif queue_check or complete_check:
+        elif comp_proc_check:
+            # Make sure respective master is still alive to finish processing this job
+            masters = [(thread_id, pulse) for thread_id, thread_type, pulse in master_heartbeat_check]
+            masters = OrderedDict(masters)
+            master_id = comp_proc_check[1]
+            if master_id not in masters:
+                # Nope... Put it back into complete and pick it up on the next loop
+                with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+                    cursor.execute("INSERT INTO complete (hash) VALUES (?)", (self.job_id,))
+                    cursor.execute("DELETE FROM proc_comp WHERE hash=?", (self.job_id,))
+        elif queue_check:
+            pass
+
+        elif complete_check:
             pass
 
         else:
-            # Ummmm... Where'd the job go??? Queue it back up if it really seems to have vanished
-            print("%s vanished!" % self.job_id)
-            self.restart_job()
+            # Check again if job is in main DB, it is only deleted from work_db after it has been added to main DB
+            if not self.pull_from_db():
+                # Ummmm... Where'd the job go??? Queue it back up because it really seems to have vanished
+                print("%s vanished!" % self.job_id)
+                self.queue_job()
         return True
-
-    def restart_job(self):
-        if not os.path.isfile(os.path.join(WORKER_OUT, "%s.seqs" % self.job_id)):
-            self.seqbuddy.write(os.path.join(WORKER_OUT, "%s.seqs" % self.job_id), out_format="fasta")
-
-        with helpers.ExclusiveConnect(WORKER_DB) as cursor:
-            cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id, align_m, align_p,"
-                           " trimal, gap_open, gap_extend) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                           (self.job_id, PSIPREDDIR, self.heartbeat.id, ALIGNMETHOD, ALIGNPARAMS,
-                            " ".join([str(x) for x in TRIMAL]), GAP_OPEN, GAP_EXTEND,))
-            cursor.execute("DELETE FROM processing WHERE hash=?", (self.job_id,))
-            am_i_waiting_still = cursor.execute("SELECT * FROM waiting WHERE hash=? AND master_id=?",
-                                                (self.job_id, self.heartbeat.id,)).fetchone()
-            if not am_i_waiting_still:
-                cursor.execute("INSERT INTO waiting (hash, master_id) VALUES (?, ?)",
-                               (self.job_id, self.heartbeat.id,))
-        return
 
 # ################ END SCORING FUNCTIONS ################ #
 

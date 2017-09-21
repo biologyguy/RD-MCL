@@ -99,7 +99,7 @@ class Worker(object):
             # Fetch a job from the queue
             data = self.fetch_queue_job()
             if data:
-                full_name, psipred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend = data
+                full_name, psipred_dir, align_m, align_p, trimal, gap_open, gap_extend = data
                 subjob_num, num_subjobs, id_hash = [1, 1, full_name] if len(full_name.split("_")) == 1 \
                     else full_name.split("_")
                 subjob_num = int(subjob_num)
@@ -153,7 +153,7 @@ class Worker(object):
                 data_len, data = rdmcl.prepare_all_by_all(seqbuddy, psipred_dfs, self.cpus)
 
                 if num_subjobs == 1 and data_len > self.cpus * self.job_size_coff:
-                    data_len, data, subjob_num, num_subjobs = self.spawn_subjobs(id_hash, data, psipred_dfs, master_id,
+                    data_len, data, subjob_num, num_subjobs = self.spawn_subjobs(id_hash, data, psipred_dfs,
                                                                                  gap_open, gap_extend)
                 elif subjob_num > 1:
                     data_len, data = self.load_subjob(id_hash, subjob_num, num_subjobs, psipred_dfs)
@@ -167,7 +167,7 @@ class Worker(object):
                                           func_args=[alignment, gap_open, gap_extend, self.data_file])
 
                 self.printer.write("Processing final results")
-                self.process_final_results(id_hash, master_id, subjob_num, num_subjobs)
+                self.process_final_results(id_hash, subjob_num, num_subjobs)
 
                 self.running += time.time() - self.split_time
                 self.split_time = time.time()
@@ -204,65 +204,49 @@ class Worker(object):
     def clean_dead_threads(self):
         with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
             wait_time = time.time() - self.dead_thread_wait - cursor.lag
-            dead_masters = list(cursor.execute("SELECT thread_id FROM heartbeat WHERE thread_type='master' "
-                                               "AND pulse < ?", (wait_time,)).fetchall())
-            master_ids = cursor.execute("SELECT thread_id FROM heartbeat WHERE thread_type='master'").fetchall()
-
+            dead_masters = cursor.execute("SELECT thread_id FROM heartbeat WHERE thread_type='master' "
+                                          "AND pulse < ?", (wait_time,)).fetchall()
             if dead_masters:
-                dead_masters = [str(x[0]) for x in dead_masters]
-                dead_masters = ", ".join(dead_masters)
+                dead_masters = ", ".join([str(x[0]) for x in dead_masters])
                 cursor.execute("DELETE FROM heartbeat WHERE thread_id IN (%s)" % dead_masters)
             else:
                 dead_masters = ""
+
+            master_ids = cursor.execute("SELECT thread_id FROM heartbeat WHERE thread_type='master'").fetchall()
+            master_ids = "" if not master_ids else ", ".join([str(x[0]) for x in master_ids])
+
             dead_workers = cursor.execute("SELECT * FROM heartbeat WHERE thread_type='worker' "
                                           "AND pulse < ?", (wait_time,)).fetchall()
             if dead_workers:
-                dead_workers = [str(x[0]) for x in dead_workers]
-                dead_workers = ", ".join(dead_workers)
+                dead_workers = ", ".join([str(x[0]) for x in dead_workers])
                 cursor.execute("DELETE FROM heartbeat WHERE thread_id IN (%s)" % dead_workers)
 
         with helpers.ExclusiveConnect(self.wrkdb_path, max_lock=120) as cursor:
-            # Add orphaned entries to the list
-            if master_ids:
-                master_ids = ", ".join([str(x[0]) for x in master_ids])
-                orphans = []
-                orphans += list(cursor.execute("SELECT master_id FROM queue "
-                                               "WHERE master_id NOT IN (%s)" % master_ids).fetchall())
-                orphans += list(cursor.execute("SELECT master_id FROM complete "
-                                               "WHERE master_id NOT IN (%s)" % master_ids).fetchall())
-                orphans += list(cursor.execute("SELECT master_id FROM processing "
-                                               "WHERE master_id NOT IN (%s)" % master_ids).fetchall())
-                orphans += list(cursor.execute("SELECT master_id FROM waiting "
-                                               "WHERE master_id NOT IN (%s)" % master_ids).fetchall())
-
-                if orphans:
-                    orphans = "'%s'" % "', '".join([str(x[0]) for x in orphans])
-                    dead_masters += ", %s" % orphans if dead_masters else orphans
-
-            dead_hashes = []
-            if dead_masters:
-                dead_hashes += list(cursor.execute("SELECT hash FROM queue "
-                                                   "WHERE master_id IN (%s)" % dead_masters).fetchall())
-                dead_hashes += list(cursor.execute("SELECT hash FROM complete "
-                                                   "WHERE master_id IN (%s)" % dead_masters).fetchall())
-                dead_hashes += list(cursor.execute("SELECT hash FROM processing "
-                                                   "WHERE master_id IN (%s)" % dead_masters).fetchall())
-                dead_hashes += list(cursor.execute("SELECT hash FROM waiting "
-                                                   "WHERE master_id IN (%s)" % dead_masters).fetchall())
-
-                cursor.execute("DELETE FROM queue WHERE master_id IN (%s)" % dead_masters)
-                cursor.execute("DELETE FROM complete WHERE master_id IN (%s)" % dead_masters)
-                cursor.execute("DELETE FROM processing WHERE master_id IN (%s)" % dead_masters)
-                cursor.execute("DELETE FROM waiting WHERE master_id IN (%s)" % dead_masters)
-
-            # Also remove any jobs in the 'processing' table where the worker is dead
+            # Remove any jobs in the 'processing' table where the worker is dead
             if dead_workers:
-                dead_hashes += list(cursor.execute("SELECT hash FROM processing "
-                                                   "WHERE worker_id IN (%s)" % dead_workers).fetchall())
                 cursor.execute("DELETE FROM processing WHERE worker_id IN (%s)" % dead_workers)
+            # Add master ids from orphaned entries to the dead masters list
+            orphans = cursor.execute("SELECT master_id FROM waiting "
+                                     "WHERE master_id NOT IN (%s)" % master_ids).fetchall()
+            orphans += cursor.execute("SELECT master_id FROM proc_comp "
+                                      "WHERE master_id NOT IN (%s)" % master_ids).fetchall()
+            if orphans:
+                orphans = ", ".join([str(x[0]) for x in orphans])
+                dead_masters += ", %s" % orphans if dead_masters else orphans
 
+            cursor.execute("DELETE FROM waiting WHERE master_id IN (%s)" % dead_masters)
+            cursor.execute("DELETE FROM proc_comp WHERE master_id IN (%s)" % dead_masters)
+            waiting_hashes = cursor.execute("SELECT hash FROM waiting").fetchall()
+            waiting_hashes = [x[0] for x in waiting_hashes]
+            dead_hashes = []
+            all_hashes = cursor.execute("SELECT hash FROM queue").fetchall()
+            all_hashes += cursor.execute("SELECT hash FROM complete").fetchall()
+            all_hashes = [x[0] for x in all_hashes]
+            for next_hash in all_hashes:
+                if next_hash.split("_")[-1] not in waiting_hashes:
+                    dead_hashes.append(next_hash)
             if dead_hashes:
-                dead_hashes = set([x[0] for x in dead_hashes])
+                dead_hashes = set(dead_hashes)
                 for id_hash in dead_hashes:
                     for del_file in ["%s.%s" % (id_hash, x) for x in ["graph", "aln", "seqs"]]:
                         try:
@@ -270,6 +254,9 @@ class Worker(object):
                         except FileNotFoundError:
                             pass
                         shutil.rmtree(os.path.join(self.output, id_hash), ignore_errors=True)
+                dead_hashes = "'%s'" % "', '".join(dead_hashes)
+                cursor.execute("DELETE FROM queue WHERE hash IN (%s)" % dead_hashes)
+                cursor.execute("DELETE FROM complete WHERE hash IN (%s)" % dead_hashes)
         return
 
     def fetch_queue_job(self):
@@ -277,7 +264,7 @@ class Worker(object):
             with helpers.ExclusiveConnect(self.wrkdb_path, priority=True) as cursor:
                 data = cursor.execute('SELECT * FROM queue').fetchone()
                 if data:
-                    id_hash, psipred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend = data
+                    id_hash, psipred_dir, align_m, align_p, trimal, gap_open, gap_extend = data
                     if trimal:
                         trimal = trimal.split()
                         for indx, arg in enumerate(trimal):
@@ -290,9 +277,9 @@ class Worker(object):
                     if cursor.execute('SELECT worker_id FROM processing WHERE hash=?', (id_hash,)).fetchone():
                         continue
 
-                    cursor.execute("INSERT INTO processing (hash, worker_id, master_id)"
-                                   " VALUES (?, ?, ?)", (id_hash, self.heartbeat.id, master_id,))
-                    data = [id_hash, psipred_dir, master_id, align_m, align_p, trimal, gap_open, gap_extend]
+                    cursor.execute("INSERT INTO processing (hash, worker_id)"
+                                   " VALUES (?, ?)", (id_hash, self.heartbeat.id,))
+                    data = [id_hash, psipred_dir, align_m, align_p, trimal, gap_open, gap_extend]
                 break
         return data
 
@@ -306,13 +293,13 @@ class Worker(object):
             psipred_dfs[rec.id] = rdmcl.read_ss2_file(psipred_file)
         return psipred_dfs
 
-    def process_final_results(self, id_hash, master_id, subjob_num, num_subjobs):
+    def process_final_results(self, id_hash, subjob_num, num_subjobs):
         with open(self.data_file, "r") as ifile:
             sim_scores = pd.read_csv(ifile, index_col=False)
 
         if num_subjobs > 1:
             # If all subjobs are not complete, an empty df is returned
-            sim_scores = self.process_subjob(id_hash, sim_scores, subjob_num, num_subjobs, master_id)
+            sim_scores = self.process_subjob(id_hash, sim_scores, subjob_num, num_subjobs)
 
         if not sim_scores.empty:
             sim_scores = rdmcl.set_final_sim_scores(sim_scores)
@@ -327,8 +314,8 @@ class Worker(object):
                 processing = cursor.execute("SELECT worker_id FROM processing WHERE hash=?",
                                             (id_hash,)).fetchall()
                 if waiting and processing:
-                    cursor.execute("INSERT INTO complete (hash, worker_id, master_id) "
-                                   "VALUES (?, ?, ?)", (id_hash, self.heartbeat.id, master_id,))
+                    cursor.execute("INSERT INTO complete (hash) "
+                                   "VALUES (?)", (id_hash,))
                 elif not waiting:
                     for del_file in ["%s.%s" % (id_hash, x) for x in ["graph", "aln", "seqs"]]:
                         try:
@@ -342,7 +329,7 @@ class Worker(object):
                 shutil.rmtree(os.path.join(self.output, id_hash))
         return
 
-    def spawn_subjobs(self, id_hash, data, psipred_dfs, master_id, gap_open, gap_extend):
+    def spawn_subjobs(self, id_hash, data, psipred_dfs, gap_open, gap_extend):
         subjob_out_dir = os.path.join(self.output, id_hash)
         os.makedirs(subjob_out_dir, exist_ok=True)
         # Flatten the data jobs list back down
@@ -366,12 +353,12 @@ class Worker(object):
         with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
             for indx, subjob in enumerate(data[1:]):
                 # NOTE: the 'indx + 2' is necessary to push index to '1' start and account for the job already removed
-                cursor.execute("INSERT INTO queue (hash, psi_pred_dir, master_id, gap_open, gap_extend) "
-                               "VALUES (?, ?, ?, ?, ?)", ("%s_%s_%s" % (indx + 2, num_subjobs, id_hash),
-                                                          subjob_out_dir, master_id, gap_open, gap_extend,))
+                cursor.execute("INSERT INTO queue (hash, psi_pred_dir, gap_open, gap_extend) "
+                               "VALUES (?, ?, ?, ?)", ("%s_%s_%s" % (indx + 2, num_subjobs, id_hash),
+                                                       subjob_out_dir, gap_open, gap_extend,))
 
-            cursor.execute("INSERT INTO processing (hash, worker_id, master_id) VALUES (?, ?, ?)",
-                           ("1_%s_%s" % (num_subjobs, id_hash), self.heartbeat.id, master_id,))
+            cursor.execute("INSERT INTO processing (hash, worker_id) VALUES (?, ?)",
+                           ("1_%s_%s" % (num_subjobs, id_hash), self.heartbeat.id,))
 
         n = int(rdmcl.ceil(len(data[0]) / self.cpus))
         data = [data[0][i:i + n] for i in range(0, len(data[0]), n)]
@@ -391,11 +378,10 @@ class Worker(object):
         data = [data[i:i + n] for i in range(0, data_len, n)]
         return data_len, data
 
-    def process_subjob(self, id_hash, sim_scores, subjob_num, num_subjobs, master_id):
+    def process_subjob(self, id_hash, sim_scores, subjob_num, num_subjobs):
+        output = pd.DataFrame()
         subjob_out_dir = os.path.join(self.output, id_hash)
-        if not os.path.isdir(subjob_out_dir):
-            return pd.DataFrame()
-        else:
+        if os.path.isdir(subjob_out_dir):
             full_id_hash = "%s_%s_%s" % (subjob_num, num_subjobs, id_hash)
             sim_scores.to_csv(os.path.join(subjob_out_dir, "%s_of_%s.sim_df" % (subjob_num, num_subjobs)), index=False)
 
@@ -407,22 +393,19 @@ class Worker(object):
                 complete = cursor.execute("SELECT hash FROM complete WHERE hash=?", (full_id_hash,)).fetchall()
 
                 if waiting and processing and not complete:
-                    cursor.execute("INSERT INTO complete (hash, worker_id, master_id) "
-                                   "VALUES (?, ?, ?)", (full_id_hash, self.heartbeat.id, master_id,))
+                    cursor.execute("INSERT INTO complete (hash) "
+                                   "VALUES (?)", (full_id_hash,))
 
-                cursor.execute("DELETE FROM processing WHERE hash=? AND worker_id=?",
-                               (full_id_hash, self.heartbeat.id,))
+                cursor.execute("DELETE FROM processing WHERE hash=?", (full_id_hash,))
                 complete_count = cursor.execute("SELECT COUNT(*) FROM complete "
                                                 "WHERE hash LIKE '%%_%s'" % id_hash).fetchone()[0]
 
-            sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi"])
             if complete_count == num_subjobs:
+                output = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi"])
                 for indx in range(1, num_subjobs + 1):
                     next_df = os.path.join(subjob_out_dir, "%s_of_%s.sim_df" % (indx, num_subjobs))
-                    sim_scores = sim_scores.append(pd.read_csv(next_df, index_col=False))
-            else:
-                return pd.DataFrame()
-        return sim_scores
+                    output = output.append(pd.read_csv(next_df, index_col=False))
+        return output
 
     def terminate(self, message):
         self.printer.write("Terminating Worker_%s because of %s." % (self.heartbeat.id, message))
@@ -482,10 +465,11 @@ def main():
 
     connection = sqlite3.connect(workdb)
     cur = connection.cursor()
-    for sql in ['CREATE TABLE queue (hash TEXT PRIMARY KEY, psi_pred_dir TEXT, master_id INTEGER, '
+    for sql in ['CREATE TABLE queue (hash TEXT PRIMARY KEY, psi_pred_dir TEXT, '
                 'align_m TEXT, align_p TEXT, trimal TEXT, gap_open FLOAT, gap_extend FLOAT)',
-                'CREATE TABLE processing (hash TEXT PRIMARY KEY, worker_id INTEGER, master_id INTEGER)',
-                'CREATE TABLE complete   (hash TEXT PRIMARY KEY, worker_id INTEGER, master_id INTEGER)',
+                'CREATE TABLE processing (hash TEXT PRIMARY KEY, worker_id INTEGER)',
+                'CREATE TABLE complete   (hash TEXT PRIMARY KEY)',
+                'CREATE TABLE proc_comp   (hash TEXT PRIMARY KEY, master_id INTEGER)',
                 'CREATE TABLE waiting (hash TEXT, master_id INTEGER)']:
         try:
             cur.execute(sql)
