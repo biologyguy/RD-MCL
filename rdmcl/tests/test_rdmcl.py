@@ -1237,7 +1237,6 @@ def test_workerjob_init(hf, monkeypatch):
     assert worker.sql_broker == sql_broker
     assert worker.heartbeat.hbdb_path == rdmcl.HEARTBEAT_DB
     assert worker.heartbeat.pulse_rate == rdmcl.MASTER_PULSE
-    assert worker.queue_size == 0
 
 
 def test_workerjob_run(hf, monkeypatch, capsys):
@@ -1390,9 +1389,7 @@ def test_workerjob_check_finished(hf, monkeypatch):
     work_con.commit()
 
     # Not finished
-    assert worker.queue_size == 0
     assert not worker.check_finished()
-    assert worker.queue_size == 1
     assert work_cursor.execute("SELECT  COUNT(*) FROM waiting").fetchone()[0] == 2
 
     # Other jobs waiting
@@ -1521,30 +1518,6 @@ def test_workerjob_check_if_active(hf, monkeypatch, capsys):
     assert worker.check_if_active()
     assert work_cursor.execute("SELECT * FROM complete WHERE hash='a2aaca4f79bd56fbf8debfdc281660fd'").fetchone()
     assert not work_cursor.execute("SELECT * FROM proc_comp WHERE hash='a2aaca4f79bd56fbf8debfdc281660fd'").fetchone()
-
-'''
-def test_workerjob_restart_job(hf, monkeypatch, capsys):
-    monkeypatch.setattr(rdmcl, "HeartBeat", MockHeartBeat)
-    temp_dir = br.TempDir()
-
-    seqbuddy = hf.get_data("cteno_panxs")
-    worker = rdmcl.WorkerJob(seqbuddy, "sql_broker")
-    worker.heartbeat.id = 1
-
-    work_db = temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
-    work_con = sqlite3.connect(work_db)
-    work_cursor = work_con.cursor()
-    rdmcl.WORKER_DB = work_db
-    rdmcl.WORKER_OUT = temp_dir.path
-
-    work_cursor.execute("INSERT INTO processing (hash) VALUES ('a2aaca4f79bd56fbf8debfdc281660fd')")
-    work_con.commit()
-    assert not worker.restart_job()
-    assert not work_cursor.execute("SELECT * FROM processing WHERE hash='a2aaca4f79bd56fbf8debfdc281660fd'").fetchone()
-    assert work_cursor.execute("SELECT * FROM queue WHERE hash='a2aaca4f79bd56fbf8debfdc281660fd'").fetchone()
-    assert work_cursor.execute("SELECT * FROM waiting WHERE hash='a2aaca4f79bd56fbf8debfdc281660fd'").fetchone()
-    assert os.path.isfile(os.path.join(temp_dir.path, 'a2aaca4f79bd56fbf8debfdc281660fd.seqs'))
-'''
 
 
 # #########  MCL stuff  ########## #

@@ -257,6 +257,33 @@ def test_start_worker_deal_with_subjobs(hf, capsys, monkeypatch):
     assert "Terminating Worker_3 because of unit test kill" in out, print(out)
 
 
+def test_worker_idle_workers(hf):
+    temp_dir = br.TempDir()
+    temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
+    temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
+    worker = launch_worker.Worker(temp_dir.path)
+
+    hb_con = sqlite3.connect(os.path.join(temp_dir.path, "heartbeat_db.sqlite"))
+    hb_cursor = hb_con.cursor()
+    hb_cursor.execute("INSERT INTO heartbeat (thread_type, pulse) VALUES ('worker', %s)" % round(time.time()))
+    hb_cursor.execute("INSERT INTO heartbeat (thread_type, pulse) VALUES ('worker', %s)" % round(time.time()))
+    hb_cursor.execute("INSERT INTO heartbeat (thread_type, pulse) VALUES ('worker', %s)" % round(time.time()))
+    hb_cursor.execute("INSERT INTO heartbeat (thread_type, pulse) VALUES ('worker', %s)" % round(time.time()))
+    hb_cursor.execute("INSERT INTO heartbeat (thread_type, pulse) VALUES ('worker', %s)" % round(time.time()))
+    hb_con.commit()
+
+    work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
+    work_cursor = work_con.cursor()
+    work_cursor.execute("INSERT INTO processing (hash, worker_id) VALUES ('foo', 1)")
+    work_cursor.execute("INSERT INTO processing (hash, worker_id) VALUES ('1_2_foo', 1)")
+    work_cursor.execute("INSERT INTO processing (hash, worker_id) VALUES ('2_2_foo', 2)")
+    work_cursor.execute("INSERT INTO processing (hash, worker_id) VALUES ('bar', 3)")
+    work_cursor.execute("INSERT INTO processing (hash, worker_id) VALUES ('baz', 4)")
+    work_con.commit()
+
+    assert worker.idle_workers() == 1
+
+
 def test_worker_check_master(hf, capsys):
     temp_dir = br.TempDir()
     temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)

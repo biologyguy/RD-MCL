@@ -926,9 +926,12 @@ class HeartBeat(object):
 
                 if split_time < time.time() - self.pulse_rate:
                     with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+                        num_threads = cursor.execute("SELECT COUNT(*) FROM heartbeat").fetchone()[0]
+                        activity_modifier = num_threads * 0.1
                         cursor.execute("INSERT or REPLACE INTO heartbeat (thread_id, thread_type, pulse) VALUES"
-                                       " (?, ?, ?)", (self.id, self.thread_type, round(time.time() + cursor.lag),))
-                    split_time = time.time()
+                                       " (?, ?, ?)", (self.id, self.thread_type,
+                                                      round(time.time() + cursor.lag + activity_modifier),))
+                    split_time = time.time() + activity_modifier
                 time.sleep(random())
         except KeyboardInterrupt:
             open(check_file_path, "w").close()
@@ -1211,7 +1214,6 @@ class WorkerJob(object):
         self.job_id = helpers.md5_hash(job_id)
         self.sql_broker = sql_broker
         self.heartbeat = HeartBeat(HEARTBEAT_DB, MASTER_PULSE)
-        self.queue_size = 0
         self.running = False
 
     def run(self):
@@ -1240,9 +1242,10 @@ class WorkerJob(object):
                     if not self.check_if_active():
                         break
 
-                # Pause for 1 sec up to one minutes, depending on queue size and lag
-                # This is to prevent spamming database with requests
-                pause_time = 1 + (60 * ((cursor.lag + self.queue_size) / (60 + cursor.lag + self.queue_size)))
+                with helpers.ExclusiveConnect(HEARTBEAT_DB) as cursor:
+                    active_threads = cursor.execute("SELECT COUNT(*) FROM heartbeat "
+                                                    "WHERE thread_type='master'").fetchone()[0]
+                pause_time = active_threads * 0.5
                 time.sleep(pause_time)
         self.heartbeat.end()
         return result
@@ -1284,7 +1287,6 @@ class WorkerJob(object):
 
     def check_finished(self):
         with helpers.ExclusiveConnect(WORKER_DB) as cursor:
-            self.queue_size = cursor.execute("SELECT COUNT(*) FROM queue").fetchone()[0]
             if not cursor.execute("SELECT * FROM complete WHERE hash=?", (self.job_id,)).fetchone():
                 return False
 

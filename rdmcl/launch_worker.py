@@ -106,7 +106,7 @@ class Worker(object):
                 num_subjobs = int(num_subjobs)
                 self.printer.write("Running %s" % full_name)
             else:
-                time.sleep(random() * 3)  # Pause for some part of three seconds
+                time.sleep(random() * self.idle_workers())  # Pause for some time relative to num idle workers
                 idle_countdown -= 1
                 self.idle += time.time() - self.split_time
                 self.split_time = time.time()
@@ -185,6 +185,23 @@ class Worker(object):
             os.remove(self.data_file)
 
         self.terminate("deleted check file")
+
+    def idle_workers(self):
+        # Calculate how many workers are just sitting around
+        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+            workers = cursor.execute("SELECT COUNT(*) FROM heartbeat WHERE thread_type='worker'").fetchone()[0]
+
+        with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+            jobs = cursor.execute("SELECT * FROM processing WHERE hash NOT LIKE '%%^_%%' ESCAPE '^'").fetchall()
+            subjobs = cursor.execute("SELECT * FROM processing WHERE hash LIKE '%%^_%%' ESCAPE '^'").fetchall()
+
+        jobs = [x[0] for x in jobs]
+        subjobs = [x[0] for x in subjobs]
+        active_jobs = len(subjobs)
+        subjobs = set([x.split("_")[-1] for x in subjobs])
+        for job in jobs:
+            active_jobs += 1 if job not in subjobs else 0
+        return workers - active_jobs
 
     def check_masters(self, idle):
         if time.time() - self.last_heartbeat_from_master > self.max_wait:
