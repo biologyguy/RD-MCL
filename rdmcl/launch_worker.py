@@ -201,7 +201,7 @@ class Worker(object):
         subjobs = set([x.split("_")[-1] for x in subjobs])
         for job in jobs:
             active_jobs += 1 if job not in subjobs else 0
-        return workers - active_jobs
+        return workers - active_jobs if active_jobs < workers else 0  # This can happen if a worker died
 
     def check_masters(self, idle):
         if time.time() - self.last_heartbeat_from_master > self.max_wait:
