@@ -257,6 +257,7 @@ class Worker(object):
             waiting_hashes = [x[0] for x in waiting_hashes]
             dead_hashes = []
             all_hashes = cursor.execute("SELECT hash FROM queue").fetchall()
+            all_hashes += cursor.execute("SELECT hash FROM processing").fetchall()
             all_hashes += cursor.execute("SELECT hash FROM complete").fetchall()
             all_hashes = [x[0] for x in all_hashes]
             for next_hash in all_hashes:
