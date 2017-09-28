@@ -730,6 +730,9 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         alignment.write(os.path.join(outdir, "alignments", master_cluster.name()))
         master_cluster.sim_scores.to_csv(os.path.join(outdir, "sim_scores", "%s.scores" % master_cluster.name()),
                                          header=None, index=False, sep="\t")
+        alignment = Alb.generate_hmm(alignment)
+        with open(os.path.join(outdir, "hmm", master_cluster.name()), "w") as _ofile:
+            _ofile.write(alignment.alignments[0].hmm)
         update = len(master_cluster.seq_ids) if not master_cluster.subgroup_counter else 0
         progress.update("placed", update)
         return
@@ -1495,38 +1498,73 @@ def write_mcl_clusters(clusters, path):
 
 # #########  Orphan placement  ########## #
 class Orphans(object):
-    def __init__(self, seqbuddy, clusters, sql_broker, psi_pred_ss2, quiet=False):
+    def __init__(self, seqbuddy, clusters, sql_broker, psi_pred_ss2, outdir, min_clust_size=4, quiet=False):
         """
         Organizes all of the orphan prediction/folding logic into a class
         :param seqbuddy: This should include all of the sequences in the entire population being tests
         :param clusters: List of all cluster objects the sequences have currently been grouped into
         :param sql_broker: Open SQLiteBroker object
         :param psi_pred_ss2: OrderedDict of all PSI Pred graph paths (seq_id: df)
+        :param outdir: Primary location of RD-MCL run
+        :param min_clust_size: Specify the smallest group that can be classified as an actual 'cluster'
         :param quiet: Suppress any terminal output
         """
         self.seqbuddy = seqbuddy
         self.clusters = clusters
         self.sql_broker = sql_broker
         self.psi_pred_ss2 = psi_pred_ss2
+        self.outdir = outdir
+        self.min_clust_size = min_clust_size
+        self.quiet = quiet
         self.num_orphans = 0
         self.small_clusters = OrderedDict()
         self.large_clusters = OrderedDict()
         self._separate_large_small()
-        self.printer = br.DynamicPrint(quiet=quiet)
+        self.printer = br.DynamicPrint(quiet=self.quiet)
         self.tmp_file = br.TempFile()
+        self.tmp_dir = br.TempDir()
+        self.tmp_dir.subfile("seqs.fa")
+        self.seqbuddy.write(self.tmp_dir.subfiles[0], "fasta")
 
-        # Create a null model from all within cluster scores from the large clusters; used for placement tests later
-        self.lrg_cluster_sim_scores = pd.Series()
-        for clust_name, clust in self.large_clusters.items():
-            self.lrg_cluster_sim_scores = self.lrg_cluster_sim_scores.append(clust.sim_scores.raw_score,
-                                                                             ignore_index=True)
+        # Create HMM forward-score dataframe from initial input --> p(seq|hmm)
+        self.hmm_fwd_scores = pd.DataFrame(columns=["group", "rec_id", "fwd_raw"])
+        for group_name in self.large_clusters:
+            hmm_path = os.path.join(self.outdir, "hmm", group_name)
+            fwdback_output = Popen("generic_fwdback_example %s %s" % (hmm_path, self.tmp_dir.subfiles[0]),
+                                   shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
+            fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
+                                        header=None, comment="#", index_col=False)
+            fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
+            fwd_scores_df["group"] = group_name
+            self.hmm_fwd_scores = self.hmm_fwd_scores.append(fwd_scores_df.loc[:, ["group", "rec_id", "fwd_raw"]],
+                                                             ignore_index=True)
+
+        # Calculate all-by-all matrix of correlation coefficients on fwd scores among all sequences
+        self.rsquare_vals_df = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
+        sub_recs = list(seqbuddy.records[1:])
+        for rec1 in seqbuddy.records:
+            for rec2 in sub_recs:
+                fwd1 = self.hmm_fwd_scores.loc[self.hmm_fwd_scores.rec_id == rec1.id].sort_values(by="group").fwd_raw
+                fwd2 = self.hmm_fwd_scores.loc[self.hmm_fwd_scores.rec_id == rec2.id].sort_values(by="group").fwd_raw
+                corr = scipy.stats.pearsonr(fwd1, fwd2)
+                comparison = pd.DataFrame(data=[[rec1.id, rec2.id, corr[0]**2]],
+                                          columns=["rec_id1", "rec_id2", "r_square"])
+                self.rsquare_vals_df = self.rsquare_vals_df.append(comparison, ignore_index=True)
+            sub_recs = sub_recs[1:]
+
+        self.lrg_cluster_rsquares = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square", "group"])
+        for group_name, clust in self.large_clusters.items():
+            df = self.rsquare_vals_df.loc[(self.rsquare_vals_df["rec_id1"].isin(clust.seq_ids)) &
+                                          (self.rsquare_vals_df["rec_id2"].isin(clust.seq_ids))].copy()
+            df["group"] = group_name
+            self.lrg_cluster_rsquares = self.lrg_cluster_rsquares.append(df)
 
     def _separate_large_small(self):
         for cluster in self.clusters:
-            if len(cluster.seq_ids) > 2:
-                self.large_clusters[cluster.name()] = cluster
-            else:
+            if len(cluster.seq_ids) < self.min_clust_size:
                 self.small_clusters[cluster.name()] = cluster
+            else:
+                self.large_clusters[cluster.name()] = cluster
 
     def mc_temp_merge_clusters(self, args):
         clust1, clust2 = args
@@ -1547,7 +1585,91 @@ class Orphans(object):
     def _check_orphan(self, small_cluster):
         # First prepare the data for each large cluster so they can be compared
         log_output = "%s\n" % small_cluster.seq_ids
-        log_output += "Min sim score needed: %s\n" % self.lrg_cluster_sim_scores.min()
+        log_output += "Min sim score needed: %s\n" % self.lrg_cluster_rsquares.r_square.min()
+        data_dict = OrderedDict()
+        for group_name, large_cluster in self.large_clusters.items():
+            log_output += "\t%s\n" % group_name
+            log_output += "\t%s\n" % large_cluster.seq_ids
+
+            lrg2lrg_data = self.rsquare_vals_df.loc[(self.rsquare_vals_df["rec_id1"].isin(large_cluster.seq_ids))
+                                                    & (self.rsquare_vals_df["rec_id2"].isin(large_cluster.seq_ids))]
+
+            log_output += "\tAmong large:\t%s - %s\n" % (round(lrg2lrg_data.r_square.min(), 4),
+                                                         round(lrg2lrg_data.r_square.max(), 4))
+
+            # Pull out the similarity scores between just the large and small cluster sequences
+            lrg2sml_data = self.rsquare_vals_df.loc[(self.rsquare_vals_df["rec_id1"].isin(small_cluster.seq_ids))
+                                                    | (self.rsquare_vals_df["rec_id2"].isin(small_cluster.seq_ids))]
+
+            lrg2sml_data = lrg2sml_data.loc[(lrg2sml_data['rec_id1'].isin(large_cluster.seq_ids))
+                                            | (lrg2sml_data['rec_id2'].isin(large_cluster.seq_ids))]
+
+            log_output += "\tLarge 2 small:\t%s - %s\n\n" % (round(lrg2sml_data.r_square.min(), 4),
+                                                             round(lrg2sml_data.r_square.max(), 4))
+
+            # Confirm that the orphans are sufficiently similar to large group to warrant consideration by ensuring
+            # that at least one similarity score is greater than the lowest score with all large groups.
+            # Also, convert group_data to a numpy array so sm.stats can read it
+            if lrg2sml_data.r_square.max() >= self.lrg_cluster_rsquares.r_square.min():
+                data_dict[group_name] = (True, np.array(lrg2sml_data.r_square))
+            else:
+                data_dict[group_name] = (False, np.array(lrg2sml_data.r_square))
+        # We only need to test the large cluster with the highest average similarity score, so find that cluster.
+        averages = pd.Series()
+        df = pd.DataFrame(columns=['observations', 'grouplabel'])
+        for group_name, group in data_dict.items():
+            averages = averages.append(pd.Series(np.mean(group[1]), index=[group_name]))
+            tmp_df = pd.DataFrame(group[1], columns=['observations'])
+            tmp_df['grouplabel'] = group_name
+            df = df.append(tmp_df)
+        max_ave_name = averages.argmax()
+
+        # Confirm that the largest cluster has sufficient support
+        if not data_dict[max_ave_name][0]:
+            log_output += "No Matches: Best cluster (%s) insufficient support\n###########################\n\n"\
+                          % max_ave_name
+            with LOCK:
+                self.tmp_file.write(log_output)
+            return False
+
+        groupsunique, groupintlab = np.unique(df.grouplabel, return_inverse=True)
+        if len(groupsunique) < 2:
+            # The gene can be grouped with the max_ave cluster because it's the only large cluster available
+            log_output += "\n%s added to %s\n###########################\n\n" % (small_cluster.seq_ids, max_ave_name)
+            mean_diff = abs(np.mean(data_dict[max_ave_name][1]) - np.mean(self.lrg_cluster_rsquares.r_square))
+            return max_ave_name, mean_diff
+
+        # Run pairwise Tukey HSD and parse the results
+        # The max_ave cluster must be significantly different from all other clusters
+        result = sm.stats.multicomp.pairwise_tukeyhsd(df.observations, df.grouplabel)
+
+        success = True
+        for line in str(result).split("\n")[4:-1]:
+            line = re.sub("^ *", "", line.strip())
+            line = re.sub(" +", "\t", line)
+            line = line.split("\t")  # Each line --> ['group1', 'group2', 'meandiff', 'lower', 'upper', 'reject]
+            if max_ave_name in line:
+                log_output += "%s\n" % "\t".join(line)
+                if 'False' in line:
+                    success = False  # Insufficient support to group the gene with max_ave group
+        if success:
+            # The gene can be grouped with the max_ave cluster
+            # Return the group name and average meandiff (allow calling code to actually do the grouping)
+            log_output += "\n%s added to %s\n###########################\n\n" % (small_cluster.seq_ids, max_ave_name)
+            mean_diff = abs(np.mean(data_dict[max_ave_name][1]) - np.mean(self.lrg_cluster_rsquares.r_square))
+            with LOCK:
+                self.tmp_file.write(log_output)
+            return max_ave_name, mean_diff
+
+        log_output += "Best group (%s) fails Tukey HSD\n###########################\n\n" % max_ave_name
+        with LOCK:
+            self.tmp_file.write(log_output)
+        return False
+
+    def _check_orphan2(self, small_cluster):
+        # First prepare the data for each large cluster so they can be compared
+        log_output = "%s\n" % small_cluster.seq_ids
+        log_output += "Min sim score needed: %s\n" % self.lrg_cluster_rsquares.min()
         data_dict = OrderedDict()
         for group_name, large_cluster in self.large_clusters.items():
             log_output += "\t%s\n" % group_name
@@ -1568,7 +1690,7 @@ class Orphans(object):
             # Confirm that the orphans are sufficiently similar to large group to warrant consideration by ensuring
             # that at least one similarity score is greater than the lowest score with all large groups.
             # Also, convert group_data to a numpy array so sm.stats can read it
-            if lrg2sml_group_data.raw_score.max() >= self.lrg_cluster_sim_scores.min():
+            if lrg2sml_group_data.raw_score.max() >= self.lrg_cluster_rsquares.min():
                 data_dict[group_name] = (True, np.array(lrg2sml_group_data.raw_score))
             else:
                 data_dict[group_name] = (False, np.array(lrg2sml_group_data.raw_score))
@@ -1594,7 +1716,7 @@ class Orphans(object):
         if len(groupsunique) < 2:
             # The gene can be grouped with the max_ave cluster because it's the only large cluster available
             log_output += "\n%s added to %s\n###########################\n\n" % (small_cluster.seq_ids, max_ave_name)
-            mean_diff = abs(np.mean(data_dict[max_ave_name][1]) - np.mean(self.lrg_cluster_sim_scores))
+            mean_diff = abs(np.mean(data_dict[max_ave_name][1]) - np.mean(self.lrg_cluster_rsquares))
             return max_ave_name, mean_diff
 
         # Run pairwise Tukey HSD and parse the results
@@ -1614,7 +1736,7 @@ class Orphans(object):
             # The gene can be grouped with the max_ave cluster
             # Return the group name and average meandiff (allow calling code to actually do the grouping)
             log_output += "\n%s added to %s\n###########################\n\n" % (small_cluster.seq_ids, max_ave_name)
-            mean_diff = abs(np.mean(data_dict[max_ave_name][1]) - np.mean(self.lrg_cluster_sim_scores))
+            mean_diff = abs(np.mean(data_dict[max_ave_name][1]) - np.mean(self.lrg_cluster_rsquares))
             with LOCK:
                 self.tmp_file.write(log_output)
             return max_ave_name, mean_diff
@@ -1634,7 +1756,58 @@ class Orphans(object):
                     ofile.write("%s\t%s\t%s\n" % (small_cluster.name(), large_name, mean_diff))
         return
 
-    def place_orphans(self, multi_core=True):
+    def place_orphans(self):
+        if not self.small_clusters or not self.large_clusters:
+            return
+        best_cluster = OrderedDict([("small_name", None), ("large_name", None), ("meandiff", 0)])
+        fostered_orphans = 0
+        starting_orphans = sum([len(sm_clust.seq_ids) for group, sm_clust in self.small_clusters.items()])
+
+        # Loop through repeatedly, adding a single small cluster at a time and updating the large clusters on each loop
+        while True and self.large_clusters:
+            remaining_orphans = sum([len(sm_clust.seq_ids) for group, sm_clust in self.small_clusters.items()])
+            self.printer.write("%s of %s orphans remain" % (remaining_orphans, starting_orphans))
+            small_clusters = [clust for clust_name, clust in self.small_clusters.items()]
+
+            for clust in small_clusters:
+                foster_score = self._check_orphan(clust)
+                if foster_score:
+                    large_name, mean_diff = foster_score
+                    if mean_diff > best_cluster["meandiff"]:
+                        best_cluster = OrderedDict([("small_name", clust.name()), ("large_name", large_name),
+                                                    ("meandiff", mean_diff)])
+
+            if best_cluster["small_name"]:
+                small_name = best_cluster["small_name"]
+                large_name = best_cluster["large_name"]
+                large_cluster = self.large_clusters[large_name]
+                small_cluster = self.small_clusters[small_name]
+                large_cluster.reset_seq_ids(small_cluster.seq_ids + large_cluster.seq_ids)
+
+                seqs = Sb.pull_recs(Sb.make_copy(self.seqbuddy), "^%s$" % "$|^".join(large_cluster.seq_ids))
+                sim_scores, alb_obj = retrieve_all_by_all_scores(seqs, self.psi_pred_ss2,
+                                                                 self.sql_broker, quiet=True)
+
+                large_cluster.sim_scores = sim_scores
+                for taxon, seq_ids in small_cluster.taxa.items():
+                    large_cluster.taxa.setdefault(taxon, [])
+                    large_cluster.taxa[taxon] += seq_ids
+                    for seq_id, paralogs in small_cluster.collapsed_genes.items():
+                        large_cluster.collapsed_genes[seq_id] = paralogs
+                fostered_orphans += len(small_cluster.seq_ids)
+                del self.small_clusters[small_name]
+                del small_cluster
+                best_cluster = OrderedDict([("small_name", None), ("large_name", None), ("meandiff", 0)])
+            else:
+                break
+
+        self.printer.clear()
+        self.clusters = [cluster for group, cluster in self.small_clusters.items()] + \
+                        [cluster for group, cluster in self.large_clusters.items()]
+
+        return
+
+    def place_orphans2(self, multi_core=True):
         if not self.small_clusters:
             return
         best_cluster = OrderedDict([("small_name", None), ("large_name", None), ("meandiff", 0)])
@@ -1972,7 +2145,8 @@ Continue? y/[n] """ % len(sequences)
                         "        All cached resources will be reused.")
 
     # Make sure all the necessary directories are present and emptied of old run files
-    for _path in [os.path.join(in_args.outdir, x) for x in ["", "alignments", "mcmcmc", "sim_scores", "psi_pred"]]:
+    for _path in [os.path.join(in_args.outdir, x) for x in ["", "alignments", "mcmcmc",
+                                                            "sim_scores", "psi_pred", "hmm"]]:
         if not os.path.isdir(_path):
             logging.info("mkdir %s" % _path)
             os.makedirs(_path)
@@ -2163,12 +2337,16 @@ Continue? y/[n] """ % len(sequences)
    #################################
 
 """)
-            orphans = Orphans(seqbuddy=sequences, clusters=final_clusters,
-                              sql_broker=broker, psi_pred_ss2=psi_pred_files)
+            orphans = Orphans(seqbuddy=sequences, clusters=final_clusters, sql_broker=broker,
+                              psi_pred_ss2=psi_pred_files, outdir=in_args.outdir)
             orphans.place_orphans()
             final_clusters = orphans.clusters
             with open(os.path.join(in_args.outdir, "orphans.log"), "a") as orphan_log_file:
                 orphan_log_file.write(orphans.tmp_file.read())
+            with open(os.path.join(in_args.outdir, "hmm", "pearsonr.csv"), "w") as pearsonr:
+                orphans.rsquare_vals_df.to_csv(pearsonr)
+            with open(os.path.join(in_args.outdir, "hmm", "fwd.csv"), "w") as fwd_file:
+                orphans.hmm_fwd_scores.to_csv(fwd_file)
 
         if in_args.suppress_iteration:
             break
