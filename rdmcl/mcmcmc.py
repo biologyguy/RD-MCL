@@ -10,13 +10,14 @@ import os
 import sys
 import random
 import string
-import numpy as np
-from scipy.stats import norm, gaussian_kde
-from buddysuite.buddy_resources import DynamicPrint, TempDir, usable_cpu_count
+from scipy.stats import norm
+from buddysuite.buddy_resources import TempDir
 from copy import deepcopy
 from multiprocessing import Process
 from collections import OrderedDict
 import pandas as pd
+import dill
+import shutil
 
 
 class Variable:
@@ -148,6 +149,22 @@ class _Walker:
         self.heat = heat
         return
 
+    def _dump_obj(self):
+        return {"vars": self.variables, "lava": self.lava, "ice": self.ice, "heat": self.heat,
+                "cur_score": self.current_score, "prop_score": self.proposed_score, "score_hist": self.score_history,
+                "name": self.name}
+
+    def _apply_dump(self, var_dict):
+        self.variables = var_dict["vars"]
+        self.lava = var_dict["lava"]
+        self.ice = var_dict["ice"]
+        self.heat = var_dict["heat"]
+        self.current_score = var_dict["cur_score"]
+        self.proposed_score = var_dict["prop_score"]
+        self.score_history = var_dict["score_hist"]
+        self.name = var_dict["name"]
+        return
+
     def __str__(self):
         output = "Walker %s" % self.name
         for variable in self.variables:
@@ -227,6 +244,23 @@ class _Chain(object):
             ofile.write(output)
         return
 
+    def _dump_obj(self):
+        walkers = [walker._dump_obj() for walker in self.walkers]
+        with open(self.outfile, "r") as ifile:
+            results = ifile.read()
+        return {"walkers": walkers, "cold_heat": self.cold_heat, "hot_heat": self.hot_heat,
+                "step_count": self.step_counter, "best_score": self.best_score_ever_seen, "results": results}
+
+    def _apply_dump(self, var_dict):
+        for indx, walker in enumerate(self.walkers):
+            walker._apply_dump(var_dict["walkers"][indx])
+        self.cold_heat = var_dict["cold_heat"]
+        self.hot_heat = var_dict["hot_heat"]
+        self.step_counter = var_dict["step_count"]
+        self.best_score_ever_seen = var_dict["best_score"]
+        with open(self.outfile, "w") as ofile:
+            ofile.write(var_dict["results"])
+
 
 class MCMCMC:
     """
@@ -240,6 +274,7 @@ class MCMCMC:
         self.steps = steps
         self.sample_rate = sample_rate
         self.outfile = os.path.abspath(outfiles)
+        self.dumpfile = os.path.join(os.path.split(self.outfile)[0], "dumpfile")
         self.rand_gen = random.Random(r_seed)
         self.chains = []
         self.cold_heat = cold_heat
@@ -278,6 +313,14 @@ class MCMCMC:
         else:
             raise ValueError("Gelman-Rubin convergence ratio must be greater than 1")
         self.quiet = quiet
+
+    def resume(self):
+        with open(self.dumpfile, "br") as ifile:
+            dump_file = dill.load(ifile)
+        for indx, chain in enumerate(self.chains):
+            chain._apply_dump(dump_file[indx])
+        self.run()
+        return
 
     def run(self):
         """
@@ -318,6 +361,11 @@ class MCMCMC:
         temp_dir = TempDir()
         counter = 0
         while not self._check_convergence() and (counter <= self.steps or self.steps == 0):
+            tmp_dump = self.dumpfile + ".temp"
+            with open(tmp_dump, "wb") as ofile:
+                dump_obj = [chain._dump_obj() for chain in self.chains]
+                dill.dump(dump_obj, ofile, protocol=-1)
+            shutil.move(tmp_dump, self.dumpfile)
             counter += 1
             child_list = OrderedDict()
             for chain in self.chains:  # Note that this will spin off as many new processes as there are walkers

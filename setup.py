@@ -38,6 +38,7 @@ DEPENDENCIES = [
     'biopython',
     'buddysuite>=1.2.6',
     'pyvolve',
+    'dill',
 ]
 
 KEYWORDS = [

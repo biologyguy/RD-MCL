@@ -695,7 +695,8 @@ def compare_psi_pred(psi1_df, psi2_df):
 
 
 def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progress, outdir, psi_pred_ss2,
-                      steps=1000, chains=3, walkers=2, quiet=True, taxa_sep="-", r_seed=None, convergence=None):
+                      steps=1000, chains=3, walkers=2, quiet=True, taxa_sep="-", r_seed=None, convergence=None,
+                      resume=False):
     """
     Run MCMCMC on MCL to find the best orthogroups
     :param master_cluster: The group to be subdivided
@@ -713,19 +714,18 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     :param taxa_sep: The string that separates taxon names from gene names
     :param r_seed: Set the random generator seed value
     :param convergence: Set minimum Gelman-Rubin PSRF value for convergence
+    :param resume: Try to pick up from a previous run
     :return: list of sequence_ids objects
     """
     def save_cluster(end_message=None):
         cluster_list.append(master_cluster)
-        if not os.path.isfile(os.path.join(temp_dir.path, "best_group")):
-            with open(os.path.join(temp_dir.path, "best_group"), "w") as _ofile:
+        if not os.path.isfile(os.path.join(mcmcmc_path, "best_group")):
+            with open(os.path.join(mcmcmc_path, "best_group"), "w") as _ofile:
                 _ofile.write('\t'.join(master_cluster.seq_ids))
         if end_message:
-            with open(os.path.join(temp_dir.path, "end_message.log"), "w") as _ofile:
+            with open(os.path.join(mcmcmc_path, "end_message.log"), "w") as _ofile:
                 _ofile.write(end_message + "\n")
 
-        if not os.path.isdir(os.path.join(outdir, "mcmcmc", master_cluster.name())):
-            temp_dir.save(os.path.join(outdir, "mcmcmc", master_cluster.name()))
         _, alignment = retrieve_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=True)
         alignment.write(os.path.join(outdir, "alignments", master_cluster.name()))
         master_cluster.sim_scores.to_csv(os.path.join(outdir, "sim_scores", "%s.scores" % master_cluster.name()),
@@ -739,7 +739,9 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
     rand_gen = Random(r_seed)
     master_cluster.set_name()
-    temp_dir = br.TempDir()
+    mcmcmc_path = os.path.join(outdir, "mcmcmc", master_cluster.name())
+    os.makedirs(mcmcmc_path, exist_ok=True)
+    open(os.path.join(mcmcmc_path, "max.txt"), "w").close()
     convergence = GELMAN_RUBIN if convergence is None else float(convergence)
 
     # If there are no paralogs in the cluster, then it is already at its highest score and MCL is unnecessary
@@ -778,21 +780,26 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     if best_possible_score == worst_possible_score:
         return cluster_list
 
-    open(os.path.join(temp_dir.path, "max.txt"), "w").close()
-    mcmcmc_params = ["%s" % temp_dir.path, seqbuddy, master_cluster,
+    mcmcmc_params = [mcmcmc_path, seqbuddy, master_cluster,
                      taxa_sep, sql_broker, psi_pred_ss2, progress, chains * (walkers + 2)]
     mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, quiet=quiet,
                                    num_walkers=walkers, num_chains=chains, convergence=convergence,
-                                   outfiles=os.path.join(temp_dir.path, "mcmcmc_out"), params=mcmcmc_params,
+                                   outfiles=os.path.join(mcmcmc_path, "mcmcmc_out"), params=mcmcmc_params,
                                    include_lava=True, include_ice=True, r_seed=rand_gen.randint(1, 999999999999999),
                                    min_max=(worst_possible_score, best_possible_score))
 
-    mcmcmc_factory.reset_params([temp_dir.path, seqbuddy, master_cluster,
+    mcmcmc_factory.reset_params([mcmcmc_path, seqbuddy, master_cluster,
                                  taxa_sep, sql_broker, psi_pred_ss2, progress, chains * (walkers + 2)])
-    mcmcmc_factory.run()
+
+    if resume:
+        mcmcmc_factory.resume()
+
+    else:
+        mcmcmc_factory.run()
+
     best_score = pd.DataFrame()
     for indx in range(len(mcmcmc_factory.chains)):
-        mcmcmc_output = pd.read_csv(os.path.join(temp_dir.path, "mcmcmc_out_%s.csv" % (indx+1)), "\t", index_col=False)
+        mcmcmc_output = pd.read_csv(os.path.join(mcmcmc_path, "mcmcmc_out_%s.csv" % (indx+1)), "\t", index_col=False)
         result = mcmcmc_output.loc[mcmcmc_output["result"] == mcmcmc_output["result"].max()]
         best_score = result if best_score.empty or result["result"].iloc[0] > best_score["result"].iloc[0] \
             else best_score
@@ -810,7 +817,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
     # Write out the actual best clusters
     best_clusters = ['\t'.join(cluster) for cluster in mcl_clusters]
-    with open(os.path.join(temp_dir.path, "best_group"), "w") as ofile:
+    with open(os.path.join(mcmcmc_path, "best_group"), "w") as ofile:
         ofile.write('\n'.join(best_clusters))
 
     recursion_clusters = []
@@ -844,7 +851,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         # Recursion... Reassign cluster_list, as all clusters are returned at the end of a call to orthogroup_caller
         cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, sql_broker=sql_broker,
                                          progress=progress, outdir=outdir, steps=steps, quiet=quiet, chains=chains,
-                                         walkers=walkers, taxa_sep=taxa_sep, convergence=convergence,
+                                         walkers=walkers, taxa_sep=taxa_sep, convergence=convergence, resume=resume,
                                          r_seed=rand_gen.randint(1, 999999999999999), psi_pred_ss2=psi_pred_ss2)
 
     save_cluster("Sub clusters returned")
@@ -1757,7 +1764,7 @@ class Orphans(object):
         return
 
     def place_orphans(self):
-        if not self.small_clusters or not self.large_clusters:
+        if not self.small_clusters or not self.large_clusters or len(self.large_clusters) == 1:
             return
         best_cluster = OrderedDict([("small_name", None), ("large_name", None), ("meandiff", 0)])
         fostered_orphans = 0
@@ -1955,6 +1962,8 @@ def argparse_init():
                               help="Specify which alignment algorithm to use (supply full path if not in $PATH)")
     parser_flags.add_argument("-algn_p", "--align_params", action="store", default="",
                               help="Supply alignment specific parameters")
+    parser_flags.add_argument("-r", "--resume", action="store_true",
+                              help="Try to pick up where a previous run left off (this breaks r_seed).")
     parser_flags.add_argument("-f", "--force", action="store_true",
                               help="Try to run no matter what.")
     parser_flags.add_argument("-q", "--quiet", action="store_true",
@@ -2151,13 +2160,14 @@ Continue? y/[n] """ % len(sequences)
             logging.info("mkdir %s" % _path)
             os.makedirs(_path)
         # Delete old 'group' files/directories
-        root, dirs, files = next(os.walk(_path))
-        for _file in files:
-            if "group" in _file:
-                os.remove(os.path.join(root, _file))
-        for _dir in dirs:
-            if "group" in _dir:
-                shutil.rmtree(os.path.join(root, _dir))
+        if not in_args.resume:
+            root, dirs, files = next(os.walk(_path))
+            for _file in files:
+                if "group" in _file:
+                    os.remove(os.path.join(root, _file))
+            for _dir in dirs:
+                if "group" in _dir:
+                    shutil.rmtree(os.path.join(root, _dir))
 
     # Prepare log files into output directory
     if os.path.isfile(os.path.join(in_args.outdir, "rdmcl.log")):
@@ -2298,7 +2308,7 @@ Continue? y/[n] """ % len(sequences)
                                        progress=progress_tracker, outdir=in_args.outdir, steps=in_args.mcmc_steps,
                                        quiet=True, taxa_sep=in_args.taxa_sep, r_seed=in_args.r_seed,
                                        psi_pred_ss2=psi_pred_files, chains=MCMC_CHAINS, walkers=in_args.walkers,
-                                       convergence=GELMAN_RUBIN)
+                                       convergence=GELMAN_RUBIN, resume=in_args.resume)
     final_clusters = [cluster for cluster in final_clusters if cluster.subgroup_counter == 0]
     run_time.end()
 
@@ -2306,6 +2316,7 @@ Continue? y/[n] """ % len(sequences)
     logging.warning("Total MCL runs: %s" % progress_dict["mcl_runs"])
     logging.warning("\t-- finished in %s --" % TIMER.split())
 
+    '''
     if not in_args.suppress_clique_check or not in_args.suppress_singlet_folding:
         logging.warning("\n** Iterative placement of orphans and paralog RBHC removal **")
     else:
@@ -2353,6 +2364,7 @@ Continue? y/[n] """ % len(sequences)
 
     if not in_args.suppress_clique_check or not in_args.suppress_singlet_folding:
         logging.warning("\t-- finished in %s --" % TIMER.split())
+    '''
 
     logging.warning("\nPlacing any collapsed paralogs into their respective clusters")
     if group_0_cluster.collapsed_genes:
