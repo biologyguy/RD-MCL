@@ -11,7 +11,7 @@ install:
   - /home/travis/miniconda/bin/conda update -q conda
   - /home/travis/miniconda/bin/conda info -a
   - /home/travis/miniconda/bin/conda install scipy numpy pandas git
-  - /home/travis/miniconda/bin/conda install -c biocore mafft psipred=4.01
+  - /home/travis/miniconda/bin/conda install -c biocore mafft psipred=4.01 hmmer
   - /home/travis/miniconda/bin/conda install -c bioconda clustalo
   - /home/travis/miniconda/bin/pip install --upgrade
   - /home/travis/miniconda/bin/pip install py pytest pytest-xdist pytest-cov pytest-colordots

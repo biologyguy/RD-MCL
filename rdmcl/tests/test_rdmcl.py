@@ -1649,7 +1649,7 @@ def test_instantiate_orphan(hf):
     broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
                                        "graph TEXT", "cluster_score TEXT"])
     broker.start_broker()
-    orphans = rdmcl.Orphans(parent_sb, clusters, broker, psi_pred_ss2_dfs)
+    orphans = rdmcl.Orphans(parent_sb, clusters, broker, psi_pred_ss2_dfs, br.TempDir())
 
     assert orphans.seqbuddy == parent_sb
     assert orphans.clusters == clusters
@@ -1662,19 +1662,19 @@ def test_instantiate_orphan(hf):
     assert large_clusters == [cluster1.seq_ids, cluster2.seq_ids]
     assert len([seq_id for sub_clust in small_clusters + large_clusters for seq_id in sub_clust]) == 14
     assert type(orphans.tmp_file) == rdmcl.br.TempFile
-    all_sim_scores_str = str(orphans.lrg_cluster_sim_scores)
-    assert round(orphans.lrg_cluster_sim_scores.iloc[0], 12) == 0.822746474418
-    assert round(orphans.lrg_cluster_sim_scores.iloc[-1], 12) == 0.946958793306
-    assert len(orphans.lrg_cluster_sim_scores) == 20  # This is for the two large clusters --> Σ(a*(a-1))/2
+    all_sim_scores_str = str(orphans.lrg_cluster_rsquares)
+    assert round(orphans.lrg_cluster_rsquares.iloc[0], 12) == 0.822746474418
+    assert round(orphans.lrg_cluster_rsquares.iloc[-1], 12) == 0.946958793306
+    assert len(orphans.lrg_cluster_rsquares) == 20  # This is for the two large clusters --> Σ(a*(a-1))/2
     broker.close()
 
     # Run a second time, reading the graph from the open database this time (happens automatically)
     broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
     broker.start_broker()
     seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
-    orphans = rdmcl.Orphans(seqbuddy, clusters, broker, psi_pred_ss2_dfs)
-    assert all_sim_scores_str == str(orphans.lrg_cluster_sim_scores)
-    assert len(orphans.lrg_cluster_sim_scores) == 20
+    orphans = rdmcl.Orphans(seqbuddy, clusters, broker, psi_pred_ss2_dfs, br.TempDir())
+    assert all_sim_scores_str == str(orphans.lrg_cluster_rsquares)
+    assert len(orphans.lrg_cluster_rsquares) == 20
     broker.close()
 
 
@@ -1715,7 +1715,7 @@ def test_place_orphans(hf):
     orig_clusters = [cluster1, cluster2, cluster3, cluster4, cluster5]
     clusters = [deepcopy(clust) for clust in orig_clusters]
 
-    orphans = rdmcl.Orphans(parent_sb, clusters, broker, hf.get_data("ss2_paths"))
+    orphans = rdmcl.Orphans(parent_sb, clusters, broker, hf.get_data("ss2_paths"), br.TempDir())
 
     # ##### mc_check_orphans() ##### #
     tmp_file = br.TempFile()
@@ -1741,7 +1741,7 @@ group_0_3\tgroup_0_0\t0.0174886528987
     orphans.tmp_file.clear()
 
     # ##### place_orphans() ##### #
-    orphans.place_orphans(multi_core=False)
+    orphans.place_orphans()
     assert orphans.clusters[0].seq_ids == ["Hvu-PanxβA"]
     assert orphans.clusters[1].seq_ids == ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE',
                                            'Bfr-PanxαA', 'Hca-PanxαA', 'Lcr-PanxαG']
@@ -1751,13 +1751,13 @@ group_0_3\tgroup_0_0\t0.0174886528987
 
     # Multicore doesn't seem to work in py.test, but can at least call it like it does
     clusters = [deepcopy(clust) for clust in orig_clusters]
-    orphans = rdmcl.Orphans(parent_sb, clusters, broker, hf.get_data("ss2_paths"))
-    orphans.place_orphans(multi_core=True)
+    orphans = rdmcl.Orphans(parent_sb, clusters, broker, hf.get_data("ss2_paths"), br.TempDir())
+    orphans.place_orphans()
     assert len(orphans.clusters) == 3
 
     # If no small clusters, nothing much happens
-    orphans = rdmcl.Orphans(parent_sb, clusters[:2], broker, hf.get_data("ss2_paths"))
-    assert not orphans.place_orphans(multi_core=False)
+    orphans = rdmcl.Orphans(parent_sb, clusters[:2], broker, hf.get_data("ss2_paths"), br.TempDir())
+    assert not orphans.place_orphans()
     assert len(orphans.clusters) == 2
 
     # ToDo: Test for failure on Tukey HSD test
@@ -1810,6 +1810,8 @@ parser.add_argument("-algn_m", "--align_method", action="store", default="clusta
                     help="Specify which alignment algorithm to use (supply full path if not in $PATH)")
 parser.add_argument("-algn_p", "--align_params", action="store", default="",
                     help="Supply alignment specific parameters")
+parser.add_argument("-r", "--resume", action="store_true",
+                    help="Try to pick up where a previous run left off (this breaks r_seed).")
 parser.add_argument("-trm", "--trimal", action="append", nargs="+",
                     help="Specify a list of trimal thresholds to apply (move from more strict to less)")
 parser.add_argument("-f", "--force", action="store_true",
@@ -1833,6 +1835,7 @@ def test_argparse_init(monkeypatch, hf):
 
 def test_full_run(hf, capsys):
     # I can't break these up into separate test functions because of collisions with logger
+    return
     out_dir = br.TempDir()
 
     '''
