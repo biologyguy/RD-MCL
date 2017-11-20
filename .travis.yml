@@ -11,7 +11,7 @@ install:
   - /home/travis/miniconda/bin/conda update -q conda
   - /home/travis/miniconda/bin/conda info -a
   - /home/travis/miniconda/bin/conda install scipy numpy pandas git
-  - /home/travis/miniconda/bin/conda install -c biocore mafft psipred=4.01 hmmer
+  - /home/travis/miniconda/bin/conda install -c biocore mafft psipred=4.01
   - /home/travis/miniconda/bin/conda install -c bioconda clustalo
   - /home/travis/miniconda/bin/pip install --upgrade
   - /home/travis/miniconda/bin/pip install py pytest pytest-xdist pytest-cov pytest-colordots
@@ -22,5 +22,14 @@ install:
   - touch /home/travis/build/biologyguy/RD-MCL/rdmcl/config.ini
   - mkdir /home/travis/build/biologyguy/RD-MCL/rdmcl/psipred/
   - cp -r /home/travis/miniconda/share/psipred_4.01/data /home/travis/build/biologyguy/RD-MCL/rdmcl/psipred/
+  - mkdir /home/travis/build/biologyguy/RD-MCL/rdmcl/hmmer/
+  - mkdir ~/hmmer3
+  - wget -q http://eddylab.org/software/hmmer3/3.1b2/hmmer-3.1b2.tar.gz -O ~/hmmer-3.1b2.tar.gz
+  - tar -xzf ~/hmmer-3.1b2.tar.gz -C ~/hmmer3
+  - sed -i -e 's/p7_gmx_Dump(stdout, fwd, p7_DEFAULT);//g' ~/hmmer3/src/generic_fwdback.c
+  - (cd ~/hmmer3 && ./configure && make)
+  - mv ~/hmmer3/src/hmmbuild /home/travis/miniconda/bin/hmmbuild
+  - (cd ~/hmmer3/src && make generic_fwdback_example)
+  - mv ~/hmmer3/src/generic_fwdback_example /home/travis/miniconda/bin/hmm_fwd_back
 script:
   - travis_wait 40 source test.sh
