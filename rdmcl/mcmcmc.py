@@ -315,12 +315,14 @@ class MCMCMC:
         self.quiet = quiet
 
     def resume(self):
-        with open(self.dumpfile, "br") as ifile:
-            dump_file = dill.load(ifile)
-        for indx, chain in enumerate(self.chains):
-            chain._apply_dump(dump_file[indx])
-        self.run()
-        return
+        if os.path.isfile(self.dumpfile):
+            with open(self.dumpfile, "br") as ifile:
+                dump_file = dill.load(ifile)
+            for indx, chain in enumerate(self.chains):
+                chain._apply_dump(dump_file[indx])
+            self.run()
+            return True
+        return False
 
     def run(self):
         """
