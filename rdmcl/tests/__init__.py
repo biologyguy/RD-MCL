@@ -99,3 +99,48 @@ class HelperMethods(object):
         df = self._cteno_sim_scores.loc[self._cteno_sim_scores['seq1'].isin(id_subset)]
         df = df.loc[df["seq2"].isin(id_subset)]
         return df
+
+    def get_test_clusters(self, broker, parent_sb, rdmcl):
+        # psi_pred_ss2_paths = hf.get_data("ss2_paths")
+        # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(parent_sb, psi_pred_ss2_paths, broker)
+        graph = self.get_db_graph("6935966a6b9967c3006785488d968230", broker)
+
+        parent_ids = [rec.id for rec in parent_sb.records]
+        parent_cluster = rdmcl.Cluster(parent_ids, graph, collapse=False)
+
+        cluster1 = ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE', 'Bfr-PanxαA']
+        # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster1))
+        # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
+        graph = self.get_db_graph("14f1cd0e985ed87b4e31bc07453481d2", broker)
+        cluster1 = rdmcl.Cluster(cluster1, graph, parent=parent_cluster)
+        cluster1.set_name()
+
+        cluster2 = ['Lla-PanxαA', 'Mle-Panxα11', 'Oma-PanxαD', 'Pba-PanxαB', 'Tin-PanxαF']
+        # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster2))
+        # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
+        graph = self.get_db_graph("441c3610506fda8a6820da5f67fdc470", broker)
+        cluster2 = rdmcl.Cluster(cluster2, graph, parent=parent_cluster)
+        cluster2.set_name()
+
+        cluster3 = ['Vpa-PanxαD']  # This should be placed in cluster 2
+        # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster3))
+        # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
+        graph = self.get_db_graph("ded0bc087974589c24945bb36197d36f", broker)
+        cluster3 = rdmcl.Cluster(cluster3, graph, parent=parent_cluster)
+        cluster3.set_name()
+
+        cluster4 = ['Hca-PanxαA', 'Lcr-PanxαG']  # This should be placed in cluster 1
+        # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster4))
+        # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
+        graph = self.get_db_graph("035b3933770942c7e32e27c06e619825", broker)
+        cluster4 = rdmcl.Cluster(cluster4, graph, parent=parent_cluster)
+        cluster4.set_name()
+
+        cluster5 = ['Hvu-PanxβA']  # This should not be placed in a cluster
+        # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster5))
+        # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
+        graph = self.get_db_graph("c62b6378d326c2479296c98f0f620d0f", broker)
+        cluster5 = rdmcl.Cluster(cluster5, graph, parent=parent_cluster)
+        cluster5.set_name()
+        clusters = [cluster1, cluster2, cluster3, cluster4, cluster5]
+        return clusters
