@@ -28,6 +28,8 @@ install:
   - (cd ~/hmmer-3.1b2 && ./configure && make)
   - mv ~/hmmer-3.1b2/src/hmmbuild /home/travis/miniconda/bin/hmmbuild
   - (cd ~/hmmer-3.1b2/src && make generic_fwdback_example)
-  - mv ~/hmmer-3.1b2/src/generic_fwdback_example /home/travis/miniconda/bin/hmm_fwd_back
+  - mkdir /home/travis/build/biologyguy/RD-MCL/rdmcl/hmmer
+  - cp ~/hmmer-3.1b2/src/generic_fwdback_example /home/travis/build/biologyguy/RD-MCL/rdmcl/hmmer/hmm_fwd_back
+  - cp ~/hmmer-3.1b2/src/generic_fwdback_example /home/travis/miniconda/bin/hmm_fwd_back
 script:
   - travis_wait 40 source test.sh

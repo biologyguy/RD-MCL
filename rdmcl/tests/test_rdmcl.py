@@ -666,6 +666,7 @@ def test_orthogroup_caller(hf):
     outdir.subdir("mcmcmc")
     outdir.subdir("psi_pred")
     outdir.subdir("sim_scores")
+    outdir.subdir("hmm")
 
     progress = rdmcl.Progress(os.path.join(outdir.path, "progress"), cluster)
     psi_pred_ss2_dfs = OrderedDict()
@@ -1590,95 +1591,167 @@ def test_write_mcl_clusters(hf):
     assert hf.string2hash(tmp_file.read()) == "4024a3aa15d605fd8924d8fc6cb9361e"
 
 
-# #########  Orphan placement  ########## #
-def test_instantiate_orphan(hf):
+# #########  Final sequence placement  ########## #
+def test_instantiate_seqs2clusters(hf, monkeypatch):
     # Get starting graph from pre-computed database
     broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
     broker.start_broker()
-    psi_pred_ss2_dfs = hf.get_data("ss2_dfs")
-
     parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
-    # psi_pred_ss2_paths = hf.get_data("ss2_paths")
-    # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(parent_sb, psi_pred_ss2_paths, broker)
-    graph = hf.get_db_graph("6935966a6b9967c3006785488d968230", broker)
+    clusters = hf.get_test_clusters(broker, parent_sb, rdmcl)
+    cluster1, cluster2, cluster3, cluster4, cluster5 = clusters
 
-    parent_ids = [rec.id for rec in parent_sb.records]
-    parent_cluster = rdmcl.Cluster(parent_ids, graph, collapse=False)
-
-    cluster1 = ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE', 'Bfr-PanxαA']
-    # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster1))
-    # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
-    graph = hf.get_db_graph("14f1cd0e985ed87b4e31bc07453481d2", broker)
-    cluster1 = rdmcl.Cluster(cluster1, graph, parent=parent_cluster)
-    cluster1.set_name()
-
-    cluster2 = ['Lla-PanxαA', 'Mle-Panxα11', 'Oma-PanxαD', 'Pba-PanxαB', 'Tin-PanxαF']
-    # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster2))
-    # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
-    graph = hf.get_db_graph("441c3610506fda8a6820da5f67fdc470", broker)
-    cluster2 = rdmcl.Cluster(cluster2, graph, parent=parent_cluster)
-    cluster2.set_name()
-
-    cluster3 = ['Vpa-PanxαD']  # This should be placed in cluster 2
-    # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster3))
-    # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
-    graph = hf.get_db_graph("ded0bc087974589c24945bb36197d36f", broker)
-    cluster3 = rdmcl.Cluster(cluster3, graph, parent=parent_cluster)
-    cluster3.set_name()
-
-    cluster4 = ['Hca-PanxαA', 'Lcr-PanxαG']  # This should be placed in cluster 1
-    # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster4))
-    # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
-    graph = hf.get_db_graph("035b3933770942c7e32e27c06e619825", broker)
-    cluster4 = rdmcl.Cluster(cluster4, graph, parent=parent_cluster)
-    cluster4.set_name()
-
-    cluster5 = ['Hvu-PanxβA']  # This should not be placed in a cluster
-    # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster5))
-    # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
-    graph = hf.get_db_graph("c62b6378d326c2479296c98f0f620d0f", broker)
-    cluster5 = rdmcl.Cluster(cluster5, graph, parent=parent_cluster)
-    cluster5.set_name()
-    clusters = [cluster1, cluster2, cluster3, cluster4, cluster5]
-
-    broker.close()
-
-    # Have Orphans create the subgraph from scratch
     tmpdir = br.TempDir()
-    broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
-    broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
-                                       "graph TEXT", "cluster_score TEXT"])
-    broker.start_broker()
-    orphans = rdmcl.Orphans(parent_sb, clusters, broker, psi_pred_ss2_dfs, br.TempDir())
+    seq2clust_obj = rdmcl.Seqs2Clusters(clusters, 3, parent_sb, tmpdir.path)
 
-    assert orphans.seqbuddy == parent_sb
-    assert orphans.clusters == clusters
-    assert orphans.sql_broker == broker
-    assert orphans.psi_pred_ss2 == psi_pred_ss2_dfs
-    assert orphans.num_orphans == 0
-    small_clusters = [clust.seq_ids for clust_name, clust in orphans.small_clusters.items()]
+    assert seq2clust_obj.clusters == clusters
+    assert seq2clust_obj.min_clust_size == 3
+    assert seq2clust_obj.seqbuddy == parent_sb
+    assert seq2clust_obj.outdir == tmpdir.path
+    assert type(seq2clust_obj.tmp_file) == br.TempFile
+    assert type(seq2clust_obj.tmp_dir) == br.TempDir
+    assert seq2clust_obj.tmp_dir.subfiles == ["seqs.fa"]
+    assert type(seq2clust_obj.small_clusters) == OrderedDict
+    assert list(seq2clust_obj.small_clusters.keys()) == ['group_0_2', 'group_0_3', 'group_0_4']
+    assert type(seq2clust_obj.large_clusters) == OrderedDict
+    assert list(seq2clust_obj.large_clusters.keys()) == ['group_0_0', 'group_0_1']
+
+    small_clusters = [clust.seq_ids for clust_name, clust in seq2clust_obj.small_clusters.items()]
     assert small_clusters == [cluster3.seq_ids, cluster4.seq_ids, cluster5.seq_ids]
-    large_clusters = [clust.seq_ids for clust_name, clust in orphans.large_clusters.items()]
+    large_clusters = [clust.seq_ids for clust_name, clust in seq2clust_obj.large_clusters.items()]
     assert large_clusters == [cluster1.seq_ids, cluster2.seq_ids]
     assert len([seq_id for sub_clust in small_clusters + large_clusters for seq_id in sub_clust]) == 14
-    assert type(orphans.tmp_file) == rdmcl.br.TempFile
-    all_sim_scores_str = str(orphans.lrg_cluster_rsquares)
-    assert round(orphans.lrg_cluster_rsquares.iloc[0], 12) == 0.822746474418
-    assert round(orphans.lrg_cluster_rsquares.iloc[-1], 12) == 0.946958793306
-    assert len(orphans.lrg_cluster_rsquares) == 20  # This is for the two large clusters --> Σ(a*(a-1))/2
+    assert "RD-MCL{0}rdmcl{0}hmmer{0}hmm_fwd_back".format(os.sep) in seq2clust_obj.hmm_fwd_back_prog
+
+    monkeypatch.setattr(os.path, "isfile", lambda *_: False)
+    seq2clust_obj = rdmcl.Seqs2Clusters(clusters, 3, parent_sb, tmpdir.path)
+    assert "RD-MCL{0}rdmcl{0}hmmer{0}hmm_fwd_back".format(os.sep) not in seq2clust_obj.hmm_fwd_back_prog
+    assert os.path.exists(seq2clust_obj.hmm_fwd_back_prog)
+
+    monkeypatch.setattr(shutil, "which", lambda *_: False)
+    with pytest.raises(SystemError) as err:
+        rdmcl.Seqs2Clusters(clusters, 3, parent_sb, tmpdir.path)
+    assert "hmm_fwd_back program not found" in str(err)
     broker.close()
 
-    # Run a second time, reading the graph from the open database this time (happens automatically)
+
+def test_create_hmms_for_every_rec(hf):
     broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
     broker.start_broker()
-    seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
-    orphans = rdmcl.Orphans(seqbuddy, clusters, broker, psi_pred_ss2_dfs, br.TempDir())
-    assert all_sim_scores_str == str(orphans.lrg_cluster_rsquares)
-    assert len(orphans.lrg_cluster_rsquares) == 20
+    parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
+    clusters = hf.get_test_clusters(broker, parent_sb, rdmcl)
+
+    tmpdir = br.TempDir()
+    hmm_dir = tmpdir.subdir("hmm")
+    with open(os.path.join(hmm_dir, "Bab-PanxαA.hmm"), "w") as ofile:
+        ofile.write("Testing testing, 1, 2, 3...")
+    seq2clust_obj = rdmcl.Seqs2Clusters(clusters, 3, parent_sb, tmpdir.path)
+    seq2clust_obj.seqbuddy.records = seq2clust_obj.seqbuddy.records[0:2]
+    seq2clust_obj.create_hmms_for_every_rec()
+    assert os.listdir(os.path.join(seq2clust_obj.outdir, "hmm")) == ['Bab-PanxαA.hmm', 'BOL-PanxαB.hmm']
+    with open(os.path.join(hmm_dir, "Bab-PanxαA.hmm"), "r") as ifile:
+        assert ifile.read() == "Testing testing, 1, 2, 3..."
+    with open(os.path.join(hmm_dir, "BOL-PanxαB.hmm"), "r") as ifile:
+        assert "HMM          A        C        D        E        F        G        H        I        K" in ifile.read()
     broker.close()
+
+
+def test_create_hmm_fwd_score_df(hf, monkeypatch):
+    parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
+    parent_sb.records = [rec for rec in parent_sb.records if rec.id in
+                         ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE']]
+    seq2clust_obj = rdmcl.Seqs2Clusters([], 3, parent_sb, "foo.path")
+
+    monkeypatch.setattr(rdmcl.Seqs2Clusters, "_separate_large_small", lambda *_: True)
+    monkeypatch.setattr(rdmcl.Seqs2Clusters, "create_hmms_for_every_rec",
+                        lambda *_: os.path.join(hf.resource_path, "hmms"))
+    hmm_fwd_scores = seq2clust_obj.create_hmm_fwd_score_df()
+    # hmm_fwd_scores.to_csv("tests/unit_test_resources/hmms/fwd_df.csv")
+    assert str(hmm_fwd_scores) == """\
+        hmm_id      rec_id   fwd_raw
+0   BOL-PanxαB  BOL-PanxαB  702.0341
+1   BOL-PanxαB  Bab-PanxαA  641.0910
+2   BOL-PanxαB  Bch-PanxαA  626.8386
+3   BOL-PanxαB  Bfo-PanxαE  619.8560
+4   Bab-PanxαA  BOL-PanxαB  636.7927
+5   Bab-PanxαA  Bab-PanxαA  696.4839
+6   Bab-PanxαA  Bch-PanxαA  663.5856
+7   Bab-PanxαA  Bfo-PanxαE  623.7233
+8   Bch-PanxαA  BOL-PanxαB  627.4737
+9   Bch-PanxαA  Bab-PanxαA  668.5334
+10  Bch-PanxαA  Bch-PanxαA  702.3412
+11  Bch-PanxαA  Bfo-PanxαE  619.3785
+12  Bfo-PanxαE  BOL-PanxαB  615.9315
+13  Bfo-PanxαE  Bab-PanxαA  624.0910
+14  Bfo-PanxαE  Bch-PanxαA  615.3356
+15  Bfo-PanxαE  Bfo-PanxαE  702.2801""", print(str(hmm_fwd_scores))
+
+
+def test_create_fwd_score_rsquared_matrix(hf, monkeypatch):
+    parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
+    parent_sb.records = [rec for rec in parent_sb.records if rec.id in
+                         ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE']]
+    seq2clust_obj = rdmcl.Seqs2Clusters([], 3, parent_sb, "foo.path")
+    hmm_fwd_scores = pd.read_csv(os.path.join(hf.resource_path, "hmms", "fwd_df.csv"), index_col=0)
+
+    monkeypatch.setattr(rdmcl.Seqs2Clusters, "_separate_large_small", lambda *_: True)
+    monkeypatch.setattr(rdmcl.Seqs2Clusters, "create_hmm_fwd_score_df",
+                        lambda *_: hmm_fwd_scores)
+
+    rsquare_vals_df = seq2clust_obj.create_fwd_score_rsquared_matrix()
+    # rsquare_vals_df.to_csv("tests/unit_test_resources/hmms/fwd_r2.csv")
+    assert str(rsquare_vals_df) == """\
+      rec_id1     rec_id2  r_square
+0  BOL-PanxαB  Bab-PanxαA  0.016894
+1  BOL-PanxαB  Bch-PanxαA  0.087311
+2  BOL-PanxαB  Bfo-PanxαE  0.274041
+3  BOL-PanxαB  BOL-PanxαB  1.000000
+4  Bab-PanxαA  Bch-PanxαA  0.497451
+5  Bab-PanxαA  Bfo-PanxαE  0.453878
+6  Bab-PanxαA  Bab-PanxαA  1.000000
+7  Bch-PanxαA  Bfo-PanxαE  0.390839
+8  Bch-PanxαA  Bch-PanxαA  1.000000
+9  Bfo-PanxαE  Bfo-PanxαE  1.000000""", print(rsquare_vals_df)
+
+
+def test_create_truncnorm(hf):
+    hmm_fwd_scores = pd.read_csv(os.path.join(hf.resource_path, "hmms", "fwd_r2.csv"), index_col=0)
+    truncnorm = rdmcl.Seqs2Clusters._create_truncnorm(hmm_fwd_scores.r_square)
+    assert truncnorm.pdf(0.8) == 1.0920223528471558
+
+    hmm_fwd_scores = hmm_fwd_scores.loc[hmm_fwd_scores.r_square == 0.016894]
+    with pytest.raises(AttributeError) as err:
+        rdmcl.Seqs2Clusters._create_truncnorm(hmm_fwd_scores.r_square)
+
+    assert "pd.Series object must have at least two items in it" in str(err)
+
+
+def test_place_seqs_in_clusts(hf, monkeypatch):
+    broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
+    broker.start_broker()
+    parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
+    clusters = hf.get_test_clusters(broker, parent_sb, rdmcl)
+    subset_ids = [seq for clust in clusters for seq in clust.seq_ids]
+    parent_sb.records = [rec for rec in parent_sb.records if rec.id in subset_ids]
+    tmpdir = br.TempDir()
+    tmpdir.subdir("hmm")
+    seq2clust_obj = rdmcl.Seqs2Clusters(clusters, 3, parent_sb, tmpdir.path)
+
+    hmm_fwd_scores = pd.read_csv(os.path.join(hf.resource_path, "hmms", "full_r2.csv"), index_col=0)
+    monkeypatch.setattr(rdmcl.Seqs2Clusters, "create_fwd_score_rsquared_matrix",
+                        lambda *_: hmm_fwd_scores)
+
+    seq2clust_obj.place_seqs_in_clusts()
+
+    assert seq2clust_obj.clusters[0].seq_ids == ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE',
+                                                 'Bfr-PanxαA', 'Hca-PanxαA', 'Lcr-PanxαG']
+    assert seq2clust_obj.clusters[1].seq_ids == ['Lla-PanxαA', 'Mle-Panxα11', 'Oma-PanxαD',
+                                                 'Pba-PanxαB', 'Tin-PanxαF', 'Vpa-PanxαD']
+    assert seq2clust_obj.clusters[2].seq_ids == ["Hvu-PanxβA"]
+    #assert hf.string2hash(seq2clust_obj.tmp_file.read()) == "92d4b9600d74732452c1d81b7d1a8ece"
 
 
 def test_place_orphans(hf):
+    return
     broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
     broker.start_broker()
 
@@ -1715,7 +1788,7 @@ def test_place_orphans(hf):
     orig_clusters = [cluster1, cluster2, cluster3, cluster4, cluster5]
     clusters = [deepcopy(clust) for clust in orig_clusters]
 
-    orphans = rdmcl.Orphans(parent_sb, clusters, broker, hf.get_data("ss2_paths"), br.TempDir())
+    orphans = rdmcl.Orphans(parent_sb, clusters, broker, hf.get_data("ss2_paths"), br.TempDir().path)
 
     # ##### mc_check_orphans() ##### #
     tmp_file = br.TempFile()
@@ -1751,12 +1824,12 @@ group_0_3\tgroup_0_0\t0.0174886528987
 
     # Multicore doesn't seem to work in py.test, but can at least call it like it does
     clusters = [deepcopy(clust) for clust in orig_clusters]
-    orphans = rdmcl.Orphans(parent_sb, clusters, broker, hf.get_data("ss2_paths"), br.TempDir())
+    orphans = rdmcl.Orphans(parent_sb, clusters, broker, hf.get_data("ss2_paths"), br.TempDir().path)
     orphans.place_orphans()
     assert len(orphans.clusters) == 3
 
     # If no small clusters, nothing much happens
-    orphans = rdmcl.Orphans(parent_sb, clusters[:2], broker, hf.get_data("ss2_paths"), br.TempDir())
+    orphans = rdmcl.Orphans(parent_sb, clusters[:2], broker, hf.get_data("ss2_paths"), br.TempDir().path)
     assert not orphans.place_orphans()
     assert len(orphans.clusters) == 2
 
