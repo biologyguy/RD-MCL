@@ -1,0 +1,17 @@
+,hmm_id,rec_id,fwd_raw
+0,BOL-PanxαB,BOL-PanxαB,702.0341
+1,BOL-PanxαB,Bab-PanxαA,641.091
+2,BOL-PanxαB,Bch-PanxαA,626.8386
+3,BOL-PanxαB,Bfo-PanxαE,619.856
+4,Bab-PanxαA,BOL-PanxαB,636.7927
+5,Bab-PanxαA,Bab-PanxαA,696.4839
+6,Bab-PanxαA,Bch-PanxαA,663.5856
+7,Bab-PanxαA,Bfo-PanxαE,623.7233
+8,Bch-PanxαA,BOL-PanxαB,627.4737
+9,Bch-PanxαA,Bab-PanxαA,668.5334
+10,Bch-PanxαA,Bch-PanxαA,702.3412
+11,Bch-PanxαA,Bfo-PanxαE,619.3785
+12,Bfo-PanxαE,BOL-PanxαB,615.9315
+13,Bfo-PanxαE,Bab-PanxαA,624.091
+14,Bfo-PanxαE,Bch-PanxαA,615.3356
+15,Bfo-PanxαE,Bfo-PanxαE,702.2801

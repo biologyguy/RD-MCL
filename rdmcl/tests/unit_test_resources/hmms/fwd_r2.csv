@@ -1,0 +1,11 @@
+,rec_id1,rec_id2,r_square
+0,BOL-PanxαB,Bab-PanxαA,0.016894041430901254
+1,BOL-PanxαB,Bch-PanxαA,0.08731105775423692
+2,BOL-PanxαB,Bfo-PanxαE,0.274041115357264
+3,BOL-PanxαB,BOL-PanxαB,1.0
+4,Bab-PanxαA,Bch-PanxαA,0.4974513792676614
+5,Bab-PanxαA,Bfo-PanxαE,0.4538776897375698
+6,Bab-PanxαA,Bab-PanxαA,1.0
+7,Bch-PanxαA,Bfo-PanxαE,0.3908387141089857
+8,Bch-PanxαA,Bch-PanxαA,1.0
+9,Bfo-PanxαE,Bfo-PanxαE,1.0
