@@ -199,6 +199,7 @@ class Logger(object):
         # Set up logging. Use 'info' to write to file only, anything higher will go to both terminal and file.
         logging.basicConfig(filename=self.location, level=logging.INFO, format="")
         self.logger = logging.getLogger()
+        self.logger.setLevel(logging.INFO)
         self.console = logging.StreamHandler()
         self.console.setLevel(logging.WARNING)
         self.logger.addHandler(self.console)

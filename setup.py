@@ -28,7 +28,7 @@ PACKAGES = [
 ]
 
 DEPENDENCIES = [
-    'pytest',
+    'pytest>=3.3',
     'pytest-xdist',
     'pytest-cov',
     'pandas>=0.19',

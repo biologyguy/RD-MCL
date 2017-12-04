@@ -1647,7 +1647,7 @@ def test_create_hmms_for_every_rec(hf):
     seq2clust_obj = rdmcl.Seqs2Clusters(clusters, 3, parent_sb, tmpdir.path)
     seq2clust_obj.seqbuddy.records = seq2clust_obj.seqbuddy.records[0:2]
     seq2clust_obj.create_hmms_for_every_rec()
-    assert os.listdir(os.path.join(seq2clust_obj.outdir, "hmm")) == ['Bab-PanxαA.hmm', 'BOL-PanxαB.hmm']
+    assert sorted(os.listdir(os.path.join(seq2clust_obj.outdir, "hmm"))) == ['BOL-PanxαB.hmm', 'Bab-PanxαA.hmm']
     with open(os.path.join(hmm_dir, "Bab-PanxαA.hmm"), "r") as ifile:
         assert ifile.read() == "Testing testing, 1, 2, 3..."
     with open(os.path.join(hmm_dir, "BOL-PanxαB.hmm"), "r") as ifile:
