@@ -1665,8 +1665,8 @@ BOL-PanxαB,BOL-PanxαB,1.0
 Bab-PanxαA,Bch-PanxαA,0.9959229205746052
 Bab-PanxαA,Bab-PanxαA,1.0
 Bch-PanxαA,Bch-PanxαA,1.0
-'''
-    assert cluster_nulls_file.read() == '"group_0_0":{"mu":0.98633233962997,"sigma":0.007024015654038492},'
+''', print(global_null_file.read())
+    assert cluster_nulls_file.read() == '"group_0_0":{"mu":0.98633233963,"sigma":0.007024015654},'
     assert out_of_cluster_file.read() == """\
 BOL-PanxαB,Bfo-PanxαE,0.9751608517151394
 BOL-PanxαB,Bfr-PanxαA,0.9154074442826174
@@ -1690,8 +1690,8 @@ Bch-PanxαA,Vpa-PanxαD,0.18400191593774887
     assert temp_log_output.read() == """\
 group_0_0
 \tN: 3
-\tMean: 0.98633233962997
-\tStd: 0.007024015654038492
+\tMean: 0.98633233963
+\tStd: 0.007024015654
 
 """
 
@@ -1722,16 +1722,16 @@ def test_mc_build_seq2group(hf):
     seq2clust_obj._mc_build_seq2group("Bab-PanxαA", args)
 
     assert seq2group_dists_file.read() == '''\
-"Bab-PanxαA":{"group_0_0":0.9735696866119007,"group_0_1":0.17549674619022662,\
-"group_0_2":0.19010654186245066,"group_0_3":0.9961178445370709,"group_0_4":0.2774479974635761},'''
+"Bab-PanxαA":{"group_0_0":0.973569686612,"group_0_1":0.17549674619,\
+"group_0_2":0.190106541862,"group_0_3":0.996117844537,"group_0_4":0.277447997464},'''
     assert orig_clusters_file.read() == '"Bab-PanxαA":"group_0_0",'
     assert temp_log_output.read() == """\
 Bab-PanxαA
-\tgroup_0_0: 0.9735696866119007
-\tgroup_0_1: 0.17549674619022662
-\tgroup_0_2: 0.19010654186245066
-\tgroup_0_3: 0.9961178445370709
-\tgroup_0_4: 0.2774479974635761
+\tgroup_0_0: 0.973569686612
+\tgroup_0_1: 0.17549674619
+\tgroup_0_2: 0.190106541862
+\tgroup_0_3: 0.996117844537
+\tgroup_0_4: 0.277447997464
 \tBest: group_0_3
 """
 
@@ -1817,8 +1817,9 @@ def test_create_fwd_score_rsquared_matrix(hf, monkeypatch):
 
 def test_create_truncnorm(hf):
     hmm_fwd_scores = pd.read_csv(os.path.join(hf.resource_path, "hmms", "fwd_r2.csv"), index_col=0)
-    truncnorm = rdmcl.Seqs2Clusters._create_truncnorm(np.mean(hmm_fwd_scores.r_square), np.std(hmm_fwd_scores.r_square))
-    assert truncnorm.pdf(0.8) == 1.0920223528471558
+    truncnorm = rdmcl.Seqs2Clusters._create_truncnorm(helpers.mean(hmm_fwd_scores.r_square),
+                                                      helpers.std(hmm_fwd_scores.r_square))
+    assert truncnorm.pdf(0.8) == 1.0920223528477309
 
 
 def test_place_seqs_in_clusts(hf, monkeypatch):

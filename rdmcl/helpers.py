@@ -225,6 +225,14 @@ class Timer(object):
         return "%s%s%s" % (prefix, pretty_time(round(time()) - self.start), postfix)
 
 
+def mean(series):
+    return np.around(np.mean(series), 12)
+
+
+def std(series):
+    return np.around(np.std(series), 12)
+
+
 def dummy_func(*args, **kwargs):
     """
     This can be placed in code for unit test monkey patching

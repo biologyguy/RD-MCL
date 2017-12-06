@@ -1785,11 +1785,11 @@ class Seqs2Clusters(object):
 
         out_of_cluster_output = ""
         if len(clust_null_df) > 1:
-            cluster_nulls_output += '"%s":{"mu":%s,"sigma":%s},' % (clust.name(), np.mean(clust_null_df.r_square),
-                                                                    np.std(clust_null_df.r_square))
+            cluster_nulls_output += '"%s":{"mu":%s,"sigma":%s},' % (clust.name(), helpers.mean(clust_null_df.r_square),
+                                                                    helpers.std(clust_null_df.r_square))
             log_output += "\tN: %s\n" % len(clust_null_df)
-            log_output += "\tMean: %s\n" % np.mean(clust_null_df.r_square)
-            log_output += "\tStd: %s\n\n" % np.std(clust_null_df.r_square)
+            log_output += "\tMean: %s\n" % helpers.mean(clust_null_df.r_square)
+            log_output += "\tStd: %s\n\n" % helpers.std(clust_null_df.r_square)
         else:
             log_output += "\tN: 1\n"
             log_output += "\tMean: Null\n"
@@ -1834,7 +1834,7 @@ class Seqs2Clusters(object):
             if df.empty:
                 test_mean = 0
             else:
-                test_mean = np.mean(df.r_square)
+                test_mean = helpers.mean(df.r_square)
 
             seq2group_dists += '"%s":%s,' % (clust.name(), test_mean)
             log_output += "%s\n" % test_mean
@@ -1969,19 +1969,20 @@ class Seqs2Clusters(object):
             global_null_df = global_null_df.loc[global_null_df.rec_id1 != global_null_df.rec_id2].reset_index(drop=True)
             log_output += "# Global null R² distribution statistics #\n"
             log_output += "\tN: %s\n" % len(global_null_df)
-            log_output += "\tMean: %s\n" % np.mean(global_null_df.r_square)
-            log_output += "\tStd: %s\n\n" % np.std(global_null_df.r_square)
+            log_output += "\tMean: %s\n" % helpers.mean(global_null_df.r_square)
+            log_output += "\tStd: %s\n\n" % helpers.std(global_null_df.r_square)
 
             out_of_cluster_df = out_of_cluster_df.reset_index(drop=True)
             log_output += "# Out of cluster R² distribution statistics #\n"
             log_output += "\tN: %s\n" % len(out_of_cluster_df)
-            log_output += "\tMean: %s\n" % np.mean(out_of_cluster_df.r_square)
-            log_output += "\tStd: %s\n\n" % np.std(out_of_cluster_df.r_square)
+            log_output += "\tMean: %s\n" % helpers.mean(out_of_cluster_df.r_square)
+            log_output += "\tStd: %s\n\n" % helpers.std(out_of_cluster_df.r_square)
 
             # Create Gaussian distribution object that is clipped off below 0 and above 1
-            null_dist = self._create_truncnorm(np.mean(global_null_df.r_square), np.std(global_null_df.r_square))
-            out_of_cluster_dist = self._create_truncnorm(np.mean(out_of_cluster_df.r_square),
-                                                         np.std(out_of_cluster_df.r_square))
+            null_dist = self._create_truncnorm(helpers.mean(global_null_df.r_square),
+                                               helpers.std(global_null_df.r_square))
+            out_of_cluster_dist = self._create_truncnorm(helpers.mean(out_of_cluster_df.r_square),
+                                                         helpers.std(out_of_cluster_df.r_square))
 
             # Calculate how well every sequence fits with every group
             log_output += "# Group placements #\n"
@@ -2072,7 +2073,7 @@ class Seqs2Clusters(object):
                                 if df.empty:
                                     test_mean = 0
                                 else:
-                                    test_mean = np.mean(df.r_square)
+                                    test_mean = helpers.mean(df.r_square)
                                 seq2group_dists[si][orig_clust] = test_mean
 
                         # Update against new cluster
@@ -2086,7 +2087,7 @@ class Seqs2Clusters(object):
                             if df.empty:
                                 test_mean = 0
                             else:
-                                test_mean = np.mean(df.r_square)
+                                test_mean = helpers.mean(df.r_square)
                             seq2group_dists[si][group_id] = test_mean
                         breakout = False
                         break
