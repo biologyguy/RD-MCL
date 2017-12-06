@@ -12,7 +12,7 @@ from buddysuite import buddy_resources as br
 from copy import copy, deepcopy
 import shutil
 import argparse
-import re
+from math import ceil
 
 
 # #########  Mock classes and functions  ########## #
@@ -1198,7 +1198,7 @@ def test_prepare_all_by_all(hf):
     seqbuddy = hf.get_data("cteno_panxs")  # 134 records = 8911 comparisons
     data_len, data = rdmcl.prepare_all_by_all(seqbuddy, ss2_dfs, cpus)
     assert data_len == 8911
-    assert len(data[0]) == int(rdmcl.ceil(data_len / cpus))
+    assert len(data[0]) == int(ceil(data_len / cpus))
 
 
 def test_set_final_sim_scores(hf):
@@ -1632,6 +1632,36 @@ def test_instantiate_seqs2clusters(hf, monkeypatch):
         rdmcl.Seqs2Clusters(clusters, 3, parent_sb, tmpdir.path)
     assert "hmm_fwd_back program not found" in str(err)
     broker.close()
+
+
+def test_mc_build_seq2group(hf):
+    rsquare_vals_df = pd.read_csv(os.path.join(hf.resource_path, "hmms", "full_r2.csv"), index_col=0)
+    seq2group_dists_file = br.TempFile()
+    orig_clusters_file = br.TempFile()
+    temp_log_output = br.TempFile()
+    args = [rsquare_vals_df, seq2group_dists_file.path, orig_clusters_file.path, temp_log_output.path]
+    broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
+    broker.start_broker()
+    parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
+    clusters = hf.get_test_clusters(broker, parent_sb, rdmcl)
+    broker.close()
+    seq2clust_obj = rdmcl.Seqs2Clusters(clusters, 3, parent_sb, br.TempDir().path)
+
+    seq2clust_obj._mc_build_seq2group("Bab-PanxαA", args)
+
+    assert seq2group_dists_file.read() == '''\
+"Bab-PanxαA":{"group_0_0":0.9735696866119007,"group_0_1":0.17549674619022662,\
+"group_0_2":0.19010654186245066,"group_0_3":0.9961178445370709,"group_0_4":0.2774479974635761},'''
+    assert orig_clusters_file.read() == '"Bab-PanxαA":"group_0_0",'
+    assert temp_log_output.read() == """\
+Bab-PanxαA
+\tgroup_0_0: 0.9735696866119007
+\tgroup_0_1: 0.17549674619022662
+\tgroup_0_2: 0.19010654186245066
+\tgroup_0_3: 0.9961178445370709
+\tgroup_0_4: 0.2774479974635761
+\tBest: group_0_3
+"""
 
 
 def test_create_hmms_for_every_rec(hf):
