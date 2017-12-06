@@ -1511,7 +1511,8 @@ def write_mcl_clusters(clusters, path):
     return
 
 
-# #########  Orphan placement  ########## #
+'''
+# #########  Old orphan placement  (deprecated) ########## #
 class Orphans(object):  # Deprecated
     def __init__(self, seqbuddy, clusters, sql_broker, psi_pred_ss2, outdir, min_clust_size=4, quiet=False):
         """
@@ -1741,6 +1742,7 @@ class Orphans(object):  # Deprecated
                         [cluster for group, cluster in self.large_clusters.items()]
 
         return
+'''
 
 
 class Seqs2Clusters(object):
@@ -1769,6 +1771,48 @@ class Seqs2Clusters(object):
                 self.small_clusters[cluster.name()] = cluster
             else:
                 self.large_clusters[cluster.name()] = cluster
+        return
+
+    def _mc_build_seq2group(self, seq_id, args):
+        rsquare_vals_df, seq2group_dists_file, orig_clusters_file, temp_log_output = args
+        seq2group_dists = '"%s":{' % seq_id
+        orig_clusters = '"%s":' % seq_id
+        log_output = "%s\n" % seq_id
+        best_hit = None
+        for clust in self.clusters:
+            if seq_id in clust.seq_ids:
+                orig_clusters += '"%s",' % clust.name()
+            log_output += "\t" + clust.name() + ": "
+            seq_ids = [i for i in clust.seq_ids if i != seq_id]
+
+            # Pull out dataframe rows where current sequence is paired with a sequence from the current cluster
+            df = rsquare_vals_df.loc[((rsquare_vals_df["rec_id1"].isin(seq_ids)) |
+                                      (rsquare_vals_df["rec_id2"].isin(seq_ids))) &
+                                     ((rsquare_vals_df["rec_id1"] == seq_id) |
+                                      (rsquare_vals_df["rec_id2"] == seq_id)) &
+                                     (rsquare_vals_df["rec_id1"] != rsquare_vals_df["rec_id2"])].copy()
+            if df.empty:
+                test_mean = 0
+            else:
+                test_mean = np.mean(df.r_square)
+
+            seq2group_dists += '"%s":%s,' % (clust.name(), test_mean)
+            log_output += "%s\n" % test_mean
+            if not best_hit:
+                best_hit = (clust.name(), test_mean)
+            else:
+                if test_mean > best_hit[1]:
+                    best_hit = (clust.name(), test_mean)
+
+        log_output += "\tBest: %s\n" % best_hit[0]
+        seq2group_dists = seq2group_dists.strip(",") + "},"
+        with LOCK:
+            with open(seq2group_dists_file, "a") as ofile:
+                ofile.write("%s" % seq2group_dists)
+            with open(orig_clusters_file, "a") as ofile:
+                ofile.write(orig_clusters)
+            with open(temp_log_output, "a") as ofile:
+                ofile.write(log_output)
         return
 
     def create_hmms_for_every_rec(self):
@@ -1905,37 +1949,21 @@ class Seqs2Clusters(object):
 
             # Calculate how well every sequence fits with every group
             log_output += "# Group placements #\n"
-            seq2group_dists = OrderedDict()
-            orig_clusters = {}
-            for seq_id in self.clusters[0].get_base_cluster().seq_ids:  # Base cluster, not Sb obj, because paralogs
-                log_output += "%s\n" % seq_id
-                seq2group_dists[seq_id] = OrderedDict()
-                best_hit = None
-                for clust in self.clusters:
-                    if seq_id in clust.seq_ids:
-                        orig_clusters[seq_id] = clust.name()
-                    log_output += "\t" + clust.name() + ": "
-                    seq_ids = [i for i in clust.seq_ids if i != seq_id]
+            seq2group_dists_file = br.TempFile()
+            seq2group_dists_file.write("{")
 
-                    # Pull out dataframe rows where current sequence is paired with a sequence from the current cluster
-                    df = rsquare_vals_df.loc[((rsquare_vals_df["rec_id1"].isin(seq_ids)) |
-                                              (rsquare_vals_df["rec_id2"].isin(seq_ids))) &
-                                             ((rsquare_vals_df["rec_id1"] == seq_id) |
-                                              (rsquare_vals_df["rec_id2"] == seq_id)) &
-                                             (rsquare_vals_df["rec_id1"] != rsquare_vals_df["rec_id2"])].copy()
-                    if df.empty:
-                        test_mean = 0
-                    else:
-                        test_mean = np.mean(df.r_square)
+            orig_clusters_file = br.TempFile()
+            orig_clusters_file.write("{")
 
-                    seq2group_dists[seq_id][clust.name()] = test_mean
-                    log_output += "%s\n" % test_mean
-                    if not best_hit:
-                        best_hit = (clust.name(), test_mean)
-                    else:
-                        if test_mean > best_hit[1]:
-                            best_hit = (clust.name(), test_mean)
-                log_output += "\tBest: %s\n" % best_hit[0]
+            temp_log_output = br.TempFile()
+
+            args = [rsquare_vals_df, seq2group_dists_file.path, orig_clusters_file.path, temp_log_output.path]
+            seq_ids = self.clusters[0].get_base_cluster().seq_ids
+            br.run_multicore_function(seq_ids, self._mc_build_seq2group, args, quiet=True, max_processes=CPUS)
+
+            seq2group_dists = json.loads(seq2group_dists_file.read().strip(",") + "}")
+            orig_clusters = json.loads(orig_clusters_file.read().strip(",") + "}")
+            log_output += temp_log_output.read()
 
             new_groups = OrderedDict([(clust.name(), copy(clust.seq_ids)) for clust in self.clusters])
             new_groups["orphans"] = []
