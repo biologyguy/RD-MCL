@@ -56,7 +56,7 @@ def test_start_worker_no_master(hf, capsys):
     temp_dir = br.TempDir()
     temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
     temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
-    worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=1)
+    worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=2)
     with pytest.raises(SystemExit):
         worker.start()
     assert worker.split_time != 0
@@ -73,7 +73,7 @@ def test_start_worker_clean_dead_master(hf, capsys, monkeypatch):
     temp_dir = br.TempDir()
     temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
     temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
-    worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=1)
+    worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=2)
     with pytest.raises(SystemExit):
         worker.start()
     out, err = capsys.readouterr()
@@ -770,7 +770,7 @@ def test_main(monkeypatch, capsys):
         assert fields_query == fields
 
     # Test quiet
-    argv = ['launch_worker.py', '--workdb', out_dir.path, "--max_wait", "1", "--quiet"]
+    argv = ['launch_worker.py', '--workdb', out_dir.path, "--max_wait", "2", "--quiet"]
     monkeypatch.setattr(launch_worker.sys, "argv", argv)
     capsys.readouterr()
     with pytest.raises(SystemExit):
@@ -793,7 +793,7 @@ def test_main(monkeypatch, capsys):
 
     # Test termination types
     monkeypatch.setattr(launch_worker.helpers, "dummy_func", mock_valueerror)
-    argv = ['launch_worker.py', '--workdb', out_dir.path, "--max_wait", "1"]
+    argv = ['launch_worker.py', '--workdb', out_dir.path, "--max_wait", "2"]
     monkeypatch.setattr(launch_worker.sys, "argv", argv)
 
     with pytest.raises(SystemExit):

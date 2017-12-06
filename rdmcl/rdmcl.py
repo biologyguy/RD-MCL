@@ -1773,6 +1773,46 @@ class Seqs2Clusters(object):
                 self.large_clusters[cluster.name()] = cluster
         return
 
+    def _mc_build_cluster_nulls(self, clust, args):
+        rsquare_vals_df, global_null_file, cluster_nulls_file, out_of_cluster_file, temp_log_output = args
+
+        log_output = "%s\n" % clust.name()
+        clust_null_df = rsquare_vals_df.loc[(rsquare_vals_df["rec_id1"].isin(clust.seq_ids)) &
+                                            (rsquare_vals_df["rec_id2"].isin(clust.seq_ids))].copy()
+        global_null_output = clust_null_df.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
+        cluster_nulls_output = ""
+        clust_null_df = clust_null_df.loc[clust_null_df.rec_id1 != clust_null_df.rec_id2].reset_index(drop=True)
+
+        out_of_cluster_output = ""
+        if len(clust_null_df) > 1:
+            cluster_nulls_output += '"%s":{"mu":%s,"sigma":%s},' % (clust.name(), np.mean(clust_null_df.r_square),
+                                                                    np.std(clust_null_df.r_square))
+            log_output += "\tN: %s\n" % len(clust_null_df)
+            log_output += "\tMean: %s\n" % np.mean(clust_null_df.r_square)
+            log_output += "\tStd: %s\n\n" % np.std(clust_null_df.r_square)
+        else:
+            log_output += "\tN: 1\n"
+            log_output += "\tMean: Null\n"
+            log_output += "\tStd: Null\n\n"
+
+        if clust.name() in self.large_clusters:
+            clust_null_df = rsquare_vals_df.loc[((rsquare_vals_df["rec_id1"].isin(clust.seq_ids)) &
+                                                 (-rsquare_vals_df["rec_id2"].isin(clust.seq_ids))) |
+                                                ((-rsquare_vals_df["rec_id1"].isin(clust.seq_ids)) &
+                                                 (rsquare_vals_df["rec_id2"].isin(clust.seq_ids)))].copy()
+            out_of_cluster_output += clust_null_df.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
+
+        with LOCK:
+            with open(global_null_file, "a") as ofile:
+                ofile.write(global_null_output)
+            with open(cluster_nulls_file, "a") as ofile:
+                ofile.write(cluster_nulls_output)
+            with open(out_of_cluster_file, "a") as ofile:
+                ofile.write(out_of_cluster_output)
+            with open(temp_log_output, "a") as ofile:
+                ofile.write(log_output)
+        return
+
     def _mc_build_seq2group(self, seq_id, args):
         rsquare_vals_df, seq2group_dists_file, orig_clusters_file, temp_log_output = args
         seq2group_dists = '"%s":{' % seq_id
@@ -1862,11 +1902,7 @@ class Seqs2Clusters(object):
         return rsquare_vals_df
 
     @staticmethod
-    def _create_truncnorm(series, lower=0, upper=1, sigma=None):
-        if len(series) < 2 and sigma is None:
-            raise AttributeError("pd.Series object must have at least two items in it to calculate Std (sigma)")
-        mu = np.mean(series)
-        sigma = sigma if sigma is not None else np.std(series)
+    def _create_truncnorm(mu, sigma, lower=0, upper=1):
         dist = scipy.stats.truncnorm((lower - mu) / sigma, (upper - mu) / sigma, loc=mu, scale=sigma)
         return dist
 
@@ -1891,9 +1927,9 @@ class Seqs2Clusters(object):
         while True:
             try:
                 valve.step()
-            except RuntimeError as err:
-                print(log_output)
-                raise err
+            except RuntimeError:
+                log_output += "\n\nERROR: place_seqs_in_clusts blew its safety valve; abort further placement.\n"
+                break
             breakout = True
 
             log_output += "# Current clusters #\n"
@@ -1901,34 +1937,33 @@ class Seqs2Clusters(object):
                 log_output += "%s\n%s\n\n" % (clust.name(), clust.seq_ids)
 
             # Create a distribution from all R² values between records in each pre-called large cluster
-            global_null_df = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
-            out_of_cluster_df = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
+            global_null_file = br.TempFile()
+            global_null_file.write("rec_id1,rec_id2,r_square\n")
+            # global_null_df = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
+
+            out_of_cluster_file = br.TempFile()
+            out_of_cluster_file.write("rec_id1,rec_id2,r_square\n")
+            # out_of_cluster_df = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
 
             # Also calculate sub-distributions from within each pre-called cluster, creating a cluster null
             log_output += "# Cluster R² distribution statistics #\n"
-            cluster_nulls = OrderedDict()
-            for clust in self.clusters:
-                log_output += "%s\n" % clust.name()
-                df = rsquare_vals_df.loc[(rsquare_vals_df["rec_id1"].isin(clust.seq_ids)) &
-                                         (rsquare_vals_df["rec_id2"].isin(clust.seq_ids))].copy()
-                global_null_df = global_null_df.append(df)
-                df = df.loc[df.rec_id1 != df.rec_id2].reset_index(drop=True)
-                if len(df) > 1:
-                    cluster_nulls[clust.name()] = self._create_truncnorm(df.r_square)
-                    log_output += "\tN: %s\n" % len(df)
-                    log_output += "\tMean: %s\n" % np.mean(df.r_square)
-                    log_output += "\tStd: %s\n\n" % np.std(df.r_square)
-                else:
-                    log_output += "\tN: 1\n"
-                    log_output += "\tMean: Null\n"
-                    log_output += "\tStd: Null\n\n"
+            # cluster_nulls = OrderedDict()
+            cluster_nulls_file = br.TempFile()
+            cluster_nulls_file.write("{")
 
-                if clust.name() in self.large_clusters:
-                    df = rsquare_vals_df.loc[((rsquare_vals_df["rec_id1"].isin(clust.seq_ids)) &
-                                              (-rsquare_vals_df["rec_id2"].isin(clust.seq_ids))) |
-                                             ((-rsquare_vals_df["rec_id1"].isin(clust.seq_ids)) &
-                                              (rsquare_vals_df["rec_id2"].isin(clust.seq_ids)))].copy()
-                    out_of_cluster_df = out_of_cluster_df.append(df)
+            temp_log_output = br.TempFile()
+
+            args = [rsquare_vals_df, global_null_file.path, cluster_nulls_file.path,
+                    out_of_cluster_file.path, temp_log_output.path]
+            br.run_multicore_function(self.clusters, self._mc_build_cluster_nulls, args, max_processes=CPUS, quiet=True)
+
+            global_null_df = pd.read_csv(global_null_file.path)
+            cluster_nulls = json.loads(cluster_nulls_file.read().strip(",") + "}")
+            cluster_nulls = {clust_name: self._create_truncnorm(dist["mu"], dist["sigma"])
+                             for clust_name, dist in cluster_nulls.items()}
+            out_of_cluster_df = pd.read_csv(out_of_cluster_file.path)
+            log_output += temp_log_output.read()
+            temp_log_output.clear()
 
             # H₀: R² between two sequences is drawn from the same distribution as pre-called cluster pairs
             global_null_df = global_null_df.loc[global_null_df.rec_id1 != global_null_df.rec_id2].reset_index(drop=True)
@@ -1944,8 +1979,9 @@ class Seqs2Clusters(object):
             log_output += "\tStd: %s\n\n" % np.std(out_of_cluster_df.r_square)
 
             # Create Gaussian distribution object that is clipped off below 0 and above 1
-            null_dist = self._create_truncnorm(global_null_df.r_square)
-            out_of_cluster_dist = self._create_truncnorm(out_of_cluster_df.r_square)
+            null_dist = self._create_truncnorm(np.mean(global_null_df.r_square), np.std(global_null_df.r_square))
+            out_of_cluster_dist = self._create_truncnorm(np.mean(out_of_cluster_df.r_square),
+                                                         np.std(out_of_cluster_df.r_square))
 
             # Calculate how well every sequence fits with every group
             log_output += "# Group placements #\n"
@@ -1954,8 +1990,6 @@ class Seqs2Clusters(object):
 
             orig_clusters_file = br.TempFile()
             orig_clusters_file.write("{")
-
-            temp_log_output = br.TempFile()
 
             args = [rsquare_vals_df, seq2group_dists_file.path, orig_clusters_file.path, temp_log_output.path]
             seq_ids = self.clusters[0].get_base_cluster().seq_ids

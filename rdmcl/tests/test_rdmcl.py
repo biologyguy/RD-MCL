@@ -2,17 +2,18 @@
 # -*- coding: utf-8 -*-
 
 import pytest
-from .. import rdmcl
-from .. import helpers
 import os
 import sqlite3
 import pandas as pd
-from collections import OrderedDict
-from buddysuite import buddy_resources as br
-from copy import copy, deepcopy
 import shutil
 import argparse
+import numpy as np
+from .. import rdmcl
+from .. import helpers
 from math import ceil
+from collections import OrderedDict
+from buddysuite import buddy_resources as br
+from copy import deepcopy
 
 
 # #########  Mock classes and functions  ########## #
@@ -1634,6 +1635,77 @@ def test_instantiate_seqs2clusters(hf, monkeypatch):
     broker.close()
 
 
+def test_mc_build_cluster_nulls(hf):
+    rsquare_vals_df = pd.read_csv(os.path.join(hf.resource_path, "hmms", "full_r2.csv"), index_col=0)
+    global_null_file = br.TempFile()
+    cluster_nulls_file = br.TempFile()
+    out_of_cluster_file = br.TempFile()
+    temp_log_output = br.TempFile()
+    broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
+    broker.start_broker()
+    parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
+    clusters = hf.get_test_clusters(broker, parent_sb, rdmcl)
+    broker.close()
+    clusters[0].seq_ids = clusters[0].seq_ids[:3]
+    rsquare_vals_df = rsquare_vals_df.loc[(-rsquare_vals_df["rec_id1"].isin(clusters[1].seq_ids)) &
+                                          (-rsquare_vals_df["rec_id2"].isin(clusters[1].seq_ids))]
+    parent_sb.records = [rec for rec in parent_sb.records if rec.id not in clusters[1].seq_ids]
+
+    del clusters[1]
+    seq2clust_obj = rdmcl.Seqs2Clusters(clusters, 3, parent_sb, br.TempDir().path)
+
+    args = [rsquare_vals_df, global_null_file.path, cluster_nulls_file.path,
+            out_of_cluster_file.path, temp_log_output.path]
+    seq2clust_obj._mc_build_cluster_nulls(clusters[0], args)
+
+    assert global_null_file.read() == '''\
+BOL-PanxαB,Bab-PanxαA,0.9837777547877096
+BOL-PanxαB,Bch-PanxαA,0.9792963435275956
+BOL-PanxαB,BOL-PanxαB,1.0
+Bab-PanxαA,Bch-PanxαA,0.9959229205746052
+Bab-PanxαA,Bab-PanxαA,1.0
+Bch-PanxαA,Bch-PanxαA,1.0
+'''
+    assert cluster_nulls_file.read() == '"group_0_0":{"mu":0.98633233962997,"sigma":0.007024015654038492},'
+    assert out_of_cluster_file.read() == """\
+BOL-PanxαB,Bfo-PanxαE,0.9751608517151394
+BOL-PanxαB,Bfr-PanxαA,0.9154074442826174
+BOL-PanxαB,Hca-PanxαA,0.9774437393547424
+BOL-PanxαB,Hvu-PanxβA,0.2889682149288218
+BOL-PanxαB,Lcr-PanxαG,0.9849147576498428
+BOL-PanxαB,Vpa-PanxαD,0.17457891316246396
+Bab-PanxαA,Bfo-PanxαE,0.9750474431415456
+Bab-PanxαA,Bfr-PanxαA,0.9395306279437422
+Bab-PanxαA,Hca-PanxαA,0.993340389556856
+Bab-PanxαA,Hvu-PanxβA,0.2774479974635761
+Bab-PanxαA,Lcr-PanxαG,0.9988952995172856
+Bab-PanxαA,Vpa-PanxαD,0.19010654186245066
+Bch-PanxαA,Bfo-PanxαE,0.9721129205296588
+Bch-PanxαA,Bfr-PanxαA,0.9298881134683558
+Bch-PanxαA,Hca-PanxαA,0.9911739170146991
+Bch-PanxαA,Hvu-PanxβA,0.2809852029840147
+Bch-PanxαA,Lcr-PanxαG,0.9966025480628256
+Bch-PanxαA,Vpa-PanxαD,0.18400191593774887
+"""
+    assert temp_log_output.read() == """\
+group_0_0
+\tN: 3
+\tMean: 0.98633233962997
+\tStd: 0.007024015654038492
+
+"""
+
+    temp_log_output.clear()
+    seq2clust_obj._mc_build_cluster_nulls(clusters[1], args)
+    assert temp_log_output.read() == """\
+group_0_2
+\tN: 1
+\tMean: Null
+\tStd: Null
+
+"""
+
+
 def test_mc_build_seq2group(hf):
     rsquare_vals_df = pd.read_csv(os.path.join(hf.resource_path, "hmms", "full_r2.csv"), index_col=0)
     seq2group_dists_file = br.TempFile()
@@ -1745,14 +1817,8 @@ def test_create_fwd_score_rsquared_matrix(hf, monkeypatch):
 
 def test_create_truncnorm(hf):
     hmm_fwd_scores = pd.read_csv(os.path.join(hf.resource_path, "hmms", "fwd_r2.csv"), index_col=0)
-    truncnorm = rdmcl.Seqs2Clusters._create_truncnorm(hmm_fwd_scores.r_square)
+    truncnorm = rdmcl.Seqs2Clusters._create_truncnorm(np.mean(hmm_fwd_scores.r_square), np.std(hmm_fwd_scores.r_square))
     assert truncnorm.pdf(0.8) == 1.0920223528471558
-
-    hmm_fwd_scores = hmm_fwd_scores.loc[hmm_fwd_scores.r_square == 0.016894]
-    with pytest.raises(AttributeError) as err:
-        rdmcl.Seqs2Clusters._create_truncnorm(hmm_fwd_scores.r_square)
-
-    assert "pd.Series object must have at least two items in it" in str(err)
 
 
 def test_place_seqs_in_clusts(hf, monkeypatch):
