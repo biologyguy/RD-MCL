@@ -261,32 +261,24 @@ def test_sqlitebroker_close():
     assert not broker.broker.is_alive()
 
 
-def test_logger(capsys):
-    tmpdir = br.TempDir()
-    tmpfile = tmpdir.subfile('first.log')
-    logger = helpers.Logger(tmpfile)
+def test_logger():
+    tmp = br.TempFile()
+    logger = helpers.Logger(tmp.path)
+
     assert type(logger.logger) == helpers.logging.RootLogger
     assert type(logger.console) == helpers.logging.StreamHandler
     assert logger.logger.level == 20
     handlers = [type(handler) for handler in logger.logger.handlers]
-    assert len(logger.logger.handlers) == 3, print(handlers)
-    assert type(logger.logger.handlers[0]) == helpers.logging.StreamHandler, print(handlers)
+    assert len(logger.logger.handlers) == 2, print(handlers)
+    assert type(logger.logger.handlers[1]) == helpers.logging.StreamHandler, print(handlers)
     assert logger.console.level == 30
-
-    # Pytest add handlers, so kill them
-    assert "_pytest.logging.LogCaptureHandler" in str(type(logger.logger.handlers[1]))
-    del logger.logger.handlers[1]
-    del logger.logger.handlers[0]
 
     logger.logger.log(helpers.logging.WARNING, "Some info")
     helpers.logging.warning("Some Warnings")
 
-    # Output should be going to file, but pytest is jumping in and messing things up. Just check stderr.
-    out, err = capsys.readouterr()
-    assert err == "Some info\nSome Warnings\n"
-
-    logger.move_log(os.path.join(tmpdir.path, "second.log"))
-    assert os.path.isfile(os.path.join(tmpdir.path, "second.log"))
+    logger.move_log("%sfirst.log" % tmp.path)
+    with open("%sfirst.log" % tmp.path, "r") as ofile:
+        assert ofile.read() == "Some info\nSome Warnings\n"
 
 
 def test_timer(monkeypatch):
