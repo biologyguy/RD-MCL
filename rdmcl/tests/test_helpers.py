@@ -4,34 +4,103 @@
 import pytest
 from .. import helpers
 import os
-import buddysuite.SeqBuddy
 import buddysuite.buddy_resources as br
 import sqlite3
 import pandas as pd
 import numpy as np
-from hashlib import md5
-from time import sleep
+import time
 from multiprocessing.queues import SimpleQueue
 from multiprocessing import Pipe, Process
 from Bio.SubsMat import SeqMat, MatrixInfo
 from io import StringIO
 
 
-def test_sqlitebroker_init(hf):
+def test_attrwraper():
+    test_obj = helpers.AttrWrapper(object())
+    test_obj.lag = 3
+    assert test_obj.lag == 3
+
+
+def test_exclusiveconnect(monkeypatch):
     tmpdir = br.TempDir()
-    broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
-    assert broker.db_file == "%s%sdb.sqlite" % (tmpdir.path, hf.sep)
+
+    connect = sqlite3.connect(os.path.join(tmpdir.path, "db.sqlite"))
+    cursor = connect.cursor()
+    cursor.execute("CREATE TABLE foo (id INT PRIMARY KEY, some_data TEXT, numbers INT)")
+    connect.commit()
+
+    # Basic instantiation
+    excl_con = helpers.ExclusiveConnect(os.path.join(tmpdir.path, "db.sqlite"))
+    assert excl_con.db_path == os.path.join(tmpdir.path, "db.sqlite")
+    assert excl_con.log_message is None
+    assert excl_con.log_output == []
+    assert excl_con.start_time < time.time()
+    assert excl_con.loop_counter == 0
+    assert excl_con.log_path == "ExclusiveConnect.log"
+    assert excl_con.priority == 0.5
+    assert excl_con.max_lock == 60
+
+    # Timeout method
+    excl_con.max_lock = 120
+    with pytest.raises(EnvironmentError) as err:
+        excl_con.raise_timeout()
+    assert "ExclusiveConnect Lock held for over 120 seconds" in str(err)
+
+    # Non-logged activity
+    with helpers.ExclusiveConnect(os.path.join(tmpdir.path, "db.sqlite")) as cursor:
+        cursor.execute("INSERT INTO foo (id, some_data, numbers) VALUES (0, 'hello', 25)")
+
+    connect = sqlite3.connect(os.path.join(tmpdir.path, "db.sqlite"))
+    cursor = connect.cursor()
+    cursor.execute("SELECT some_data FROM foo WHERE id=0")
+    response = cursor.fetchone()
+    assert response == ("hello",)
+
+    # Logged activity
+    log_file = tmpdir.subfile("log_file")
+    with helpers.ExclusiveConnect(os.path.join(tmpdir.path, "db.sqlite"),
+                                  log_message="Testing logging", log_path=log_file) as cursor:
+        cursor.execute("INSERT INTO foo (id, some_data, numbers) VALUES (1, 'bonjour', 50)")
+
+    with open(log_file, "r") as ifile:
+        assert "Testing logging" in ifile.read()
+
+    # Locked database with sleep
+    class SQLiteError(object):
+        def __init__(self):
+            self.next_err = self.error_loop()
+
+        def error_loop(self):
+            _errors = [sqlite3.OperationalError("database is locked"), sqlite3.OperationalError("Not expected")]
+            for _err in _errors:
+                yield _err
+
+        def raise_error(self, *args, **kwargs):
+            raise next(self.next_err)
+
+    errors = SQLiteError()
+    monkeypatch.setattr(sqlite3, "connect", errors.raise_error)
+    with pytest.raises(sqlite3.OperationalError) as err:
+        with helpers.ExclusiveConnect(os.path.join(tmpdir.path, "db.sqlite")) as cursor:
+            cursor.execute("INSERT INTO foo (id, some_data, numbers) VALUES (2, 'hola', 75)")
+    assert "Not expected" in str(err)
+
+
+def test_sqlitebroker_init():
+    tmpdir = br.TempDir()
+    broker = helpers.SQLiteBroker(os.path.join(tmpdir.path, "db.sqlite"))
+    assert broker.db_file == os.path.join(tmpdir.path, "db.sqlite")
     assert type(broker.connection) == sqlite3.Connection
     assert type(broker.broker_cursor) == sqlite3.Cursor
     assert type(broker.broker_queue) == SimpleQueue
     assert broker.broker is None
 
 
-def test_sqlitebroker_create_table(hf):
+def test_sqlitebroker_create_table():
     tmpdir = br.TempDir()
-    broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
+    broker = helpers.SQLiteBroker(os.path.join(tmpdir.path, "db.sqlite"))
     broker.create_table("foo", ['id INT PRIMARY KEY', 'some_data TEXT', 'numbers INT'])
-    connect = sqlite3.connect("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
+    connect = sqlite3.connect(os.path.join(tmpdir.path, "db.sqlite"))
     cursor = connect.cursor()
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
     response = cursor.fetchone()
@@ -40,7 +109,7 @@ def test_sqlitebroker_create_table(hf):
     broker.create_table("foo", ['id INT PRIMARY KEY', 'some_data TEXT', 'numbers INT'])
 
 
-def test_sqlitebroker_broker_loop(hf, monkeypatch, capsys):
+def test_sqlitebroker_broker_loop(monkeypatch, capsys):
     class MockBrokerLoopGet(object):
         def __init__(self, pipe, modes, sql="SELECT name FROM sqlite_master WHERE type='table'"):
             self.mode = self._get(modes, sql)
@@ -54,7 +123,7 @@ def test_sqlitebroker_broker_loop(hf, monkeypatch, capsys):
             return next(self.mode)
 
     tmpdir = br.TempDir()
-    broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
+    broker = helpers.SQLiteBroker(os.path.join(tmpdir.path, "db.sqlite"))
     broker.create_table("foo", ['id INT PRIMARY KEY', 'some_data TEXT', 'numbers INT'])
 
     recvpipe, sendpipe = Pipe(False)
@@ -65,7 +134,7 @@ def test_sqlitebroker_broker_loop(hf, monkeypatch, capsys):
     monkeypatch.setattr(SimpleQueue, 'get', simple_queue_get.get)
     broker._broker_loop(broker.broker_queue)
 
-    connect = sqlite3.connect("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
+    connect = sqlite3.connect(os.path.join(tmpdir.path, "db.sqlite"))
     cursor = connect.cursor()
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
     response = cursor.fetchone()
@@ -88,10 +157,23 @@ def test_sqlitebroker_broker_loop(hf, monkeypatch, capsys):
     out, err = capsys.readouterr()
     assert "Failed query: NONSENSE SQL COMMAND" in out
 
+    simple_queue_get = MockBrokerLoopGet(sendpipe, ["sql"], "")
+    monkeypatch.setattr(SimpleQueue, 'get', simple_queue_get.get)
 
-def test_sqlitebroker_start_and_stop_broker(hf):
+    def raise_error():
+        raise sqlite3.OperationalError("database is locked")
+    monkeypatch.setattr(helpers, 'dummy_func', raise_error)
+    broker.lock_wait_time = 0.1
+    with pytest.raises(sqlite3.OperationalError) as err:
+        broker._broker_loop(broker.broker_queue)
+    assert 'database is locked' in str(err)
+    out, err = capsys.readouterr()
+    assert out == 'Failed query: \n'
+
+
+def test_sqlitebroker_start_and_stop_broker():
     tmpdir = br.TempDir()
-    broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
+    broker = helpers.SQLiteBroker(os.path.join(tmpdir.path, "db.sqlite"))
     assert broker.broker is None
     broker.start_broker()
     assert type(broker.broker) == Process
@@ -101,9 +183,9 @@ def test_sqlitebroker_start_and_stop_broker(hf):
     assert not broker.broker.is_alive()
 
 
-def test_sqlitebroker_query(hf):
+def test_sqlitebroker_query(monkeypatch):
     tmpdir = br.TempDir()
-    broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
+    broker = helpers.SQLiteBroker(os.path.join(tmpdir.path, "db.sqlite"))
     broker.create_table("foo", ['id INT PRIMARY KEY', 'some_data TEXT', 'numbers INT'])
     with pytest.raises(RuntimeError) as err:
         broker.query("INSERT INTO foo (id, some_data, numbers) VALUES (0, 'hello', 25)")
@@ -114,16 +196,64 @@ def test_sqlitebroker_query(hf):
     assert query == []
 
     broker.close()
-    connect = sqlite3.connect("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
+    connect = sqlite3.connect(os.path.join(tmpdir.path, "db.sqlite"))
     cursor = connect.cursor()
     cursor.execute("SELECT * FROM foo")
     response = cursor.fetchone()
     assert response == (0, 'hello', 25)
 
+    def raise_error(*_, **__):
+        raise sqlite3.OperationalError("sqlite error")
 
-def test_sqlitebroker_close(hf):
+    monkeypatch.setattr(SimpleQueue, "put", raise_error)
+    with pytest.raises(sqlite3.OperationalError) as err:
+        broker.query("NONSENSE QUERY")
+
+    assert "sqlite error" in str(err)
+
+    def raise_error(*_, **__):
+        raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(SimpleQueue, "put", raise_error)
+    monkeypatch.setattr(helpers, "sleep", raise_error)
+    with pytest.raises(RuntimeError) as err:
+        broker.query("NONSENSE QUERY")
+    assert "can't start new thread" in str(err)
+
+    def raise_error(*_, **__):
+        raise RuntimeError("some other runtime error")
+
+    monkeypatch.setattr(SimpleQueue, "put", raise_error)
+    monkeypatch.setattr(helpers, "sleep", raise_error)
+    with pytest.raises(RuntimeError) as err:
+        broker.query("NONSENSE QUERY")
+    assert "some other runtime error" in str(err)
+
+
+def test_sqlitebroker_iterator():
     tmpdir = br.TempDir()
-    broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
+
+    connect = sqlite3.connect(os.path.join(tmpdir.path, "db.sqlite"))
+    cursor = connect.cursor()
+    cursor.execute("CREATE TABLE foo (id INT PRIMARY KEY, some_data TEXT, numbers INT)")
+    cursor.execute("INSERT INTO foo (id, some_data, numbers) VALUES (0, 'hello', 25)")
+    cursor.execute("INSERT INTO foo (id, some_data, numbers) VALUES (1, 'bonjour', 50)")
+    cursor.execute("INSERT INTO foo (id, some_data, numbers) VALUES (2, 'hola', 75)")
+    connect.commit()
+    connect.close()
+
+    broker = helpers.SQLiteBroker(os.path.join(tmpdir.path, "db.sqlite"))
+    results = broker.iterator("SELECT * FROM foo")
+    assert next(results) == (0, 'hello', 25)
+    assert next(results) == (1, 'bonjour', 50)
+    assert next(results) == (2, 'hola', 75)
+    with pytest.raises(StopIteration):
+        next(results)
+
+
+def test_sqlitebroker_close():
+    tmpdir = br.TempDir()
+    broker = helpers.SQLiteBroker(os.path.join(tmpdir.path, "db.sqlite"))
     assert broker.broker is None
     broker.start_broker()
     assert broker.broker.is_alive()
@@ -168,6 +298,16 @@ def test_timer(monkeypatch):
     assert timer.split(prefix="start_", postfix="_end") == 'start_1 sec_end'
     monkeypatch.setattr(helpers, "time", lambda *_: 4)
     assert timer.total_elapsed(prefix="start_", postfix="_end") == 'start_3 sec_end'
+
+
+def test_mean(hf):
+    data = hf.get_data("cteno_sim_scores")
+    assert helpers.mean(data.score) == 0.40629959990800002
+
+
+def test_std(hf):
+    data = hf.get_data("cteno_sim_scores")
+    assert helpers.std(data.score) == 0.18440242260100001
 
 
 def test_md5_hash():
@@ -333,7 +473,7 @@ Oma\tMle\t0.9"""
  [ 0.   0.   0.5  0.5]]"""
     assert mcl.clusters == [["Mle", "Oma"], ['Bab', "Cfu"]]
 
-    def safetyvalve_init(self, global_reps):
+    def safetyvalve_init(self, *_, **__):
         self.counter = 0
         self.global_reps = 2
 

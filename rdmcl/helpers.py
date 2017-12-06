@@ -34,7 +34,7 @@ class ExclusiveConnect(object):
         self.max_lock = max_lock
 
     def raise_timeout(self, *args):
-        raise EnvironmentError("ExclusiveConnect Lock held for over 60 seconds")
+        raise EnvironmentError("ExclusiveConnect Lock held for over %s seconds" % self.max_lock)
 
     def __enter__(self):
         # Note that there is a pseudo-priority counter
@@ -112,12 +112,13 @@ class SQLiteBroker(object):
                     locked_counter = 0
                     while True:
                         try:
+                            dummy_func()
                             self.broker_cursor.execute(query['sql'], query['values'])
                             self.connection.commit()
                         except sqlite3.OperationalError as err:
                             if "database is locked" in str(err):
                                 # Wait for database to become free
-                                if locked_counter == self.lock_wait_time * 5:
+                                if locked_counter > self.lock_wait_time * 5:
                                     print("Failed query: %s" % query['sql'])
                                     raise err
                                 locked_counter += 1
@@ -163,6 +164,7 @@ class SQLiteBroker(object):
         while True:
             valve.step("To many threads being called, tried for 5 minutes but couldn't find an open thread.")
             try:
+                dummy_func()
                 self.broker_queue.put({'mode': 'sql', 'sql': sql, 'values': values, 'pipe': sendpipe})
                 break
             except (sqlite3.Error, sqlite3.OperationalError, sqlite3.IntegrityError, sqlite3.DatabaseError) as err:
