@@ -1927,13 +1927,18 @@ class Seqs2Clusters(object):
             rsquare_vals_df.to_csv(rsquares_df_path, index=False)
 
         valve = br.SafetyValve(round(len(self.clusters[0].get_base_cluster().seq_ids) * 1.2))
+        placed = []
         while True:
             try:
                 valve.step()
             except RuntimeError:
                 log_output += "\n\nERROR: place_seqs_in_clusts blew its safety valve; abort further placement.\n"
                 break
-            breakout = True
+            if len(placed) == len(self.clusters[0].get_base_cluster()):
+                placed = []  # Reset the `placed` list and loop through again, making sure nothing has changed
+                breakout = True
+            else:
+                breakout = False
 
             log_output += "# Current clusters #\n"
             for clust in self.clusters:
@@ -2009,7 +2014,8 @@ class Seqs2Clusters(object):
             # Set a static order that sequences will be placed, based on current average r_squares
             sort_order = [(seq_id, max([val for group_id, val in group_vals.items()]))
                           for seq_id, group_vals in seq2group_dists.items()]
-            sort_order = [(seq_id, val) for seq_id, val in sorted(sort_order, key=lambda i: i[1])]
+            sort_order = [(seq_id, val) for seq_id, val in sorted(sort_order, key=lambda i: i[1], reverse=True)
+                          if seq_id not in placed]
             log_output += "\n\n# Sort order #\n%s\n\n" % sort_order
             sort_order = [seq_id for seq_id, val in sort_order]
 
@@ -2022,6 +2028,13 @@ class Seqs2Clusters(object):
                 log_output += "\tGlobal null = %s\n " % null_dist.pdf(val)
                 log_output += "\tCluster null = NONE\n" if group_id not in cluster_nulls \
                     else "\tCluster null = %s\n" % cluster_nulls[group_id].pdf(val)
+
+                # If the 'highest' cluster is not the original cluster, check the original cluster first
+                if group_id != orig_clusters[seq_id] and orig_clusters[seq_id] in cluster_nulls:
+                    orig_val = seq2group_dists[seq_id][orig_clusters[seq_id]]
+                    if cluster_nulls[orig_clusters[seq_id]].pdf(orig_val) >= out_of_cluster_dist.pdf(orig_val) \
+                            or null_dist.pdf(orig_val) >= out_of_cluster_dist.pdf(orig_val):
+                        group_id, val = orig_clusters[seq_id], orig_val
 
                 # Place sequence in new_groups and update seq2group_dists
                 orphaned = False
@@ -2037,6 +2050,7 @@ class Seqs2Clusters(object):
                     new_groups["orphans"].append(seq_id)
 
                 if seq_id in new_groups["orphans"] or seq_id not in new_groups[group_id]:  # Else, it stays the same
+                    placed.append(seq_id)
                     # Add
                     if seq_id not in new_groups["orphans"]:
                         log_output += "\tMoving from %s to %s\n\n" % (orig_clusters[seq_id], group_id)
@@ -2096,6 +2110,7 @@ class Seqs2Clusters(object):
                         break
                 else:
                     log_output += "\tReturned to group %s\n\n" % group_id
+                    placed.append(seq_id)
 
             for clust in self.clusters:
                 if clust.name() in new_groups:

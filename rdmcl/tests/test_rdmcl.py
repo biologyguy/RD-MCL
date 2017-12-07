@@ -1838,10 +1838,11 @@ def test_place_seqs_in_clusts(hf, monkeypatch):
     seq2clust_obj.place_seqs_in_clusts()
 
     assert seq2clust_obj.clusters[0].seq_ids == ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE',
-                                                 'Bfr-PanxαA', 'Hca-PanxαA', 'Lcr-PanxαG']
+                                                 'Bfr-PanxαA']
     assert seq2clust_obj.clusters[1].seq_ids == ['Lla-PanxαA', 'Mle-Panxα11', 'Oma-PanxαD',
                                                  'Pba-PanxαB', 'Tin-PanxαF', 'Vpa-PanxαD']
-    assert seq2clust_obj.clusters[2].seq_ids == ["Hvu-PanxβA"]
+    assert seq2clust_obj.clusters[2].seq_ids == ['Hca-PanxαA', 'Lcr-PanxαG']
+    assert seq2clust_obj.clusters[3].seq_ids == ["Hvu-PanxβA"]
     #assert hf.string2hash(seq2clust_obj.tmp_file.read()) == "92d4b9600d74732452c1d81b7d1a8ece"
 
 
@@ -2017,11 +2018,13 @@ def test_full_run(hf, capsys):
     test_in_args.r_seed = 1
     rdmcl.full_run(test_in_args)
 
-    for expected_dir in ["alignments", "mcmcmc", "psi_pred", "sim_scores"]:
-        assert os.path.isdir(os.path.join(out_dir.path, expected_dir))
+    for expected_dir in ["alignments", "hmm", "mcmcmc", "psi_pred", "sim_scores"]:
+        expected_dir = os.path.join(out_dir.path, expected_dir)
+        assert os.path.isdir(expected_dir), print(expected_dir)
 
-    for expected_file in ["cliques.log", "final_clusters.txt", "orphans.log", "paralog_cliques", "rdmcl.log"]:
-        assert os.path.isfile(os.path.join(out_dir.path, expected_file))
+    for expected_file in ["final_clusters.txt", "orphans.log", "paralog_cliques", "rdmcl.log"]:
+        expected_file = os.path.join(out_dir.path, expected_file)
+        assert os.path.isfile(expected_file), print(expected_file)
 
     with open(os.path.join(out_dir.path, "final_clusters.txt"), "r") as ifile:
         content = ifile.read()
