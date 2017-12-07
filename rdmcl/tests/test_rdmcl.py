@@ -149,13 +149,11 @@ def test_cluster_collapse(hf):
     cluster = rdmcl.Cluster(*hf.base_cluster_args())
     assert not cluster.collapsed_genes
     cluster.collapse()
-    assert cluster.collapsed_genes == OrderedDict([('Lcr-PanxαA', ['Lcr-PanxαL']),
-                                                   ('Mle-Panxα10A', ['Mle-Panxα9']),
-                                                   ('Hvu-PanxβL', ['Hvu-PanxβO', 'Hvu-PanxβA', 'Hvu-PanxβC',
-                                                                   'Hvu-PanxβB', 'Hvu-PanxβJ', 'Hvu-PanxβM',
-                                                                   'Hvu-PanxβI', 'Hvu-PanxβF', 'Hvu-PanxβH',
-                                                                   'Hvu-PanxβD', 'Hvu-PanxβG', 'Hvu-PanxβE',
-                                                                   'Hvu-PanxβK'])])
+    assert cluster.collapsed_genes == OrderedDict([('Hvu-PanxβI', ['Hvu-PanxβM', 'Hvu-PanxβD', 'Hvu-PanxβC',
+                                                                   'Hvu-PanxβE', 'Hvu-PanxβF', 'Hvu-PanxβH',
+                                                                   'Hvu-PanxβG', 'Hvu-PanxβK', 'Hvu-PanxβO',
+                                                                   'Hvu-PanxβA', 'Hvu-PanxβB', 'Hvu-PanxβJ',
+                                                                   'Hvu-PanxβL'])])
 
 
 def test_cluster_get_name(hf):

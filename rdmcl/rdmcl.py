@@ -192,12 +192,15 @@ class Cluster(object):
             for seq1_id in self.seq_ids:
                 seq1_taxa = seq1_id.split(self.taxa_sep)[0]
                 paralog_best_hits = []
-                for hit in self.get_best_hits(seq1_id).itertuples():
-                    seq2_id = hit.seq1 if hit.seq1 != seq1_id else hit.seq2
+                for best_hits_seq1 in self.get_best_hits(seq1_id).itertuples():  # This grabs the best hit for seq1
+                    seq2_id = best_hits_seq1.seq1 if best_hits_seq1.seq1 != seq1_id else best_hits_seq1.seq2
                     if seq2_id.split(self.taxa_sep)[0] != seq1_taxa:
                         paralog_best_hits = []
                         break
-                    paralog_best_hits.append(seq2_id)
+                    for best_hits_seq2 in self.get_best_hits(seq2_id).itertuples():  # Confirm best hit is reciprocal
+                        if seq1_id in [best_hits_seq2.seq1, best_hits_seq2.seq2]:
+                            paralog_best_hits.append(seq2_id)
+                            break
 
                 if not paralog_best_hits:
                     continue
