@@ -2006,10 +2006,8 @@ def test_argparse_init(monkeypatch, hf):
 
 def test_full_run(hf, capsys):
     # I can't break these up into separate test functions because of collisions with logger
-    return
     out_dir = br.TempDir()
 
-    '''
     # First try a RESUME run
     test_in_args = deepcopy(in_args)
     test_in_args.sequences = os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa")
@@ -2031,22 +2029,18 @@ def test_full_run(hf, capsys):
     with open(os.path.join(out_dir.path, "final_clusters.txt"), "r") as ifile:
         content = ifile.read()
         assert content == """\
-group_0_0_0\t22.5308\tBOL-PanxαA\tBOL-PanxαC\tLcr-PanxαE\tLcr-PanxαH\tLcr-PanxαJ\tMle-Panxα10A\tMle-Panxα12\t\
-Mle-Panxα6\tMle-Panxα9\tVpa-PanxαB\tVpa-PanxαC\tVpa-PanxαG
-group_0_1\t15.6667\tBOL-PanxαF\tLcr-PanxαI\tMle-Panxα4\tVpa-PanxαA
-group_0_2\t11.0069\tLcr-PanxαA\tLcr-PanxαL\tMle-Panxα5\tVpa-PanxαF
-group_0_3\t7.875\tBOL-PanxαD\tLcr-PanxαD\tMle-Panxα2
-group_0_4\t3.75\tLcr-PanxαB\tMle-Panxα1
-group_0_5\t4.875\tBOL-PanxαH\tMle-Panxα8
-group_0_6\t4.875\tBOL-PanxαG\tLcr-PanxαF
-group_0_0_1\t3.75\tLcr-PanxαK\tMle-Panxα7A
+group_0_0_0\t20.3333\tBOL-PanxαA\tLcr-PanxαH\tMle-Panxα10A\tMle-Panxα9\tVpa-PanxαB
+group_0_2\t4.0\tBOL-PanxαH\tMle-Panxα8
+group_0_1\t9.0417\tLcr-PanxαK\tMle-Panxα7A
+group_0_0_1\t1.25\tMle-Panxα5
+group_0_3\t2.0833\tBOL-PanxαG
 """, print(content)
 
     out, err = capsys.readouterr()
+    print(err)
     assert "RESUME: All PSI-Pred .ss2 files found" in err
-    assert "RESUME: Initial multiple sequence alignment found" in err
-    assert "RESUME: Initial all-by-all similarity graph found" in err
-    assert "Iterative placement of orphans and paralog RBHC removal" in err
+    assert "Generating initial all-by-all similarity graph" in err
+
     '''
     # Now a full run from scratch (on smaller set), with non-existant psi-pred dir
     open(os.path.join(out_dir.path, "rdmcl.log"), "w").close()
@@ -2060,8 +2054,8 @@ group_0_0_1\t3.75\tLcr-PanxαK\tMle-Panxα7A
     out_dir.subfile("group_0.txt")
     out_dir.subfile("orphans.log")
     out_dir.subfile("cliques.log")
-    subset_ids = ["BOL-PanxαA", "Lcr-PanxαH", "Mle-Panxα10A", "Mle-Panxα9", "Vpa-PanxαB", "BOL-PanxαF",
-                  "Lcr-PanxαI", "Mle-Panxα4", "Vpa-PanxαA", "BOL-PanxαC", "Mle-Panxα12", "Vpa-PanxαG"]
+    subset_ids = ['BOL-PanxαA', 'BOL-PanxαG', 'BOL-PanxαH', 'Lcr-PanxαH', 'Lcr-PanxαK', 'Mle-Panxα5',
+                  'Mle-Panxα7A', 'Mle-Panxα8', 'Mle-Panxα9', 'Mle-Panxα10A', 'Vpa-PanxαB']
     for seq in subset_ids[:-1]:
         shutil.copyfile(os.path.join(hf.resource_path, "psi_pred", seq + ".ss2"),
                         os.path.join(out_dir.path, "psi_pred", seq + ".ss2"))
@@ -2077,24 +2071,27 @@ group_0_0_1\t3.75\tLcr-PanxαK\tMle-Panxα7A
 
     # shutil.copyfile(os.path.join(out_dir.path, "sqlite_db.sqlite"), "unit_test_db")
 
-    for expected_dir in ["alignments", "mcmcmc", "psi_pred", "sim_scores"]:
-        assert os.path.isdir(os.path.join(out_dir.path, expected_dir))
+    for expected_dir in ['alignments', 'hmm', 'mcmcmc', 'psi_pred', 'sim_scores']:
+        assert os.path.isdir(os.path.join(out_dir.path, expected_dir)), print(next(os.walk(out_dir.path))[1])
 
-    for expected_file in ["cliques.log", "final_clusters.txt", "orphans.log",
+    for expected_file in ["final_clusters.txt", "orphans.log",
                           "paralog_cliques", "rdmcl.log", "sqlite_db.sqlite"]:
-        assert os.path.isfile(os.path.join(out_dir.path, expected_file))
+        assert os.path.isfile(os.path.join(out_dir.path, expected_file)), print(next(os.walk(out_dir.path))[2])
 
     with open(os.path.join(out_dir.path, "final_clusters.txt"), "r") as ifile:
         content = ifile.read()
         assert content == """\
-group_0_0\t11.5286\tBOL-PanxαA\tLcr-PanxαH\tMle-Panxα10A\tMle-Panxα9\tVpa-PanxαB
-group_0_1\t11.3333\tBOL-PanxαF\tLcr-PanxαI\tMle-Panxα4\tVpa-PanxαA
-group_0_2\t6.4167\tBOL-PanxαC\tMle-Panxα12\tVpa-PanxαG
+group_0_0_0\t20.3333\tBOL-PanxαA\tLcr-PanxαH\tMle-Panxα10A\tMle-Panxα9\tVpa-PanxαB
+group_0_2\t4.0\tBOL-PanxαH\tMle-Panxα8
+group_0_1\t9.0417\tLcr-PanxαK\tMle-Panxα7A
+group_0_0_1\t1.25\tMle-Panxα5
+group_0_3\t2.0833\tBOL-PanxαG
 """, print(content)
 
     out, err = capsys.readouterr()
-    assert "Generating initial all-by-all similarity graph (66 comparisons)" in err
+    assert "Generating initial all-by-all similarity graph (55 comparisons)" in err, print(err)
 
     # Cleanup
     if os.path.isfile("rdmcl.log"):
         os.remove("rdmcl.log")
+    '''
