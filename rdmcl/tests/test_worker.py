@@ -15,6 +15,8 @@ from buddysuite import SeqBuddy as Sb
 import time
 import argparse
 
+pd.set_option('expand_frame_repr', False)
+
 
 def mock_valueerror(*args, **kwargs):
     raise ValueError(args, kwargs)
@@ -657,13 +659,13 @@ Oma-PanxαC,Oma-PanxαD,0.4712328736449831,0.6647632735397735
     sim_scores_df = worker.process_subjob("foo", sim_scores_df, 3, 3)
 
     assert str(sim_scores_df) == """\
-         seq1        seq2   subsmat       psi
-0  Oma-PanxαA  Oma-PanxαD  0.587799  0.742814
-1  Oma-PanxαB  Oma-PanxαC  0.230229  0.502749
-0  Oma-PanxαA  Oma-PanxαB  0.244092  0.482157
-1  Oma-PanxαA  Oma-PanxαC  0.513562  0.730156
-0  Oma-PanxαB  Oma-PanxαD  0.238296  0.448141
-1  Oma-PanxαC  Oma-PanxαD  0.471233  0.664763"""
+         seq1        seq2         subsmat             psi
+0  Oma-PanxαA  Oma-PanxαD  0.587799312777  0.742814475205
+1  Oma-PanxαB  Oma-PanxαC  0.230228984594  0.502748919383
+0  Oma-PanxαA  Oma-PanxαB  0.244091847349  0.482156668931
+1  Oma-PanxαA  Oma-PanxαC  0.513561707898  0.730156131502
+0  Oma-PanxαB  Oma-PanxαD  0.238296271178  0.448141037435
+1  Oma-PanxαC  Oma-PanxαD  0.471232873645  0.664763273540""", print(sim_scores_df)
 
 
 def test_worker_terminate(hf, monkeypatch, capsys):

@@ -13,6 +13,10 @@ from multiprocessing import SimpleQueue, Process, Pipe
 from buddysuite.buddy_resources import pretty_time, SafetyValve
 import signal
 
+# Set global precision levels
+np.set_printoptions(precision=12)
+pd.set_option("display.precision", 12)
+
 
 class AttrWrapper(object):
     def __init__(self, wrapped):

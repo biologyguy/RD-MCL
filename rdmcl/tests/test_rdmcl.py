@@ -15,6 +15,8 @@ from collections import OrderedDict
 from buddysuite import buddy_resources as br
 from copy import deepcopy
 
+pd.set_option('expand_frame_repr', False)
+
 
 # #########  Mock classes and functions  ########## #
 class MockLogging(object):
@@ -358,10 +360,10 @@ def test_cluster_pull_scores_subgraph(hf):
     clust = rdmcl.Cluster(*hf.base_cluster_args())
     output = str(clust.pull_scores_subgraph(['Hru-PanxαA', 'Lcr-PanxαH', 'Tin-PanxαC']))
     assert output == """\
-            seq1        seq2   subsmat       psi  raw_score     score
-132   Hru-PanxαA  Lcr-PanxαH  0.974896  0.952851   0.965774  0.968282
-165   Hru-PanxαA  Tin-PanxαC  0.968037  0.937704   0.958389  0.958937
-6851  Lcr-PanxαH  Tin-PanxαC  0.984287  0.968946   0.975098  0.979684""", print(output)
+            seq1        seq2         subsmat             psi       raw_score           score
+132   Hru-PanxαA  Lcr-PanxαH  0.974895831252  0.952850560876  0.965773924299  0.968282250139
+165   Hru-PanxαA  Tin-PanxαC  0.968036771413  0.937704276879  0.958388562706  0.958937023053
+6851  Lcr-PanxαH  Tin-PanxαC  0.984286835987  0.968945697684  0.975097822535  0.979684494496""", print(output)
 
 
 def test_rbhc_less_than_6(hf):
@@ -1006,10 +1008,10 @@ def test_retrieve_all_by_all_scores_from_db(hf, monkeypatch):
     sim_scores, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqbuddy, "psi_pred_files", sql_broker)
     assert len(alignbuddy.records()) == 3
     assert str(sim_scores) == """\
-         seq1        seq2   subsmat       psi  raw_score     score
-0  Bfo-PanxαF  Hca-PanxαD  0.117138  0.000000   0.820955  0.081997
-1  Bfo-PanxαF  Mle-Panxα6  1.000000  1.000000   0.913305  1.000000
-2  Hca-PanxαD  Mle-Panxα6  0.000000  0.192926   0.814353  0.057878""", print(sim_scores)
+         seq1        seq2         subsmat             psi       raw_score           score
+0  Bfo-PanxαF  Hca-PanxαD  0.117138287495  0.000000000000  0.820955423002  0.081996801246
+1  Bfo-PanxαF  Mle-Panxα6  1.000000000000  1.000000000000  0.913305173757  1.000000000000
+2  Hca-PanxαD  Mle-Panxα6  0.000000000000  0.192926181927  0.814352991900  0.057877854578""", print(sim_scores)
     sql_broker.close()
 
 
@@ -1082,7 +1084,7 @@ def test_allbyallscores_create(hf):
     sim_scores, alignbuddy = all_by_all_obj.create()
     assert len(sim_scores.index) == 66  # This is for 12 starting sequences --> (a * (a - 1)) / 2
     compare = sim_scores.loc[:][(sim_scores['seq1'] == "Mle-Panxα2") & (sim_scores['seq2'] == "Mle-Panxα12")]
-    assert "Mle-Panxα2  Mle-Panxα12  0.332679  0.370271   0.536612  0.343957" in str(compare), print(compare)
+    assert "Mle-Panxα2  Mle-Panxα12  0.332679039959  0.37027112509  0.53661224001" in str(compare), print(compare)
     assert len(alignbuddy.records()) == 12
     sql_broker.close()
 
@@ -1205,17 +1207,17 @@ def test_set_final_sim_scores(hf):
     sim_scores = sim_scores.iloc[:10]
     sim_scores = rdmcl.set_final_sim_scores(sim_scores)
     assert str(sim_scores) == """\
-         seq1         seq2   subsmat       psi  raw_score     score
-0  Hca-PanxαG   Lla-PanxαC  0.239665  0.000000   0.320014  0.167765
-1  Hca-PanxαG   Mle-Panxα1  0.000000  0.453888   0.301325  0.136167
-2  Hca-PanxαG   Mle-Panxα2  0.129888  0.573451   0.350240  0.262957
-3  Hca-PanxαG   Mle-Panxα3  0.374897  0.635129   0.425122  0.452966
-4  Hca-PanxαG   Mle-Panxα4  1.000000  1.000000   0.638192  1.000000
-5  Hca-PanxαG   Mle-Panxα5  0.189101  0.556072   0.364911  0.299192
-6  Hca-PanxαG   Mle-Panxα6  0.424713  0.597077   0.434980  0.476422
-7  Hca-PanxαG  Mle-Panxα7A  0.190522  0.681612   0.378628  0.337849
-8  Hca-PanxαG   Mle-Panxα8  0.290356  0.511685   0.388444  0.356755
-9  Hca-PanxαG   Mle-Panxα9  0.483807  0.580624   0.449717  0.512852"""
+         seq1         seq2         subsmat             psi       raw_score           score
+0  Hca-PanxαG   Lla-PanxαC  0.239664985272  0.000000000000  0.320014096667  0.167765489691
+1  Hca-PanxαG   Mle-Panxα1  0.000000000000  0.453888468075  0.301324591814  0.136166540423
+2  Hca-PanxαG   Mle-Panxα2  0.129888458521  0.573451478794  0.350239526820  0.262957364603
+3  Hca-PanxαG   Mle-Panxα3  0.374897044166  0.635128529572  0.425122352909  0.452966489787
+4  Hca-PanxαG   Mle-Panxα4  1.000000000000  1.000000000000  0.638192277715  1.000000000000
+5  Hca-PanxαG   Mle-Panxα5  0.189100677982  0.556072403045  0.364911258772  0.299192195501
+6  Hca-PanxαG   Mle-Panxα6  0.424713073878  0.597077241840  0.434979887508  0.476422324267
+7  Hca-PanxαG  Mle-Panxα7A  0.190522025243  0.681611915423  0.378627780350  0.337848992297
+8  Hca-PanxαG   Mle-Panxα8  0.290356199296  0.511684844001  0.388444197191  0.356754792708
+9  Hca-PanxαG   Mle-Panxα9  0.483807414359  0.580623914006  0.449716964507  0.512852364253""", print(sim_scores)
 
 
 def test_workerjob_init(hf, monkeypatch):
@@ -1800,17 +1802,17 @@ def test_create_fwd_score_rsquared_matrix(hf, monkeypatch):
     rsquare_vals_df = seq2clust_obj.create_fwd_score_rsquared_matrix()
     # rsquare_vals_df.to_csv("tests/unit_test_resources/hmms/fwd_r2.csv")
     assert str(rsquare_vals_df) == """\
-      rec_id1     rec_id2  r_square
-0  BOL-PanxαB  Bab-PanxαA  0.016894
-1  BOL-PanxαB  Bch-PanxαA  0.087311
-2  BOL-PanxαB  Bfo-PanxαE  0.274041
-3  BOL-PanxαB  BOL-PanxαB  1.000000
-4  Bab-PanxαA  Bch-PanxαA  0.497451
-5  Bab-PanxαA  Bfo-PanxαE  0.453878
-6  Bab-PanxαA  Bab-PanxαA  1.000000
-7  Bch-PanxαA  Bfo-PanxαE  0.390839
-8  Bch-PanxαA  Bch-PanxαA  1.000000
-9  Bfo-PanxαE  Bfo-PanxαE  1.000000""", print(rsquare_vals_df)
+      rec_id1     rec_id2        r_square
+0  BOL-PanxαB  Bab-PanxαA  0.016894041431
+1  BOL-PanxαB  Bch-PanxαA  0.087311057754
+2  BOL-PanxαB  Bfo-PanxαE  0.274041115357
+3  BOL-PanxαB  BOL-PanxαB  1.000000000000
+4  Bab-PanxαA  Bch-PanxαA  0.497451379268
+5  Bab-PanxαA  Bfo-PanxαE  0.453877689738
+6  Bab-PanxαA  Bab-PanxαA  1.000000000000
+7  Bch-PanxαA  Bfo-PanxαE  0.390838714109
+8  Bch-PanxαA  Bch-PanxαA  1.000000000000
+9  Bfo-PanxαE  Bfo-PanxαE  1.000000000000""", print(rsquare_vals_df)
 
 
 def test_create_truncnorm(hf):

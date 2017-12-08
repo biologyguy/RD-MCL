@@ -20,6 +20,10 @@ import dill
 import shutil
 
 
+# Set global precision levels
+pd.set_option("display.precision", 12)
+
+
 class Variable:
     def __init__(self, _name, _min, _max, r_seed=None):
         self.name = _name

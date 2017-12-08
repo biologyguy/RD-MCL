@@ -33,6 +33,9 @@ except ImportError:
 # Globals
 WORKERLOCK = Lock()
 
+# Set global precision levels
+pd.set_option("display.precision", 12)
+
 
 class Worker(object):
     def __init__(self, location, heartrate=60, max_wait=600, dead_thread_wait=120, cpus=cpu_count(),

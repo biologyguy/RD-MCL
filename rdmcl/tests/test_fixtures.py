@@ -8,6 +8,8 @@ from .. import helpers
 from hashlib import md5
 import pandas as pd
 
+pd.set_option('expand_frame_repr', False)
+
 
 def test_helper_attributes(hf):
     assert hf.sep == os.sep
@@ -40,18 +42,19 @@ def test_helper_get_data(hf):
 def test_helper_get_db_graph(hf):
     broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
     broker.start_broker()
-    assert str(hf.get_db_graph("441c3610506fda8a6820da5f67fdc470", broker)) == """\
-          seq1         seq2   subsmat       psi  raw_score     score
-0   Lla-PanxαA   Oma-PanxαD  0.085823  0.474372   0.899475  0.202387
-1   Lla-PanxαA  Mle-Panxα11  0.205013  0.369221   0.904953  0.254275
-2   Lla-PanxαA   Pba-PanxαB  0.000000  0.208572   0.890717  0.062572
-3  Mle-Panxα11   Oma-PanxαD  1.000000  1.000000   0.960266  1.000000
-4  Mle-Panxα11   Pba-PanxαB  0.220205  0.091886   0.901932  0.181710
-5   Lla-PanxαA   Tin-PanxαF  0.277117  0.262270   0.907656  0.272663
-6  Mle-Panxα11   Tin-PanxαF  0.974179  0.737730   0.955062  0.903245
-7   Oma-PanxαD   Pba-PanxαB  0.145473  0.191047   0.898965  0.159145
-8   Pba-PanxαB   Tin-PanxαF  0.270091  0.000000   0.903550  0.189063
-9   Oma-PanxαD   Tin-PanxαF  0.837363  0.729671   0.946959  0.805055"""
+    graph = hf.get_db_graph("441c3610506fda8a6820da5f67fdc470", broker)
+    assert str(graph) == """\
+          seq1         seq2         subsmat             psi       raw_score           score
+0   Lla-PanxαA   Oma-PanxαD  0.085822632066  0.474372002639  0.899474740758  0.202387443238
+1   Lla-PanxαA  Mle-Panxα11  0.205012941498  0.369221443725  0.904952928624  0.254275492166
+2   Lla-PanxαA   Pba-PanxαB  0.000000000000  0.208571785135  0.890717163169  0.062571535540
+3  Mle-Panxα11   Oma-PanxαD  1.000000000000  1.000000000000  0.960265758290  1.000000000000
+4  Mle-Panxα11   Pba-PanxαB  0.220205363308  0.091886398888  0.901931544743  0.181709673982
+5   Lla-PanxαA   Tin-PanxαF  0.277116813973  0.262270239432  0.907656135299  0.272662841611
+6  Mle-Panxα11   Tin-PanxαF  0.974179389024  0.737729760568  0.955061737042  0.903244500487
+7   Oma-PanxαD   Pba-PanxαB  0.145473499447  0.191046691983  0.898965077972  0.159145457208
+8   Pba-PanxαB   Tin-PanxαF  0.270090590010  0.000000000000  0.903549609015  0.189063413007
+9   Oma-PanxαD   Tin-PanxαF  0.837362886493  0.729671426789  0.946958793306  0.805055448582""", print(graph)
 
     assert str(hf.get_db_graph("Foo", broker)) == """\
 Empty DataFrame
@@ -60,8 +63,9 @@ Index: []"""
 
 
 def test_helper_get_sim_scores(hf):
-    assert str(hf.get_sim_scores(['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC'])) == """\
-            seq1        seq2   subsmat       psi  raw_score     score
-1351  Bch-PanxαC  BOL-PanxαA  0.737556  0.529124   0.727254  0.675027
-5649  Bab-PanxαB  Bch-PanxαC  0.732719  0.525940   0.723317  0.670685
-5666  Bab-PanxαB  BOL-PanxαA  0.956592  0.967118   0.955345  0.959750"""
+    sim_scores = hf.get_sim_scores(['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC'])
+    assert str(sim_scores) == """\
+            seq1        seq2         subsmat             psi       raw_score           score
+1351  Bch-PanxαC  BOL-PanxαA  0.737556323241  0.529123922436  0.727253818704  0.675026602999
+5649  Bab-PanxαB  Bch-PanxαC  0.732718501569  0.525940464746  0.723317290588  0.670685090522
+5666  Bab-PanxαB  BOL-PanxαA  0.956592383247  0.967117942419  0.955344968094  0.959750050998""", print(sim_scores)
