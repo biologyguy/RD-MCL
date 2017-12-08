@@ -832,7 +832,15 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
             sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
         else:
             # All mcl sub clusters are written to database in mcmcmc_mcl(), so no need to check if exists
-            graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash=?", (cluster_ids_hash,))[0][0]
+            blahh = sql_broker.query("SELECT (graph) FROM data_table WHERE hash=?", (cluster_ids_hash,))
+            if not blahh:
+                print("Fail on first index\n", blahh, "\n", sub_cluster, "\n", mcl_clusters, )
+            elif not blahh[0]:
+                print("Fail on second index\n", blahh)
+            elif not blahh[0][0]:
+                print("Fail on third index\n", blahh)
+            graph = blahh[0][0]
+
             sim_scores = pd.read_csv(StringIO(graph), index_col=False, header=None)
             sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
 
