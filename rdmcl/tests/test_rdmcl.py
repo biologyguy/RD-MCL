@@ -1931,8 +1931,6 @@ group_0_3\tgroup_0_0\t0.0174886528987
     assert not orphans.place_orphans()
     assert len(orphans.clusters) == 2
 
-    # ToDo: Test for failure on Tukey HSD test
-
 
 # #########  User Interface  ########## #
 parser = argparse.ArgumentParser(prog="orthogroup_caller", description="",
