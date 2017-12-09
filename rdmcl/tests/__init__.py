@@ -101,17 +101,16 @@ class HelperMethods(object):
         return df
 
     def get_test_clusters(self, broker, parent_sb, rdmcl):
-        # psi_pred_ss2_paths = hf.get_data("ss2_paths")
+        # psi_pred_ss2_paths = self.get_data("ss2_paths")
         # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(parent_sb, psi_pred_ss2_paths, broker)
-        graph = self.get_db_graph("6935966a6b9967c3006785488d968230", broker)
-
+        graph = self.get_db_graph("b4e3c45e680cdc39b293a778bbc60e4e", broker)
         parent_ids = [rec.id for rec in parent_sb.records]
         parent_cluster = rdmcl.Cluster(parent_ids, graph, collapse=False)
 
-        cluster1 = ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE', 'Bfr-PanxαA']
+        cluster1 = ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE', 'Bfr-PanxαA', "Oma-PanxαB"]
         # seqs = rdmcl.Sb.pull_recs(rdmcl.Sb.make_copy(parent_sb), "^%s$" % "$|^".join(cluster1))
         # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqs, psi_pred_ss2_paths, broker)
-        graph = self.get_db_graph("14f1cd0e985ed87b4e31bc07453481d2", broker)
+        graph = self.get_db_graph("31777c0c0014ca26bfef56f33ad434bc", broker)
         cluster1 = rdmcl.Cluster(cluster1, graph, parent=parent_cluster)
         cluster1.set_name()
 
