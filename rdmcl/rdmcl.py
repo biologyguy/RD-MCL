@@ -2604,11 +2604,12 @@ Continue? y/[n] """ % len(sequences)
     logging.warning("\t-- finished in %s --" % TIMER.split())
 
     if not in_args.suppress_singlet_folding:
+        logging.warning("\n** HMM-based sequence-to-cluster reassignment **")
         with open(os.path.join(in_args.outdir, "orphans.log"), "a") as orphan_log_file:
             orphan_log_file.write("""\
-    #################################
-    #  Initiating Orphan Placement  #
-    #################################
+    ######################################
+    #  Initiating Sequence Reassignment  #
+    ######################################
 
 """)
         seq2clust_obj = Seqs2Clusters(final_clusters, 3, sequences, in_args.outdir)
@@ -2616,6 +2617,7 @@ Continue? y/[n] """ % len(sequences)
         with open(os.path.join(in_args.outdir, "orphans.log"), "a") as orphan_log_file:
             orphan_log_file.write(seq2clust_obj.tmp_file.read())
 
+        logging.warning("\t-- finished in %s --" % TIMER.split())
     # shutil.move("%s/%s" % (seq2clust_obj.tmp_dir.path, seq2clust_obj.tmp_dir.subdirs[0]), "hmms")
     # final_clusters = place_sequences_in_clusters(final_clusters, 3, sequences, in_args.outdir)
     '''
@@ -2704,8 +2706,6 @@ Continue? y/[n] """ % len(sequences)
                 output += "%s\t" % seq_id
             output = "%s\n" % output.strip()
         del final_clusters[ind]
-
-    logging.warning("\t-- finished in %s --" % TIMER.split())
 
     logging.warning("\nTotal execution time: %s" % TIMER.total_elapsed())
     with open(os.path.join(in_args.outdir, "final_clusters.txt"), "w") as outfile:
