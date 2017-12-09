@@ -1935,12 +1935,17 @@ class Seqs2Clusters(object):
 
         valve = br.SafetyValve(round(len(self.clusters[0].get_base_cluster().seq_ids) * 1.2))
         placed = []
+
         while True:
             try:
                 valve.step()
             except RuntimeError:
                 log_output += "\n\nERROR: place_seqs_in_clusts blew its safety valve; abort further placement.\n"
                 break
+
+            # Create a copy of the input clusters for checking later
+            copy_clusters = deepcopy(self.clusters)
+
             if len(placed) == len(self.clusters[0].get_base_cluster()):
                 placed = []  # Reset the `placed` list and loop through again, making sure nothing has changed
                 breakout = True
@@ -2122,17 +2127,39 @@ class Seqs2Clusters(object):
             for clust in self.clusters:
                 if clust.name() in new_groups:
                     clust.reset_seq_ids(new_groups[clust.name()])
+                    clust.sim_scores = clust.pull_scores_subgraph(new_groups[clust.name()])
                 elif len(clust) > 1 or clust.seq_ids[0] not in new_groups["orphans"]:
                     clust.reset_seq_ids([])
+                    clust.sim_scores = clust.pull_scores_subgraph([])
                 else:  # This can only be an orphaned sequence
                     del new_groups["orphans"][new_groups["orphans"].index(clust.seq_ids[0])]
 
             # Place any new orphans into new groups
+            clusts_needing_update = []
             for seq_id in new_groups["orphans"]:
                 sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
-                clust = Cluster([seq_id], sim_scores, parent=self.clusters[0].get_base_cluster())
+                parent = None
+                for clust in copy_clusters:
+                    if seq_id in clust.seq_ids:
+                        parent = [c for c in self.clusters if c.name() == clust.name()][0]
+                        clusts_needing_update.append(parent.name())
+                        break
+                if parent is None:
+                    raise AttributeError("Unable to find parent cluster")  # This should never happen
+
+                # Placing the orphan with new cluster name
+                clust = Cluster([seq_id], sim_scores, parent=parent)
                 clust.set_name()
                 self.clusters.append(clust)
+
+            # If new clusters were made, need to update the originals too
+            for clust_name in set(clusts_needing_update):
+                clust = [clust for clust in self.clusters if clust.name() == clust_name][0]
+                clust = Cluster(clust.seq_ids, clust.sim_scores, parent=clust)
+                clust.set_name()
+                self.clusters.append(clust)
+                clust_names = [c.name() for c in self.clusters]
+                del self.clusters[clust_names.index(clust_name)]
 
             # Delete any empty clusters
             del_list = []

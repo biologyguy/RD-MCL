@@ -1620,7 +1620,7 @@ def test_instantiate_seqs2clusters(hf, monkeypatch):
     assert small_clusters == [cluster3.seq_ids, cluster4.seq_ids, cluster5.seq_ids]
     large_clusters = [clust.seq_ids for clust_name, clust in seq2clust_obj.large_clusters.items()]
     assert large_clusters == [cluster1.seq_ids, cluster2.seq_ids]
-    assert len([seq_id for sub_clust in small_clusters + large_clusters for seq_id in sub_clust]) == 14
+    assert len([seq_id for sub_clust in small_clusters + large_clusters for seq_id in sub_clust]) == 15
     assert "RD-MCL{0}rdmcl{0}hmmer{0}hmm_fwd_back".format(os.sep) in seq2clust_obj.hmm_fwd_back_prog
 
     monkeypatch.setattr(os.path, "isfile", lambda *_: False)
@@ -1659,41 +1659,45 @@ def test_mc_build_cluster_nulls(hf):
     seq2clust_obj._mc_build_cluster_nulls(clusters[0], args)
 
     assert global_null_file.read() == '''\
-BOL-PanxαB,Bab-PanxαA,0.9837777547877096
-BOL-PanxαB,Bch-PanxαA,0.9792963435275956
+BOL-PanxαB,Bab-PanxαA,0.9854500607340071
+BOL-PanxαB,Bch-PanxαA,0.9814339761739038
 BOL-PanxαB,BOL-PanxαB,1.0
-Bab-PanxαA,Bch-PanxαA,0.9959229205746052
+Bab-PanxαA,Bch-PanxαA,0.9963598151355412
 Bab-PanxαA,Bab-PanxαA,1.0
 Bch-PanxαA,Bch-PanxαA,1.0
 ''', print(global_null_file.read())
-    assert cluster_nulls_file.read() == '"group_0_0":{"mu":0.98633233963,"sigma":0.007024015654},'
+    assert cluster_nulls_file.read() == '"group_0_0":{"mu":0.987747950681,"sigma":0.006306366668},', \
+        print(cluster_nulls_file.read())
     assert out_of_cluster_file.read() == """\
-BOL-PanxαB,Bfo-PanxαE,0.9751608517151394
-BOL-PanxαB,Bfr-PanxαA,0.9154074442826174
-BOL-PanxαB,Hca-PanxαA,0.9774437393547424
-BOL-PanxαB,Hvu-PanxβA,0.2889682149288218
-BOL-PanxαB,Lcr-PanxαG,0.9849147576498428
-BOL-PanxαB,Vpa-PanxαD,0.17457891316246396
-Bab-PanxαA,Bfo-PanxαE,0.9750474431415456
-Bab-PanxαA,Bfr-PanxαA,0.9395306279437422
-Bab-PanxαA,Hca-PanxαA,0.993340389556856
-Bab-PanxαA,Hvu-PanxβA,0.2774479974635761
-Bab-PanxαA,Lcr-PanxαG,0.9988952995172856
-Bab-PanxαA,Vpa-PanxαD,0.19010654186245066
-Bch-PanxαA,Bfo-PanxαE,0.9721129205296588
-Bch-PanxαA,Bfr-PanxαA,0.9298881134683558
-Bch-PanxαA,Hca-PanxαA,0.9911739170146991
-Bch-PanxαA,Hvu-PanxβA,0.2809852029840147
-Bch-PanxαA,Lcr-PanxαG,0.9966025480628256
-Bch-PanxαA,Vpa-PanxαD,0.18400191593774887
-"""
+BOL-PanxαB,Bfo-PanxαE,0.9777341546918392
+BOL-PanxαB,Bfr-PanxαA,0.9237171724424902
+BOL-PanxαB,Hca-PanxαA,0.97976788883183
+BOL-PanxαB,Hvu-PanxβA,0.2369553465136797
+BOL-PanxαB,Lcr-PanxαG,0.9864552763789216
+BOL-PanxαB,Vpa-PanxαD,0.07725859240096591
+BOL-PanxαB,Oma-PanxαB,0.03632897706786227
+Bab-PanxαA,Bfo-PanxαE,0.977670073270024
+Bab-PanxαA,Bfr-PanxαA,0.9454631199836152
+Bab-PanxαA,Hca-PanxαA,0.994053564420282
+Bab-PanxαA,Hvu-PanxβA,0.2258542797590169
+Bab-PanxαA,Lcr-PanxαG,0.9990117173041204
+Bab-PanxαA,Vpa-PanxαD,0.0852327674206815
+Bab-PanxαA,Oma-PanxαB,0.039921601139418186
+Bch-PanxαA,Bfo-PanxαE,0.9750441560758988
+Bch-PanxαA,Bfr-PanxαA,0.9367784583942784
+Bch-PanxαA,Hca-PanxαA,0.9921229245873938
+Bch-PanxαA,Hvu-PanxβA,0.22872882053802146
+Bch-PanxαA,Lcr-PanxαG,0.9969676816010246
+Bch-PanxαA,Vpa-PanxαD,0.08142126155716654
+Bch-PanxαA,Oma-PanxαB,0.03978017203455591
+""", print(out_of_cluster_file.read())
     assert temp_log_output.read() == """\
 group_0_0
 \tN: 3
-\tMean: 0.98633233963
-\tStd: 0.007024015654
+\tMean: 0.987747950681
+\tStd: 0.006306366668
 
-"""
+""", print(temp_log_output.read())
 
     temp_log_output.clear()
     seq2clust_obj._mc_build_cluster_nulls(clusters[1], args)
@@ -1703,7 +1707,7 @@ group_0_2
 \tMean: Null
 \tStd: Null
 
-"""
+""", print(temp_log_output.read())
 
 
 def test_mc_build_seq2group(hf):
@@ -1722,18 +1726,18 @@ def test_mc_build_seq2group(hf):
     seq2clust_obj._mc_build_seq2group("Bab-PanxαA", args)
 
     assert seq2group_dists_file.read() == '''\
-"Bab-PanxαA":{"group_0_0":0.973569686612,"group_0_1":0.17549674619,\
-"group_0_2":0.190106541862,"group_0_3":0.996117844537,"group_0_4":0.277447997464},'''
+"Bab-PanxαA":{"group_0_0":0.788972934053,"group_0_1":0.074113151245,"group_0_2":0.085232767421,\
+"group_0_3":0.996532640862,"group_0_4":0.225854279759},''', print(seq2group_dists_file.read())
     assert orig_clusters_file.read() == '"Bab-PanxαA":"group_0_0",'
     assert temp_log_output.read() == """\
 Bab-PanxαA
-\tgroup_0_0: 0.973569686612
-\tgroup_0_1: 0.17549674619
-\tgroup_0_2: 0.190106541862
-\tgroup_0_3: 0.996117844537
-\tgroup_0_4: 0.277447997464
+\tgroup_0_0: 0.788972934053
+\tgroup_0_1: 0.074113151245
+\tgroup_0_2: 0.085232767421
+\tgroup_0_3: 0.996532640862
+\tgroup_0_4: 0.225854279759
 \tBest: group_0_3
-"""
+""", print(temp_log_output.read())
 
 
 def test_create_hmms_for_every_rec(hf):
@@ -1838,13 +1842,15 @@ def test_place_seqs_in_clusts(hf, monkeypatch):
                         lambda *_: hmm_fwd_scores)
 
     seq2clust_obj.place_seqs_in_clusts()
-
-    assert seq2clust_obj.clusters[0].seq_ids == ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE',
-                                                 'Bfr-PanxαA']
-    assert seq2clust_obj.clusters[1].seq_ids == ['Lla-PanxαA', 'Mle-Panxα11', 'Oma-PanxαD',
-                                                 'Pba-PanxαB', 'Tin-PanxαF', 'Vpa-PanxαD']
-    assert seq2clust_obj.clusters[2].seq_ids == ['Hca-PanxαA', 'Lcr-PanxαG']
-    assert seq2clust_obj.clusters[3].seq_ids == ["Hvu-PanxβA"]
+    assert len(seq2clust_obj.clusters) == 5
+    all_clusts = [c.seq_ids for c in seq2clust_obj.clusters]
+    cstring = "\n".join([str(c) for c in all_clusts])
+    assert all_clusts[0] == ['Lla-PanxαA', 'Mle-Panxα11', 'Oma-PanxαD',
+                             'Pba-PanxαB', 'Tin-PanxαF', 'Vpa-PanxαD'], print(cstring)
+    assert all_clusts[1] == ['Hca-PanxαA', 'Lcr-PanxαG'], print(cstring)
+    assert all_clusts[2] == ["Hvu-PanxβA"], print(cstring)
+    assert all_clusts[3] == ["Oma-PanxαB"], print(cstring)
+    assert all_clusts[4] == ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE', 'Bfr-PanxαA'], print(cstring)
     #assert hf.string2hash(seq2clust_obj.tmp_file.read()) == "92d4b9600d74732452c1d81b7d1a8ece"
 
 
@@ -2002,6 +2008,7 @@ def test_argparse_init(monkeypatch, hf):
     assert temp_in_args.ext_penalty == 0
 
 
+@pytest.mark.slow
 def test_full_run(hf, capsys):
     # I can't break these up into separate test functions because of collisions with logger
     out_dir = br.TempDir()
@@ -2029,9 +2036,9 @@ def test_full_run(hf, capsys):
         assert content == """\
 group_0_0_0\t20.3333\tBOL-PanxαA\tLcr-PanxαH\tMle-Panxα10A\tMle-Panxα9\tVpa-PanxαB
 group_0_2\t4.0\tBOL-PanxαH\tMle-Panxα8
-group_0_1\t9.0417\tLcr-PanxαK\tMle-Panxα7A
+group_0_1_1\t5.25\tLcr-PanxαK\tMle-Panxα7A
 group_0_0_1\t1.25\tMle-Panxα5
-group_0_3\t2.0833\tBOL-PanxαG
+group_0_1_0\t2.0833\tBOL-PanxαG
 """, print(content)
 
     out, err = capsys.readouterr()

@@ -202,7 +202,7 @@ def test_start_worker_deal_with_subjobs(hf, capsys, monkeypatch):
     temp_dir = br.TempDir()
     temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
     temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
-    worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=5, cpus=3, job_size_coff=2)
+    worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=20, cpus=3, job_size_coff=2)
 
     work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
     work_cursor = work_con.cursor()
