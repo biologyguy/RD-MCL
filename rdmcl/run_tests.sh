@@ -12,6 +12,10 @@ echo "test_helpers.py"
 TEST_SCRIPTS=${DIR}'/tests/test_helpers.py '
 py.test ${TEST_SCRIPTS} --cov rdmcl.helpers --cov-report html -n 8 -p no:cacheprovider -p no:logging --durations=10 $@
 
+echo "test_mcmcmc.py"
+TEST_SCRIPTS=${DIR}'/tests/test_mcmcmc.py '
+py.test ${TEST_SCRIPTS} --cov rdmcl.mcmcmc --cov-report html -n 8 -p no:cacheprovider -p no:logging --durations=10 $@
+
 echo "test_worker.py"
 TEST_SCRIPTS=${DIR}'/tests/test_worker.py '
 py.test ${TEST_SCRIPTS} --cov rdmcl.launch_worker --cov-report html -n 8 -p no:cacheprovider -p no:logging --durations=10 $@

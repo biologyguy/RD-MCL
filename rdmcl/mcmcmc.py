@@ -11,7 +11,7 @@ import sys
 import random
 import string
 from scipy.stats import norm
-from buddysuite.buddy_resources import TempDir
+from buddysuite.buddy_resources import TempDir, SafetyValve
 from copy import deepcopy
 from multiprocessing import Process
 from collections import OrderedDict
@@ -25,22 +25,22 @@ pd.set_option("display.precision", 12)
 
 
 class Variable:
-    def __init__(self, _name, _min, _max, r_seed=None):
-        self.name = _name
-        self.min = _min
-        self.max = _max
-        _range = _max - _min
+    def __init__(self, var_name, min_val, max_val, r_seed=None):
+        self.name = var_name
+        self.min = min_val
+        self.max = max_val
+        val_range = max_val - min_val
 
         # select a random start value
         self.rand_gen = random.Random(r_seed)
-        self.current_value = round(self.rand_gen.random() * _range + _min, 12)
-        self.draw_value = self.current_value
+        self.current_value = round(self.rand_gen.random() * val_range + min_val, 12)
+        self.draw_value = float(self.current_value)
         self.history = OrderedDict([("draws", [self.draw_value]), ("accepts", [])])
 
     def draw_new_value(self, heat):
         #  NOTE: Might need to tune heat if the acceptance rate is to low or high.
         draw_val = round(self.rand_gen.gauss(self.current_value, ((self.max - self.min) * heat)), 12)
-        safety_check = 100
+        valve = SafetyValve(global_reps=100)
         while draw_val < self.min or draw_val > self.max:
             if draw_val < self.min:
                 draw_val = self.min + abs(self.min - draw_val)
@@ -48,29 +48,24 @@ class Variable:
             elif draw_val > self.max:
                 draw_val = self.max - abs(self.max - draw_val)
 
-            else:
-                sys.exit("Error: %s" % draw_val)
+            valve.step("Popped safety valve in Variable.draw_new_value() (draw val = %s)" % draw_val)
 
-            if safety_check < 0:
-                import traceback
-                raise RuntimeError("Popped safety valve on step()\n%s\n%s" % (traceback.print_stack(), draw_val))
-            safety_check -= 1
-        self.draw_value = draw_val
+        self.draw_value = round(draw_val, 12)
         self.history["draws"].append(self.draw_value)
         return
 
     def draw_random(self):
         self.current_value = round(self.rand_gen.random() * (self.max - self.min) + self.min, 12)
-        self.draw_value = self.current_value
+        self.draw_value = float(self.current_value)
         return
 
     def set_value(self, value):
-        self.current_value = value
-        self.draw_value = value
+        self.current_value = float(value)
+        self.draw_value = float(value)
         return
 
     def accept_draw(self):
-        self.current_value = self.draw_value
+        self.current_value = float(self.draw_value)
         self.history["accepts"].append(self.current_value)
         return
 
@@ -79,12 +74,11 @@ class Variable:
 Name: {}
 Min: {}
 Max: {}
-Random: {}
 Current value: {}
 Draw value: {}
 History: {}
-""".format(self.name, self.min, self.max, self.rand_gen.getstate(),
-           self.current_value, self.draw_value, self.history)
+""".format(self.name, self.min, self.max,
+           self.current_value, self.draw_value, [(key, val) for key, val in self.history.items()])
 
 
 class _Walker:
@@ -337,8 +331,8 @@ class MCMCMC:
         def mc_step_run(_walker, args):
             _func_args, out_path = args
             score = _walker.function(func_args) if not _walker.params else _walker.function(func_args, _walker.params)
-            with open(out_path, "w") as ofile:
-                ofile.write(str(score))
+            with open(out_path, "w") as _ofile:
+                _ofile.write(str(score))
             return
 
         def step_parse(_walker, _std):  # Implements Metropolis-Hastings
@@ -497,6 +491,7 @@ class MCMCMC:
         return
 
 
+"""
 if __name__ == '__main__':
     # A couple of examples
     def parabola(var):
@@ -516,3 +511,4 @@ if __name__ == '__main__':
     mcmcmc = MCMCMC(parabola_variables, parabola, steps=300, sample_rate=1)
     mcmcmc.run()
     print(mcmcmc.best)
+"""
