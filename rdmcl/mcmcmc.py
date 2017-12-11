@@ -197,9 +197,11 @@ class _Chain(object):
         cold_walker = self.get_cold_walker()
         ice_walker = self.get_ice_walker()
         if best_walker.lava:
+            # lava parameters do not change, they are just copied over to the current cold walker whenever best
             for cold_var, lava_var in zip(cold_walker.variables, best_walker.variables):
                 cold_var.current_value = float(lava_var.current_value)
         elif best_walker.ice:
+            # ice parameters do not change, copy over to current cold walker if better than best score ever
             if best_walker.current_score > self.best_score_ever_seen:
                 for cold_var, ice_var in zip(cold_walker.variables, ice_walker.variables):
                     cold_var.current_value = float(ice_var.current_value)
@@ -211,6 +213,7 @@ class _Chain(object):
             self.best_score_ever_seen = float(best_walker.current_score)
 
         if ice_walker and best_walker.current_score >= self.best_score_ever_seen:
+            # Always set the ice walker parameters to the best when new ones are found
             for ice_var, best_var in zip(ice_walker.variables, best_walker.variables):
                 ice_var.current_value = float(best_var.current_value)
         return

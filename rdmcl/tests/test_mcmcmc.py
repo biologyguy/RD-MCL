@@ -3,8 +3,11 @@
 
 import pytest
 import random
+import pandas as pd
 from collections import OrderedDict
 from types import SimpleNamespace
+from buddysuite import buddy_resources as br
+
 from .. import mcmcmc
 
 
@@ -227,3 +230,204 @@ Walker iK2ZWeqhFWCEPyYngFb5
 \tfoo:\t0.15
 \tbar:\t0.51
 \tScore:\tNone"""
+
+
+def test_chain_init():
+    foo_var = SimpleNamespace(draw_random=lambda: True, draw_value=0.1, name="foo", current_value=0.15)
+    bar_var = SimpleNamespace(draw_random=lambda: True, draw_value=0.5, name="bar", current_value=0.51)
+    walker1 = SimpleNamespace(variables=[foo_var, bar_var])
+    walker2 = SimpleNamespace(variables=[foo_var, bar_var])
+
+    tmp_file = br.TempFile()
+
+    chain = mcmcmc._Chain(walkers=[walker1, walker2], outfile=tmp_file.path, cold_heat=0.01, hot_heat=0.2)
+    assert chain.walkers == [walker1, walker2]
+    assert chain.outfile == tmp_file.path
+    assert chain.cold_heat == 0.01
+    assert chain.hot_heat == 0.2
+    assert chain.step_counter == 0
+    assert chain.best_score_ever_seen == 0
+    assert tmp_file.read() == """\
+Gen\tfoo\tbar\tresult
+"""
+
+
+def test_chain_swap_hot_cold(monkeypatch, capsys):
+    foo_var = SimpleNamespace(draw_random=lambda: True, draw_value=0.1, name="foo", current_value=0.15)
+    bar_var = SimpleNamespace(draw_random=lambda: True, draw_value=0.5, name="bar", current_value=0.51)
+    lava_foo_var = SimpleNamespace(draw_random=lambda: True, draw_value=0.1, name="foo", current_value=0.222)
+    lava_bar_var = SimpleNamespace(draw_random=lambda: True, draw_value=0.1, name="bar", current_value=0.999)
+    ice_foo_var = SimpleNamespace(draw_random=lambda: True, draw_value=0.1, name="foo", current_value=0.123)
+    ice_bar_var = SimpleNamespace(draw_random=lambda: True, draw_value=0.1, name="bar", current_value=0.321)
+
+    walker1 = SimpleNamespace(variables=[foo_var, bar_var], lava=False, ice=False, current_score=35,
+                              set_heat=lambda heat: print("Setting walker1 heat = %s" % heat))
+    walker2 = SimpleNamespace(variables=[foo_var, bar_var], lava=False, ice=False, current_score=15,
+                              set_heat=lambda heat: print("Setting walker2 heat = %s" % heat))
+    lavawalker = SimpleNamespace(variables=[lava_foo_var, lava_bar_var], lava=True, ice=False, current_score=45,
+                                 set_heat=lambda heat: print("Changing lava_walker heat! Oh Nos!"))
+    ice_walker = SimpleNamespace(variables=[ice_foo_var, ice_bar_var], lava=False, ice=True, current_score=10,
+                                 set_heat=lambda heat: print("Changing ice_walker heat! Oh Nos!"))
+
+    tmp_file = br.TempFile()
+
+    monkeypatch.setattr(mcmcmc._Chain, "get_best_walker", lambda *_: walker1)
+    monkeypatch.setattr(mcmcmc._Chain, "get_cold_walker", lambda *_: walker2)
+    monkeypatch.setattr(mcmcmc._Chain, "get_ice_walker", lambda *_: False)
+
+    chain = mcmcmc._Chain(walkers=[walker1, walker2], outfile=tmp_file.path, cold_heat=0.01, hot_heat=0.2)
+    chain.swap_hot_cold()
+    out, err = capsys.readouterr()
+    assert "Setting walker1 heat = 0.01" in out
+    assert "Setting walker2 heat = 0.2" in out
+    assert chain.best_score_ever_seen == 35
+
+    monkeypatch.setattr(mcmcmc._Chain, "get_best_walker", lambda *_: lavawalker)
+    monkeypatch.setattr(mcmcmc._Chain, "get_cold_walker", lambda *_: walker1)
+
+    chain.walkers.append(lavawalker)
+    chain.swap_hot_cold()
+    out, err = capsys.readouterr()
+    assert not out
+    assert chain.best_score_ever_seen == 45
+    assert foo_var.current_value == 0.222
+    assert bar_var.current_value == 0.999
+
+    monkeypatch.setattr(mcmcmc._Chain, "get_ice_walker", lambda *_: ice_walker)
+
+    lavawalker.current_score = 55
+    chain.walkers.append(ice_walker)
+    chain.swap_hot_cold()
+    out, err = capsys.readouterr()
+    assert not out
+    assert chain.best_score_ever_seen == 55
+    assert ice_foo_var.current_value == 0.222
+    assert ice_bar_var.current_value == 0.999
+
+    # Ice chain returned as best, but is lower than best ever, so do not copy values
+    monkeypatch.setattr(mcmcmc._Chain, "get_best_walker", lambda *_: ice_walker)
+
+    ice_foo_var.current_value = 0.01
+    ice_bar_var.current_value = 0.10101
+
+    chain.swap_hot_cold()
+    out, err = capsys.readouterr()
+    assert not out
+    assert chain.best_score_ever_seen == 55
+    assert foo_var.current_value == 0.222
+    assert bar_var.current_value == 0.999
+
+    # Now give ice walker the best score ever
+    monkeypatch.setattr(mcmcmc._Chain, "get_best_walker", lambda *_: ice_walker)
+
+    ice_walker.current_score = 100
+
+    chain.swap_hot_cold()
+    out, err = capsys.readouterr()
+    assert not out
+    assert chain.best_score_ever_seen == 100
+    assert foo_var.current_value == 0.01
+    assert bar_var.current_value == 0.10101
+
+
+def test_chain_get_best_walker():
+    walker1 = SimpleNamespace(current_score=35)
+    walker2 = SimpleNamespace(current_score=15)
+
+    chain = SimpleNamespace(walkers=[walker1, walker2], get_best_walker=mcmcmc._Chain.get_best_walker)
+    assert chain.get_best_walker(chain) == walker1
+
+    chain.walkers = [walker2, walker1]
+    assert chain.get_best_walker(chain) == walker1
+
+
+def test_chain_get_cold_walker():
+    walker1 = SimpleNamespace(heat=0.1)
+    walker2 = SimpleNamespace(heat=0.4)
+
+    chain = SimpleNamespace(walkers=[walker1, walker2], get_cold_walker=mcmcmc._Chain.get_cold_walker, cold_heat=0.1)
+    assert chain.get_cold_walker(chain) == walker1
+
+    chain.walkers = [walker2, walker1]
+    assert chain.get_cold_walker(chain) == walker1
+
+
+def test_chain_get_ice_walker():
+    walker1 = SimpleNamespace(ice=False)
+    walker2 = SimpleNamespace(ice=False)
+    ice_walker = SimpleNamespace(ice=True)
+
+    chain = SimpleNamespace(walkers=[walker1, walker2], get_ice_walker=mcmcmc._Chain.get_ice_walker)
+    assert chain.get_ice_walker(chain) is False
+
+    chain.walkers = [walker2, ice_walker, walker1]
+    assert chain.get_ice_walker(chain) == ice_walker
+
+
+def test_chain_get_results():
+    tmp_file = br.TempFile()
+    tmp_file.write("""rec_id1,rec_id2,r_square
+BOL-PanxαB,Bab-PanxαA,0.016894041431
+BOL-PanxαB,Bch-PanxαA,0.087311057754
+BOL-PanxαB,Bfo-PanxαE,0.274041115357""")
+
+    chain = SimpleNamespace(outfile=tmp_file.path, get_results=mcmcmc._Chain.get_results)
+    assert type(chain.get_results(chain)) == pd.DataFrame
+    assert str(chain.get_results(chain)) == """\
+      rec_id1     rec_id2        r_square
+0  BOL-PanxαB  Bab-PanxαA  0.016894041431
+1  BOL-PanxαB  Bch-PanxαA  0.087311057754
+2  BOL-PanxαB  Bfo-PanxαE  0.274041115357""", print(chain.get_results(chain))
+
+
+def test_chain_write_sample():
+    foo_var = SimpleNamespace(draw_random=lambda: True, draw_value=0.1, name="foo", current_value=0.15)
+    bar_var = SimpleNamespace(draw_random=lambda: True, draw_value=0.5, name="bar", current_value=0.51)
+    walker1 = SimpleNamespace(variables=[foo_var, bar_var], lava=False, ice=False, current_score=35,
+                              heat=0.1)
+
+    tmp_file = br.TempFile()
+    chain = SimpleNamespace(step_counter=2, get_cold_walker=lambda *_: walker1, outfile=tmp_file.path,
+                            write_sample=mcmcmc._Chain.write_sample)
+
+    chain.write_sample(chain)
+    assert tmp_file.read() == "2\t0.15\t0.51\t35\n", print(tmp_file.read())
+
+
+def test_chain_dump_obj():
+    walker1 = SimpleNamespace(_dump_obj=lambda *_: "walker1")
+    walker2 = SimpleNamespace(_dump_obj=lambda *_: "walker2")
+    tmp_file = br.TempFile()
+    tmp_file.write("outfile results")
+
+    chain = SimpleNamespace(walkers=[walker1, walker2], outfile=tmp_file.path, cold_heat=0.1, hot_heat=0.2,
+                            step_counter=20, best_score_ever_seen=100, _dump_obj=mcmcmc._Chain._dump_obj)
+
+    dump = chain._dump_obj(chain)
+    assert dump["walkers"] == ["walker1", "walker2"]
+    assert dump["cold_heat"] == 0.1
+    assert dump["hot_heat"] == 0.2
+    assert dump["step_count"] == 20
+    assert dump["best_score"] == 100
+    assert dump["results"] == "outfile results"
+
+
+def test_chain_apply_dump(capsys):
+    walker1 = SimpleNamespace(_apply_dump=lambda *_: print("Applying dump to walker1"))
+    walker2 = SimpleNamespace(_apply_dump=lambda *_: print("Applying dump to walker2"))
+
+    tmp_file = br.TempFile()
+    chain = SimpleNamespace(walkers=[walker1, walker2], outfile=tmp_file.path, cold_heat=None, hot_heat=None,
+                            step_counter=None, best_score_ever_seen=None, _apply_dump=mcmcmc._Chain._apply_dump)
+
+    var_dict = {"walkers": [None, None], "cold_heat": 0.1, "hot_heat": 0.2,
+                "step_count": 20, "best_score": 100, "results": "Some results"}
+    chain._apply_dump(chain, var_dict)
+    assert chain.walkers == [walker1, walker2]
+    out, err = capsys.readouterr()
+    assert out == "Applying dump to walker1\nApplying dump to walker2\n"
+    assert chain.cold_heat == 0.1
+    assert chain.hot_heat == 0.2
+    assert chain.step_counter == 20
+    assert chain.best_score_ever_seen == 100
+    assert tmp_file.read() == "Some results"
