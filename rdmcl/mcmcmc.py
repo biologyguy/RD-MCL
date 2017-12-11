@@ -87,7 +87,8 @@ class _Walker:
         self.variables = variables
         self.function = func
         self.params = params
-        assert not (lava and ice)  # These two are mutually exclusive
+        if lava and ice:  # These two are mutually exclusive
+            raise AttributeError("The _Walker.lava and .ice parameters both set to True. This is not valid.")
         self.lava = lava  # This will cause the walker to draw brand new parameters every time
         self.ice = ice  # This will cause the walker to only accept new parameters that improve the score
         self.heat = heat
@@ -98,23 +99,20 @@ class _Walker:
         self.name = "".join([self.rand_gen.choice(string.ascii_letters + string.digits) for _ in range(20)])
 
         # Sample `function` for starting min/max scores
-        valve = 0
+        valve = SafetyValve(31)
         if min_max:
-            if len(min_max) != 2 or type(min_max) not in [list, tuple] or min_max[0] == min_max[1]:
+            if type(min_max) not in [list, tuple] or len(min_max) != 2 or min_max[0] == min_max[1]:
                 raise ValueError("min_max value passed into _Walker is not of type [num, different num]")
             if not quiet:
-                print("User-defined initial chain parameters:")
+                print("User-defined initial chain parameters: %s" % ", ".join([str(i) for i in min_max]))
             self.score_history.append(float(min_max[0]))
             self.score_history.append(float(min_max[1]))
         else:
             if not quiet:
                 print("Setting initial chain parameters:")
             while len(self.score_history) < 2 or min(self.score_history) == max(self.score_history):
-                if valve == 30:
-                    raise RuntimeError("Popped the safety valve while initializing chain.")
-                valve += 1
-
-                output = "\tStep %s:" % valve
+                valve.step("Popped the safety valve while initializing chain.")
+                output = "\tStep %s:" % valve.counter
                 func_args = []
                 for variable in self.variables:
                     variable.draw_random()
@@ -124,7 +122,7 @@ class _Walker:
                 # Always add a new seed for the target function
                 func_args.append(self.rand_gen.randint(1, 999999999999999))
                 score = self.function(func_args) if not self.params else self.function(func_args, self.params)
-                self.score_history.append(score)
+                self.score_history.append(round(score, 12))
                 output += " Score = %s" % score
 
                 if not quiet:
@@ -138,6 +136,8 @@ class _Walker:
             variable.accept_draw()
         self.current_score = self.proposed_score
         return
+
+    # ToDo: def run_function() --> then replace all the other cases where self.func() is called elsewhere.
 
     def set_heat(self, heat):
         # Higher heat = more likely to accept step.
@@ -153,10 +153,13 @@ class _Walker:
                 "name": self.name}
 
     def _apply_dump(self, var_dict):
+        if var_dict["lava"] and var_dict["ice"]:  # These two are mutually exclusive
+            raise AttributeError("The _Walker.lava and .ice parameters both set to True. This is not valid.")
+
         self.variables = var_dict["vars"]
         self.lava = var_dict["lava"]
         self.ice = var_dict["ice"]
-        self.heat = var_dict["heat"]
+        self.set_heat(var_dict["heat"])
         self.current_score = var_dict["cur_score"]
         self.proposed_score = var_dict["prop_score"]
         self.score_history = var_dict["score_hist"]
@@ -491,7 +494,6 @@ class MCMCMC:
         return
 
 
-"""
 if __name__ == '__main__':
     # A couple of examples
     def parabola(var):
@@ -511,4 +513,3 @@ if __name__ == '__main__':
     mcmcmc = MCMCMC(parabola_variables, parabola, steps=300, sample_rate=1)
     mcmcmc.run()
     print(mcmcmc.best)
-"""
