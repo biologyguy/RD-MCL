@@ -10,5 +10,7 @@ source = /home/travis/build/biologyguy/RD-MCL/rdmcl/rdmcl.py
 exclude_lines=
  pragma: no cover
  if __name__ == .__main__.:
-
+ except ImportError:
+ except CalledProcessError:
+ if os.name == .nt.:
 show_missing=True

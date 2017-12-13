@@ -50,6 +50,6 @@ mv .coverage /home/travis/build/biologyguy/RD-MCL/
 
 #### Run Coveralls
 cd /home/travis/build/biologyguy/RD-MCL
-coveralls --rcfile=/home/travis/build/biologyguy/RD-MCL/rdmcl/.coveragerc
+coveralls --config_file=/home/travis/build/biologyguy/RD-MCL/rdmcl/.coveragerc
 
 exit ${FAILURE}
