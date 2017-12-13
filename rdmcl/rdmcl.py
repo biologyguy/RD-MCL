@@ -127,7 +127,7 @@ class Cluster(object):
           no problem strongly penalizing all paralogs in the scoring algorithm
 
         :param seq_ids: Sequence IDs
-        :type seq_ids: list
+        :type seq_ids: list or set
         :param sim_scores: All-by-all similarity matrix for everything in the sequence_ids (and parental clusters)
         :type sim_scores: pandas.DataFrame
         :param parent: Parental sequence_ids
@@ -137,8 +137,12 @@ class Cluster(object):
         :param r_seed: Set the random generator seed value
         """
         # Do an initial sanity check on the incoming graph and list of sequence ids
+        ids_len = len(seq_ids)
+        if len(set(seq_ids)) != ids_len:
+            raise AttributeError("seq_ids are not all unique.")
         seq_ids = sorted(seq_ids)
-        expected_num_edges = int(((len(seq_ids)**2) - len(seq_ids)) / 2)
+
+        expected_num_edges = int(((ids_len**2) - ids_len) / 2)
         if len(sim_scores.index) != expected_num_edges:
             seq_id_hash = helpers.md5_hash(str(", ".join(seq_ids)))
             sim_scores_ids = sim_scores.seq1.append(sim_scores.seq2)
@@ -149,7 +153,7 @@ class Cluster(object):
                             (parent, collapse, seq_ids, sim_scores_ids))
             raise ValueError("The number of incoming sequence ids (%s) does not match the expected graph size of %s"
                              " rows (observed %s rows).\nError report at %s.error" %
-                             (len(seq_ids), expected_num_edges, len(sim_scores.index), seq_id_hash))
+                             (ids_len, expected_num_edges, len(sim_scores.index), seq_id_hash))
 
         self.sim_scores = sim_scores
         self.taxa_sep = taxa_sep
@@ -167,35 +171,36 @@ class Cluster(object):
             self.taxa.setdefault(taxa, [])
             self.taxa[taxa].append(next_seq_id)
 
+        self.seq_ids = set(seq_ids)
         if parent:
             self.max_genes_in_a_taxa = parent.max_genes_in_a_taxa
-            for indx, genes in parent.collapsed_genes.items():
-                if indx in seq_ids:
-                    self.collapsed_genes[indx] = genes
-            self.seq_ids = seq_ids
+            for representative, collapsed_genes in parent.collapsed_genes.items():
+                if representative in seq_ids:
+                    self.collapsed_genes[representative] = collapsed_genes
 
         else:
             self.max_genes_in_a_taxa = max([len(self.taxa[taxa]) for taxa in self.taxa])
             self._name = "group_0"
             # This next bit can collapse all paralog reciprocal best-hit cliques so they don't gum up MCL
-            self.seq_ids = seq_ids
             if collapse:
                 self.collapse()
 
-        self.seq_ids_str = str(", ".join(self.seq_ids))
+        self.seq_ids_str = str(", ".join(sorted(self.seq_ids)))
         self.seq_id_hash = helpers.md5_hash(self.seq_ids_str)
 
     def reset_seq_ids(self, seq_ids):
         # Note that this does NOT reset sim_scores. This needs to be updated manually
-        self.seq_ids = sorted(seq_ids)
-        self.seq_ids_str = str(", ".join(self.seq_ids))
+        seq_ids = sorted(seq_ids)
+        self.seq_ids_str = str(", ".join(seq_ids))
         self.seq_id_hash = helpers.md5_hash(self.seq_ids_str)
+        self.seq_ids = set(seq_ids)
 
     def collapse(self):
         breakout = False
+        seq_ids = sorted(self.seq_ids)
         while not breakout:
             breakout = True
-            for seq1_id in self.seq_ids:
+            for seq1_id in seq_ids:
                 seq1_taxa = seq1_id.split(self.taxa_sep)[0]
                 paralog_best_hits = []
                 for best_hits_seq1 in self.get_best_hits(seq1_id).itertuples():  # This grabs the best hit for seq1
@@ -217,11 +222,12 @@ class Cluster(object):
                 for paralog in paralog_best_hits:
                     self.sim_scores = self.sim_scores[(self.sim_scores.seq1 != paralog) &
                                                       (self.sim_scores.seq2 != paralog)]
-                    del self.seq_ids[self.seq_ids.index(paralog)]
+                    del seq_ids[seq_ids.index(paralog)]
                     del self.taxa[seq1_taxa][self.taxa[seq1_taxa].index(paralog)]
                     if paralog in self.collapsed_genes:
                         self.collapsed_genes[seq1_id] += self.collapsed_genes[paralog]
                         del self.collapsed_genes[paralog]
+        self.seq_ids = set(seq_ids)
         return
 
     def name(self):
@@ -353,7 +359,7 @@ class Cluster(object):
         # check for this, and add the sequences to base_cluster if necessary.
         items_not_in_parent = set(self.seq_ids) - set(base_cluster.seq_ids)
         for orphan in items_not_in_parent:
-            base_cluster.seq_ids.append(orphan)
+            base_cluster.seq_ids.add(orphan)
             orphan_taxa = orphan.split(self.taxa_sep)[0]
             base_cluster.taxa.setdefault(orphan_taxa, [])
             base_cluster.taxa[orphan_taxa].append(orphan)
@@ -408,7 +414,7 @@ class Cluster(object):
         # check for this, and add the sequences to base_cluster if necessary.
         items_not_in_parent = set(self.seq_ids) - set(base_cluster.seq_ids)
         for orphan in items_not_in_parent:
-            base_cluster.seq_ids.append(orphan)
+            base_cluster.seq_ids.add(orphan)
             orphan_taxa = orphan.split(self.taxa_sep)[0]
             base_cluster.taxa.setdefault(orphan_taxa, [])
             base_cluster.taxa[orphan_taxa].append(orphan)
@@ -457,7 +463,7 @@ class Cluster(object):
         :return: list of Cluster objects or False
         """
         log_file = log_file if log_file else br.TempFile()
-        log_file.write("# ####### Testing %s ####### #\n%s\n" % (self.name(), self.seq_ids))
+        log_file.write("# ####### Testing %s ####### #\n%s\n" % (self.name(), sorted(self.seq_ids)))
         results = []
         # Anything less than 6 sequences cannot be subdivided into smaller cliques, because it would create orphans
         if len(self) < 6:
@@ -589,7 +595,7 @@ class Cluster(object):
             for indx in sorted(drop_j_indx, reverse=True):
                 del results[indx]
             del results[0]
-        remaining_seqs = self.seq_ids
+        remaining_seqs = sorted(self.seq_ids)
         for seq in set(seqs_to_remove):
             del remaining_seqs[remaining_seqs.index(seq)]
 
@@ -613,14 +619,14 @@ class Cluster(object):
             remaining_cluster.set_name()
             results.append(remaining_cluster)
         log_file.write("\tCliques identified and spun off:\n\t\t%s\n\n" %
-                       "\n\t\t".join([str(res.seq_ids) for res in results]))
+                       "\n\t\t".join([str(sorted(res.seq_ids)) for res in results]))
         return results
 
     def __len__(self):
         return len(self.seq_ids)
 
     def __str__(self):
-        return str(self.seq_ids)
+        return str(sorted(self.seq_ids))
 
 
 def cluster2database(cluster, sql_broker, alignment):
@@ -1509,14 +1515,13 @@ def mcmcmc_mcl(args, params):
 
 def parse_mcl_clusters(path):
     with open(path, "r") as ifile:
-        clusters = ifile.read()
-    clusters = clusters.strip().split("\n")
+        clusters = ifile.readlines()
     clusters = [cluster.strip().split("\t") for cluster in clusters]
     return clusters
 
 
 def write_mcl_clusters(clusters, path):
-    clusters_strings = ["\t".join(cluster.seq_ids) for cluster in clusters]
+    clusters_strings = ["\t".join(sorted(cluster.seq_ids)) for cluster in clusters]
     with open(path, "w") as ofile:
         ofile.write("\n".join(clusters_strings))
     return
@@ -1834,7 +1839,7 @@ class Seqs2Clusters(object):
             if seq_id in clust.seq_ids:
                 orig_clusters += '"%s",' % clust.name()
             log_output += "\t" + clust.name() + ": "
-            seq_ids = [i for i in clust.seq_ids if i != seq_id]
+            seq_ids = set([i for i in clust.seq_ids if i != seq_id])
 
             # Pull out dataframe rows where current sequence is paired with a sequence from the current cluster
             df = rsquare_vals_df.loc[((rsquare_vals_df["rec_id1"].isin(seq_ids)) |
@@ -2022,7 +2027,7 @@ class Seqs2Clusters(object):
             log_output += temp_log_output.read()
 
             new_groups = OrderedDict([(clust.name(), copy(clust.seq_ids)) for clust in self.clusters])
-            new_groups["orphans"] = []
+            new_groups["orphans"] = set()
 
             # Set a static order that sequences will be placed, based on current average r_squares
             sort_order = [(seq_id, max([val for group_id, val in group_vals.items()]))
@@ -2060,28 +2065,25 @@ class Seqs2Clusters(object):
 
                 if orphaned:
                     log_output += "\tOrphaned\n"
-                    new_groups["orphans"].append(seq_id)
+                    new_groups["orphans"].add(seq_id)
 
                 if seq_id in new_groups["orphans"] or seq_id not in new_groups[group_id]:  # Else, it stays the same
                     placed.append(seq_id)
                     # Add
                     if seq_id not in new_groups["orphans"]:
                         log_output += "\tMoving from %s to %s\n\n" % (orig_clusters[seq_id], group_id)
-                        new_groups[group_id].append(seq_id)
+                        new_groups[group_id].add(seq_id)
 
                     # Remove
                     if len(new_groups[orig_clusters[seq_id]]) == 1 and seq_id in new_groups["orphans"]:
                         # If the sequence started orphaned, don't change its group ID
-                        del_indx = new_groups["orphans"].index(seq_id)
                         log_output += "\tRetaining original orphan %s\n\n" % orig_clusters[seq_id]
-                        del new_groups["orphans"][del_indx]
+                        new_groups["orphans"].remove(seq_id)
 
                     else:
                         orig_clust = orig_clusters[seq_id]
-                        del_indx = new_groups[orig_clust].index(seq_id)
                         log_output += "\tCreating new group\n\n" if seq_id in new_groups["orphans"] else ""
-
-                        del new_groups[orig_clust][del_indx]
+                        new_groups[orig_clust].remove(seq_id)
 
                         if not new_groups[orig_clust]:  # When removing a sequence leaves the cluster empty
                             del new_groups[orig_clust]
@@ -2129,11 +2131,11 @@ class Seqs2Clusters(object):
                 if clust.name() in new_groups:
                     clust.reset_seq_ids(new_groups[clust.name()])
                     clust.sim_scores = clust.pull_scores_subgraph(new_groups[clust.name()])
-                elif len(clust) > 1 or clust.seq_ids[0] not in new_groups["orphans"]:
+                elif len(clust) > 1 or list(clust.seq_ids)[0] not in new_groups["orphans"]:
                     clust.reset_seq_ids([])
                     clust.sim_scores = clust.pull_scores_subgraph([])
                 else:  # This can only be an orphaned sequence
-                    del new_groups["orphans"][new_groups["orphans"].index(clust.seq_ids[0])]
+                    new_groups["orphans"].remove(list(clust.seq_ids)[0])
 
             # Place any new orphans into new groups
             clusts_needing_update = []
@@ -2686,7 +2688,7 @@ Continue? y/[n] """ % len(sequences)
                 json.dump(clust.collapsed_genes, outfile)
                 outfile.write("\n\n")
             for gene_id, paralog_list in clust.collapsed_genes.items():
-                clust.seq_ids += paralog_list
+                clust.seq_ids += tuple(paralog_list)
                 clust.taxa[gene_id.split(in_args.taxa_sep)[0]].append(gene_id)
         clust.score(force=True)
 
