@@ -271,14 +271,13 @@ class MCMCMC:
     Sets up the infrastructure to run a Metropolis Hasting random walk
     """
     def __init__(self, variables, func, params=None, steps=0, sample_rate=1, num_walkers=3, num_chains=3, quiet=False,
-                 include_lava=False, include_ice=False, outfiles='./chain', burn_in=100, r_seed=None, convergence=1.05,
-                 cold_heat=0.3, hot_heat=0.75, min_max=()):
+                 include_lava=False, include_ice=False, outfile_root='./chain', burn_in=100, r_seed=None,
+                 convergence=1.05, cold_heat=0.3, hot_heat=0.75, min_max=()):
         self.global_variables = variables
-        # assert steps >= 100 or steps == 0
         self.steps = steps
         self.sample_rate = sample_rate
-        self.outfile = os.path.abspath(outfiles)
-        self.dumpfile = os.path.join(os.path.split(self.outfile)[0], "dumpfile")
+        self.outfile_root = os.path.abspath(outfile_root)
+        self.dumpfile = os.path.join(os.path.split(self.outfile_root)[0], "dumpfile")
         self.rand_gen = random.Random(r_seed)
         self.chains = []
         self.cold_heat = cold_heat
@@ -308,7 +307,7 @@ class MCMCMC:
                 for variable in walker.variables:
                     variable.rand_gen.seed(self.rand_gen.randint(1, 999999999999999))
                 walkers.append(walker)
-            chain = _Chain(walkers, "%s_%s.csv" % (self.outfile, i + 1), self.cold_heat, self.hot_heat)
+            chain = _Chain(walkers, "%s_%s.csv" % (self.outfile_root, i + 1), self.cold_heat, self.hot_heat)
             self.chains.append(chain)
         self.best = OrderedDict([("score", None), ("variables", OrderedDict([(x.name, None) for x in variables]))])
         self.burn_in = burn_in
@@ -321,6 +320,7 @@ class MCMCMC:
     def resume(self):
         if os.path.isfile(self.dumpfile):
             with open(self.dumpfile, "br") as ifile:
+                # dump_file output = [chain1, chain2, etc...]
                 dump_file = dill.load(ifile)
             for indx, chain in enumerate(self.chains):
                 chain._apply_dump(dump_file[indx])
@@ -328,42 +328,52 @@ class MCMCMC:
             return True
         return False
 
+    @staticmethod
+    def mc_step_run(walker, args):
+        func_args, out_path = args
+        score = walker.function(func_args) if not walker.params else walker.function(func_args, walker.params)
+        with open(out_path, "w") as ofile:
+            ofile.write(str(score))
+        return
+
+    @staticmethod
+    def step_parse(walker, std, scorefile_dir):
+        """
+        Implements Metropolis-Hastings. Increment a Walker by assessing a score proposal and either accepting or
+        rejecting it.
+        :param walker: Walker object
+        :param std: Fit all walker score history (from a single chain) to a normal distribution and use its std dev.
+        :param scorefile_dir: Path to directory where walker scores are written  # ToDo: Cook this into Walker obj
+        :return:
+        """
+        with open(os.path.join(scorefile_dir, walker.name), "r") as ifile:
+            walker.proposed_score = float(ifile.read())
+
+        # Don't keep the entire history when determining min
+        if len(walker.score_history) >= 1000:
+            walker.score_history.pop(0)
+
+        walker.score_history.append(walker.proposed_score)
+
+        # If the score hasn't been set or the new score is better, the step is accepted
+        if walker.current_score is None or walker.proposed_score >= walker.current_score or walker.lava:
+            walker.accept()
+
+        # Even if the score is worse, there's a chance of accepting it relative to how much worse it is
+        else:
+            rand_check_val = walker.rand_gen.random()
+            # Calculate acceptance rate: Multiply std by 2 to make it one-tailed and transform by heat coefficient
+            accept_check = 1 - norm.cdf(walker.current_score - walker.proposed_score, 0, std * 2 * walker.heat)
+            if accept_check > rand_check_val and not walker.ice:
+                walker.accept()
+        return
+
     def run(self):
         """
         NOTE: Gibbs sampling is a way of selecting variables one at a time instead of all at once. This is beneficial in
         high dimensional variable space because it will increase the probability of accepting a new sample. It isn't
-        implemented here, but good to keep in mind.
+        implemented here, but it might be worth keeping in mind.
         """
-        def mc_step_run(_walker, args):
-            _func_args, out_path = args
-            score = _walker.function(func_args) if not _walker.params else _walker.function(func_args, _walker.params)
-            with open(out_path, "w") as _ofile:
-                _ofile.write(str(score))
-            return
-
-        def step_parse(_walker, _std):  # Implements Metropolis-Hastings
-            with open(os.path.join(temp_dir.path, _walker.name), "r") as ifile:
-                _walker.proposed_score = float(ifile.read())
-
-            # Don't keep the entire history when determining min
-            if len(_walker.score_history) >= 1000:
-                _walker.score_history.pop(0)
-
-            _walker.score_history.append(_walker.proposed_score)
-
-            # If the score hasn't been set or the new score is better, the step is accepted
-            if _walker.current_score is None or _walker.proposed_score >= _walker.current_score or walker.lava:
-                _walker.accept()
-
-            # Even if the score is worse, there's a chance of accepting it relative to how much worse it is
-            else:
-                rand_check_val = _walker.rand_gen.random()
-                # Calculate acceptance rate: Multiply std by 2 to make it one-tailed and transform by heat coefficient
-                accept_check = 1 - norm.cdf(_walker.current_score - _walker.proposed_score, 0, _std * 2 * _walker.heat)
-                if accept_check > rand_check_val and not _walker.ice:
-                    _walker.accept()
-            return
-
         temp_dir = TempDir()
         counter = 0
         while not self._check_convergence() and (counter <= self.steps or self.steps == 0):
@@ -374,7 +384,7 @@ class MCMCMC:
             shutil.move(tmp_dump, self.dumpfile)
             counter += 1
             child_list = OrderedDict()
-            for chain in self.chains:  # Note that this will spin off as many new processes as there are walkers
+            for chain in self.chains:  # Note that this will spin off (c * w) new processes, where c=chains, w=walkers
                 for walker in chain.walkers:
                     # Start new process
                     func_args = []
@@ -388,7 +398,7 @@ class MCMCMC:
                     # Always add a new seed for the target function
                     func_args.append(self.rand_gen.randint(1, 999999999999999))
                     outfile = os.path.join(temp_dir.path, walker.name)
-                    p = Process(target=mc_step_run, args=(walker, [func_args, outfile]))
+                    p = Process(target=self.mc_step_run, args=(walker, [func_args, outfile]))
                     p.start()
                     child_list[walker.name] = p
 
@@ -402,10 +412,11 @@ class MCMCMC:
                         break
 
             for chain in self.chains:
+                # Get the normalized standard deviation among all historical walker scores for this chain
                 history_series = pd.Series([score for walker in chain.walkers for score in walker.score_history])
                 mu, std = norm.fit(history_series)
                 for walker in chain.walkers:
-                    step_parse(walker, std)
+                    self.step_parse(walker, std, temp_dir.path)
                     if self.best["score"] is None or walker.current_score > self.best["score"]:
                         self.best["score"] = walker.current_score
                         self.best["variables"] = OrderedDict([(x.name, x.current_value) for x in walker.variables])
@@ -489,8 +500,8 @@ class MCMCMC:
         :return: None
         """
         if len(params) != len(self.chains[0].walkers[0].params):
-            raise AttributeError("Incorrect number of params supplied in reset_params().\n%s expected\n%s supplied\n%s"
-                                 % (len(self.chains[0].params), len(params), str(params)))
+            raise AttributeError("Incorrect number of params supplied in reset_params(). %s expected; %s supplied; %s"
+                                 % (len(self.chains[0].walkers[0].params), len(params), str(params)))
         for _chain in self.chains:
             for walker in _chain.walkers:
                 walker.params = params
@@ -513,6 +524,6 @@ if __name__ == '__main__':
     parabola_variables = [Variable("x", -4, 4)]
     paraboloid_variables = [Variable("x", -100, 100, 0.01), Variable("y", -100, 100, 0.01)]
 
-    mcmcmc = MCMCMC(parabola_variables, parabola, steps=300, sample_rate=1)
+    mcmcmc = MCMCMC(parabola_variables, parabola, steps=300, sample_rate=1, r_seed=1)
     mcmcmc.run()
     print(mcmcmc.best)

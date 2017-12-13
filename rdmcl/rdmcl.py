@@ -794,7 +794,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                      taxa_sep, sql_broker, psi_pred_ss2, progress, chains * (walkers + 2)]
     mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, quiet=quiet,
                                    num_walkers=walkers, num_chains=chains, convergence=convergence,
-                                   outfiles=os.path.join(mcmcmc_path, "mcmcmc_out"), params=mcmcmc_params,
+                                   outfile_root=os.path.join(mcmcmc_path, "mcmcmc_out"), params=mcmcmc_params,
                                    include_lava=True, include_ice=True, r_seed=rand_gen.randint(1, 999999999999999),
                                    min_max=(worst_possible_score, best_possible_score))
 
