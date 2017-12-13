@@ -11,7 +11,7 @@ import sys
 import random
 import string
 from scipy.stats import norm
-from buddysuite.buddy_resources import TempDir, SafetyValve
+from buddysuite.buddy_resources import TempFile, SafetyValve
 from copy import deepcopy
 from multiprocessing import Process
 from collections import OrderedDict
@@ -97,6 +97,7 @@ class _Walker:
         self.score_history = []
         self.rand_gen = random.Random(r_seed)
         self.name = "".join([self.rand_gen.choice(string.ascii_letters + string.digits) for _ in range(20)])
+        self.proposed_score_file = TempFile()
 
         # Sample `function` for starting min/max scores
         valve = SafetyValve(31)
@@ -330,23 +331,22 @@ class MCMCMC:
 
     @staticmethod
     def mc_step_run(walker, args):
-        func_args, out_path = args
+        func_args = args[0]
         score = walker.function(func_args) if not walker.params else walker.function(func_args, walker.params)
-        with open(out_path, "w") as ofile:
+        with open(walker.proposed_score_file.path, "w") as ofile:
             ofile.write(str(score))
         return
 
     @staticmethod
-    def step_parse(walker, std, scorefile_dir):
+    def step_parse(walker, std):
         """
         Implements Metropolis-Hastings. Increment a Walker by assessing a score proposal and either accepting or
         rejecting it.
         :param walker: Walker object
         :param std: Fit all walker score history (from a single chain) to a normal distribution and use its std dev.
-        :param scorefile_dir: Path to directory where walker scores are written  # ToDo: Cook this into Walker obj
         :return:
         """
-        with open(os.path.join(scorefile_dir, walker.name), "r") as ifile:
+        with open(walker.proposed_score_file.path, "r") as ifile:
             walker.proposed_score = float(ifile.read())
 
         # Don't keep the entire history when determining min
@@ -374,7 +374,6 @@ class MCMCMC:
         high dimensional variable space because it will increase the probability of accepting a new sample. It isn't
         implemented here, but it might be worth keeping in mind.
         """
-        temp_dir = TempDir()
         counter = 0
         while not self._check_convergence() and (counter <= self.steps or self.steps == 0):
             tmp_dump = self.dumpfile + ".temp"
@@ -397,8 +396,7 @@ class MCMCMC:
 
                     # Always add a new seed for the target function
                     func_args.append(self.rand_gen.randint(1, 999999999999999))
-                    outfile = os.path.join(temp_dir.path, walker.name)
-                    p = Process(target=self.mc_step_run, args=(walker, [func_args, outfile]))
+                    p = Process(target=self.mc_step_run, args=(walker, [func_args]))
                     p.start()
                     child_list[walker.name] = p
 
@@ -416,7 +414,7 @@ class MCMCMC:
                 history_series = pd.Series([score for walker in chain.walkers for score in walker.score_history])
                 mu, std = norm.fit(history_series)
                 for walker in chain.walkers:
-                    self.step_parse(walker, std, temp_dir.path)
+                    self.step_parse(walker, std)
                     if self.best["score"] is None or walker.current_score > self.best["score"]:
                         self.best["score"] = walker.current_score
                         self.best["variables"] = OrderedDict([(x.name, x.current_value) for x in walker.variables])

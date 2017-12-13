@@ -518,72 +518,67 @@ def test_mcmcmc_resume(capsys):
 
 
 def test_mcmcmc_mc_step_run():
-    walker = SimpleNamespace(function=lambda func_args: 1234, params=[])
     tmp_file = br.TempFile()
-    mcmcmc.MCMCMC.mc_step_run(walker, ["foo", tmp_file.path])
+    walker = SimpleNamespace(function=lambda func_args: 1234, params=[], proposed_score_file=tmp_file)
+    mcmcmc.MCMCMC.mc_step_run(walker, ["foo"])
     assert tmp_file.read() == "1234"
 
     tmp_file.clear()
     walker.params = ["bar", "baz"]
     walker.function = lambda func_args, params: 4321
-    mcmcmc.MCMCMC.mc_step_run(walker, ["foo", tmp_file.path])
+    mcmcmc.MCMCMC.mc_step_run(walker, ["foo"])
     assert tmp_file.read() == "4321"
 
 
 def test_mcmcmc_step_parse(capsys):
     rand_gen = random.Random(4)
+    tmp_file = br.TempFile()
     walker = SimpleNamespace(name="qwerty", proposed_score=None, score_history=[1.12, 3.42], current_score=3.42,
                              accept=lambda *_: print("Calling accept() method"), rand_gen=rand_gen, heat=0.25,
-                             ice=False, lava=False)
+                             ice=False, lava=False, proposed_score_file=tmp_file)
 
     # Accept higher score
-    tmp_dir = br.TempDir()
-    with open(tmp_dir.subfile("qwerty"), "w") as ofile:
-        ofile.write("7.90")
+    tmp_file.write("7.90", mode="w")
 
-    mcmcmc.MCMCMC.step_parse(walker=walker, std=1.5, scorefile_dir=tmp_dir.path)
+    mcmcmc.MCMCMC.step_parse(walker=walker, std=1.5)
     assert walker.score_history == [1.12, 3.42, 7.9]
     assert walker.proposed_score == 7.9
     out, err = capsys.readouterr()
     assert out == "Calling accept() method\n"
 
     # Reject lower score
-    with open(os.path.join(tmp_dir.path, "qwerty"), "w") as ofile:
-        ofile.write("0.91")
+    tmp_file.write("0.91", mode="w")
 
-    mcmcmc.MCMCMC.step_parse(walker=walker, std=3.1, scorefile_dir=tmp_dir.path)
+    mcmcmc.MCMCMC.step_parse(walker=walker, std=3.1)
     assert walker.score_history == [1.12, 3.42, 7.9, 0.91]
     assert walker.proposed_score == 0.91
     out, err = capsys.readouterr()
     assert out == ""
 
     # Accept lower score
-    with open(os.path.join(tmp_dir.path, "qwerty"), "w") as ofile:
-        ofile.write("3.3")
+    tmp_file.write("3.3", mode="w")
 
-    mcmcmc.MCMCMC.step_parse(walker=walker, std=3.1, scorefile_dir=tmp_dir.path)
+    mcmcmc.MCMCMC.step_parse(walker=walker, std=3.1)
     assert walker.score_history == [1.12, 3.42, 7.9, 0.91, 3.3]
     assert walker.proposed_score == 3.3
     out, err = capsys.readouterr()
     assert out == "Calling accept() method\n", print(out)
 
     # Lava walker accepts any score
-    with open(os.path.join(tmp_dir.path, "qwerty"), "w") as ofile:
-        ofile.write("0.1")
+    tmp_file.write("0.1", mode="w")
 
     walker.lava = True
-    mcmcmc.MCMCMC.step_parse(walker=walker, std=3.1, scorefile_dir=tmp_dir.path)
+    mcmcmc.MCMCMC.step_parse(walker=walker, std=3.1)
     assert walker.score_history == [1.12, 3.42, 7.9, 0.91, 3.3, 0.1]
     out, err = capsys.readouterr()
     assert out == "Calling accept() method\n"
 
     # Ice walker rejects any lower scores
-    with open(os.path.join(tmp_dir.path, "qwerty"), "w") as ofile:
-        ofile.write("3.4")
+    tmp_file.write("3.4", mode="w")
 
     walker.lava = False
     walker.ice = True
-    mcmcmc.MCMCMC.step_parse(walker=walker, std=3.1, scorefile_dir=tmp_dir.path)
+    mcmcmc.MCMCMC.step_parse(walker=walker, std=3.1)
     assert walker.score_history == [1.12, 3.42, 7.9, 0.91, 3.3, 0.1, 3.4]
     out, err = capsys.readouterr()
     assert out == ""
@@ -591,7 +586,7 @@ def test_mcmcmc_step_parse(capsys):
     # Do not allow history to grow over 1000 items long
     walker.score_history = [1 for _ in range(1000)]
     assert len(walker.score_history) == 1000
-    mcmcmc.MCMCMC.step_parse(walker, 3.1, scorefile_dir=tmp_dir.path)
+    mcmcmc.MCMCMC.step_parse(walker, 3.1)
     assert len(walker.score_history) == 1000
     assert walker.score_history[-1] == 3.4
 
