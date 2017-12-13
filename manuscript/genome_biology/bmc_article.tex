@@ -376,6 +376,7 @@ Fetched all of the records with DatabaseBuddy, and filtered some sequences out:
 
 Retrieve non-vertebrate hits, align, pull out CASc, use to query NR again. Merging results with first search and repeat all filtering.
 
+Run split\_gb\_by\_taxa.py -l 0 to get a full breakdown of taxanomic coverage, and select species manually for further analysis (NR\_caspases\_subset.gb = 1307 records).
 
 \subsubsection{Gene family 2}
 \lipsum[1]
@@ -486,6 +487,21 @@ $$
 \lipsum[3]
 
 
+\subsection{Orphan placement}
+\begin{enumerate}
+  \item Hidden Markov models are created for each individual sequence and for alignements from each cluster
+  \item The probability of emitting each sequence from each sequence hmm is calculated \(forward score\)
+  \item Calculate all-by-all pairwise correlation coefficients among sequences, against forward scores
+  \item Create a null model from all of the R\textasciicircum2 values from pairs of sequences coming from the same RD-MCL clusters
+  \item Create a truncated normal distribution between 0 and 1 for the null model
+    \begin{itemize}
+    \item I.e., probability that value X is randomly drawn from the population of sequence pair R\textasciicircum2 values in all clusters
+    \end{itemize}
+  \item Calculate the minimum R\textasciicircum2 value that will be accepted (5\%? 1\%? Use the scipy.ppf() function)
+  \item
+\end{enumerate}
+
+
 % \subsection*{Sub-heading for section}
 % Text for this sub-heading \ldots
 % \subsubsection*{Sub-sub heading for section}
@@ -497,7 +513,7 @@ $$
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                          %%
-%% Backmatter begins here                   %%
+%%          Backmatter begins here          %%
 %%                                          %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
