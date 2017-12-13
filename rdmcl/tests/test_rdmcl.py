@@ -224,7 +224,7 @@ def test_cluster_perturb(hf):
     cluster = rdmcl.Cluster(*hf.base_cluster_args())
     cluster.sim_scores = cluster.sim_scores[0:4]
     for i in range(0, 4):
-        cluster.sim_scores.set_value(i, "score", 0.5)
+        cluster.sim_scores.at[i, "score"] = 0.5
 
     assert cluster.sim_scores["score"].std() == 0
 
@@ -388,19 +388,19 @@ def test_rbhc_all_seqs_in_clique(hf):
 
     # Modify the scores to create a complete clique
     indx = sim_scores[(sim_scores.seq2 == 'Mle-Panxα10A') & (sim_scores.seq1 == 'Mle-Panxα9')]
-    sim_scores.set_value(indx.index[0], "raw_score", 0.7)
+    sim_scores.at[indx.index[0], "raw_score"] = 0.7
 
     indx = sim_scores[(sim_scores.seq1 == 'Mle-Panxα10A') & (sim_scores.seq2 == 'Vpa-PanxαB')]
-    sim_scores.set_value(indx.index[0], "raw_score", 0.8)
+    sim_scores.at[indx.index[0], "raw_score"] = 0.8
 
     indx = sim_scores[(sim_scores.seq2 == 'Vpa-PanxαB') & (sim_scores.seq1 == 'BOL-PanxαA')]
-    sim_scores.set_value(indx.index[0], "raw_score", 0.99)
+    sim_scores.at[indx.index[0], "raw_score"] = 0.99
 
     indx = sim_scores[(sim_scores.seq2 == 'Mle-Panxα9') & (sim_scores.seq1 == 'BOL-PanxαA')]
-    sim_scores.set_value(indx.index[0], "raw_score", 0.99)
+    sim_scores.at[indx.index[0], "raw_score"] = 0.99
 
     indx = sim_scores[(sim_scores.seq1 == 'Mle-Panxα9') & (sim_scores.seq2 == 'Vpa-PanxαB')]
-    sim_scores.set_value(indx.index[0], "raw_score", 0.97)
+    sim_scores.at[indx.index[0], "raw_score"] = 0.97
 
     log_file = br.TempFile()
     cluster = rdmcl.Cluster(seq_ids, sim_scores, parent=parent)
@@ -922,11 +922,11 @@ def test_mc_score_sequences1(hf):
 
     ss2_dfs["Bfo-PanxαA"] = ss2_dfs["Bfo-PanxαA"].iloc[47:56]
     for indx, new in [(47, 1), (48, 2), (49, 3), (50, 4), (51, 5), (52, 6), (53, 9), (54, 10), (55, 11)]:
-        ss2_dfs["Bfo-PanxαA"].set_value(indx, "indx", new)
+        ss2_dfs["Bfo-PanxαA"].at[indx, "indx"] = new
 
     ss2_dfs["Bfr-PanxαD"] = ss2_dfs["Bfr-PanxαD"].iloc[44:53]
     for indx, new in [(44, 1), (45, 4), (46, 5), (47, 6), (48, 7), (49, 8), (50, 9), (51, 10), (52, 11)]:
-        ss2_dfs["Bfr-PanxαD"].set_value(indx, "indx", new)
+        ss2_dfs["Bfr-PanxαD"].at[indx, "indx"] = new
 
     gap_open = -5
     gap_extend = 0
@@ -1094,16 +1094,14 @@ def test_worker_update_psipred(hf):
     align = rdmcl.Alb.extract_regions(align, "105:115")
     align = rdmcl.Alb.pull_records(align, "Bfo-PanxαA|Bfr-PanxαD")
     ss2_dfs = hf.get_data("ss2_dfs")
-    ss2_dfs = {"Bfo-PanxαA": ss2_dfs["Bfo-PanxαA"], "Bfr-PanxαD": ss2_dfs["Bfr-PanxαD"]}
-    ss2_dfs["Bfo-PanxαA"] = ss2_dfs["Bfo-PanxαA"].iloc[47:56]
+    ss2_dfs = {"Bfo-PanxαA": ss2_dfs["Bfo-PanxαA"].iloc[47:56], "Bfr-PanxαD": ss2_dfs["Bfr-PanxαD"].iloc[44:53]}
+
     for indx, new in [(47, 1), (48, 2), (49, 3), (50, 4), (51, 5), (52, 6), (53, 7), (54, 8), (55, 9)]:
-        ss2_dfs["Bfo-PanxαA"].set_value(indx, "indx", new)
+        ss2_dfs["Bfo-PanxαA"].at[indx, "indx"] = new
     ss2_dfs["Bfo-PanxαA"] = ss2_dfs["Bfo-PanxαA"].reset_index(drop=True)
 
-    ss2_dfs["Bfr-PanxαD"] = ss2_dfs["Bfr-PanxαD"].iloc[44:53]
     for indx, new in [(44, 1), (45, 2), (46, 3), (47, 4), (48, 5), (49, 6), (50, 7), (51, 8), (52, 9)]:
-        ss2_dfs["Bfr-PanxαD"].set_value(indx, "indx", new)
-
+        ss2_dfs["Bfr-PanxαD"].at[indx, "indx"] = new
     ss2_dfs["Bfr-PanxαD"] = ss2_dfs["Bfr-PanxαD"].reset_index(drop=True)
 
     ss2_dfs = rdmcl.update_psipred(align, ss2_dfs, "msa")

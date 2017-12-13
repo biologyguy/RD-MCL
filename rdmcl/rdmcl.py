@@ -315,7 +315,7 @@ class Cluster(object):
         while scores[col_name].std() == 0:
             valve.step("Failed to perturb:\n%s" % scores)
             for indx, score in scores[col_name].iteritems():
-                scores.set_value(indx, col_name, round(self.rand_gen.gauss(score, (score * 0.0000001)), 12))
+                scores.at[indx, col_name] = round(self.rand_gen.gauss(score, (score * 0.0000001)), 12)
         return scores
 
     def get_base_cluster(self):
@@ -1160,7 +1160,8 @@ def update_psipred(alignment, psipred_dfs, mode):
             ss_counter = 0
             for indx, residue in enumerate(rec.seq):
                 if residue != "-":
-                    psipred_dfs[rec.id].set_value(ss_counter, "indx", indx)
+                    psipred_dfs[rec.id].at[ss_counter, "indx"] = indx
+                    # psipred_dfs[rec.id].set_value(ss_counter, "indx", indx)
                     ss_counter += 1
             psipred_dfs[rec.id] = ss_file
 
