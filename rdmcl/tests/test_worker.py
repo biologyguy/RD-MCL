@@ -116,6 +116,7 @@ def test_start_worker_fetch_queue(hf, capsys):
     assert "Preparing all-by-all data" in out
     assert "Running all-by-all data (6 comparisons)" in out
     assert "Processing final results" in out
+    work_con.close()
 
 
 def test_start_worker_1seq_error(hf, capsys):
@@ -145,6 +146,7 @@ def test_start_worker_1seq_error(hf, capsys):
 
     out, err = capsys.readouterr()
     assert "Queued job of size 1 encountered: foo" in out
+    work_con.close()
 
 
 def test_start_worker_missing_ss2(hf, monkeypatch, capsys):
@@ -181,6 +183,7 @@ def test_start_worker_missing_ss2(hf, monkeypatch, capsys):
         worker.start()
     out, err = capsys.readouterr()
     assert "Terminating Worker_2 because of something wrong with primary cluster foo" in out
+    work_con.close()
 
 
 def test_start_worker_deleted_check(hf, capsys, monkeypatch):
@@ -257,6 +260,7 @@ def test_start_worker_deal_with_subjobs(hf, capsys, monkeypatch):
 
     out, err = capsys.readouterr()
     assert "Terminating Worker_3 because of unit test kill" in out, print(out)
+    work_con.close()
 
 
 def test_worker_idle_workers(hf):
@@ -284,6 +288,8 @@ def test_worker_idle_workers(hf):
     work_con.commit()
 
     assert worker.idle_workers() == 1
+    hb_con.close()
+    work_con.close()
 
 
 def test_worker_check_master(hf, capsys):
@@ -382,6 +388,8 @@ def test_worker_clean_dead_threads(hf):
     assert not hb_cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master'").fetchone()
     assert not work_cursor.execute("SELECT * FROM queue").fetchone()
     assert not work_cursor.execute("SELECT * FROM waiting").fetchone()
+    hb_con.close()
+    work_con.close()
 
 
 def test_worker_fetch_queue_job(hf):
@@ -403,6 +411,7 @@ def test_worker_fetch_queue_job(hf):
     queued_job = worker.fetch_queue_job()
     assert queued_job == ['bar', './', '', '', ['gappyout', 50.0, 90.0, 'clean'], 0, 0]
     assert not work_cursor.execute("SELECT * FROM queue").fetchall()
+    work_con.close()
 
 
 def test_worker_prepare_psipred_dfs(hf, capsys):
@@ -521,6 +530,7 @@ Oma-PanxαC,Oma-PanxαD,0.47123287364498306,0.6647632735397735
     assert not os.path.isfile(aln_file)
     assert not os.path.isfile(seqs_file)
     assert not os.path.isfile(graph_file)
+    work_con.close()
 
 
 def test_worker_spawn_subjobs(hf):
@@ -583,6 +593,7 @@ Bch-PanxαD Bch-PanxαE
     hash_id, worker_id = processing[0]
     assert hash_id == "1_3_foo"
     assert worker_id == worker.heartbeat.id
+    work_con.close()
 
 
 def test_worker_load_subjob(hf):
@@ -666,6 +677,7 @@ Oma-PanxαC,Oma-PanxαD,0.4712328736449831,0.6647632735397735
 1  Oma-PanxαA  Oma-PanxαC  0.513561707898  0.730156131502
 0  Oma-PanxαB  Oma-PanxαD  0.238296271178  0.448141037435
 1  Oma-PanxαC  Oma-PanxαD  0.471232873645  0.664763273540""", print(sim_scores_df)
+    work_con.close()
 
 
 def test_worker_terminate(hf, monkeypatch, capsys):
@@ -693,6 +705,7 @@ def test_worker_terminate(hf, monkeypatch, capsys):
     assert not os.path.isfile(worker.worker_file)
     assert not work_cursor.execute("SELECT * FROM processing WHERE worker_id=1").fetchall()
     assert work_cursor.execute("SELECT * FROM processing WHERE worker_id=2").fetchall()
+    work_con.close()
 
 
 # #########  User Interface  ########## #
@@ -733,8 +746,8 @@ def test_main(monkeypatch, capsys):
     out, err = capsys.readouterr()
     assert 'Terminating Worker_1 because of 1 sec of master inactivity' in out
 
-    workdb_con = sqlite3.connect(os.path.join(out_dir.path, "work_db.sqlite"))
-    workdb_cursor = workdb_con.cursor()
+    work_con = sqlite3.connect(os.path.join(out_dir.path, "work_db.sqlite"))
+    workdb_cursor = work_con.cursor()
 
     tables = {'queue': [(0, 'hash', 'TEXT', 0, None, 1),
                         (1, 'psi_pred_dir', 'TEXT', 0, None, 0),
@@ -757,8 +770,8 @@ def test_main(monkeypatch, capsys):
         fields_query = workdb_cursor.execute("PRAGMA table_info(%s)" % table).fetchall()
         assert fields_query == fields
 
-    hb_db_con = sqlite3.connect(os.path.join(out_dir.path, "heartbeat_db.sqlite"))
-    hb_db_cursor = hb_db_con.cursor()
+    hb_con = sqlite3.connect(os.path.join(out_dir.path, "heartbeat_db.sqlite"))
+    hb_db_cursor = hb_con.cursor()
     tables = {'heartbeat': [(0, 'thread_id', 'INTEGER', 0, None, 1),
                             (1, 'thread_type', 'TEXT', 0, None, 0),
                             (2, 'pulse', 'INTEGER', 0, None, 0)]}
@@ -809,3 +822,5 @@ def test_main(monkeypatch, capsys):
         launch_worker.main()
     out, err = capsys.readouterr()
     assert 'Terminating Worker_8 because of KeyboardInterrupt' in out
+    hb_con.close()
+    work_con.close()
