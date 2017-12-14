@@ -2688,7 +2688,7 @@ Continue? y/[n] """ % len(sequences)
                 json.dump(clust.collapsed_genes, outfile)
                 outfile.write("\n\n")
             for gene_id, paralog_list in clust.collapsed_genes.items():
-                clust.seq_ids += tuple(paralog_list)
+                clust.seq_ids.union(set(paralog_list))
                 clust.taxa[gene_id.split(in_args.taxa_sep)[0]].append(gene_id)
         clust.score(force=True)
 
@@ -2705,9 +2705,7 @@ Continue? y/[n] """ % len(sequences)
         if max_clust.subgroup_counter == 0:  # Don't want to include parents of subgroups
             output += "%s\t%s\t" % (max_clust.name(), round(max_clust.score(), 4))
             final_score += max_clust.score()
-            for seq_id in sorted(max_clust.seq_ids):
-                output += "%s\t" % seq_id
-            output = "%s\n" % output.strip()
+            output += "\t".join(sorted(max_clust.seq_ids)) + '\n'
         del final_clusters[ind]
 
     logging.warning("\nTotal execution time: %s" % TIMER.total_elapsed())
