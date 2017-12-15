@@ -7,6 +7,7 @@ DESCRIPTION OF PROGRAM
 
 import os
 import shutil
+from buddysuite import buddy_resources as br
 try:
     from . import helpers
 except ImportError:
@@ -16,10 +17,29 @@ except ImportError:
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(prog="reset_workers", description="",
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    def fmt(prog):
+        return br.CustomHelpFormatter(prog)
 
-    parser.add_argument("wrkdb", action="store", nargs="?", help="Specify the working directory", default=os.getcwd())
+    parser = argparse.ArgumentParser(prog="reset_workers", formatter_class=fmt, add_help=False, usage=argparse.SUPPRESS,
+                                     description='''\
+\033[1mReset Workers\033[m
+  Someone broke something... Time to wipe the slate!
+
+  Delete all queued jobs. Don't worry, RD-MCL will queue them back up
+  if it still really wants them to run.
+
+\033[1mUsage\033[m:
+  reset_workers [directory]
+''')
+
+    parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
+
+    parser_flags.add_argument("-wdb", "--workdb", action="store", default=os.getcwd(), metavar="",
+                              help="Specify the working directory")
+
+    # Misc
+    misc = parser.add_argument_group(title="\033[1mMisc options\033[m")
+    misc.add_argument('-h', '--help', action="help", help="Show this help message and exit")
 
     in_args = parser.parse_args()
 
