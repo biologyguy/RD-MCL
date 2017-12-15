@@ -2737,13 +2737,4 @@ def main():
 
 
 if __name__ == '__main__':
-    '''
-    cteno_panxs = Sb.SeqBuddy("tests/unit_test_resources/Cteno_pannexins.fa")
-    ids = [rec.id for rec in cteno_panxs.records]
-    sim_scores = pd.read_csv("tests/unit_test_resources/Cteno_pannexins_sim.scores", "\t", index_col=False, header=None)
-    sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
-
-    cluster = Cluster(ids, sim_scores)
-    cluster.score()
-    '''
     main()

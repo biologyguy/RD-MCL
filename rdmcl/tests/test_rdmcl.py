@@ -2029,7 +2029,7 @@ def test_full_run(hf, capsys):
         expected_dir = os.path.join(out_dir.path, expected_dir)
         assert os.path.isdir(expected_dir), print(expected_dir)
 
-    for expected_file in ["final_clusters.txt", "orphans.log", "paralog_cliques", "rdmcl.log"]:
+    for expected_file in ["final_clusters.txt", "placement.log", "paralog_cliques", "rdmcl.log"]:
         expected_file = os.path.join(out_dir.path, expected_file)
         assert os.path.isfile(expected_file), print(expected_file)
 
