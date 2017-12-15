@@ -21,8 +21,8 @@ import os
 def make_msa(cluster, aligner, trimal):
     trimal = trimal if trimal else ["clean"]
 
-    if len(cluster) < 2:
-        alignment = cluster
+    if len(cluster) == 1:
+        alignment = Alb.AlignBuddy(str(cluster))
     else:
         alignment = Alb.generate_msa(Sb.make_copy(cluster), aligner, quiet=True)
         ave_seq_length = Sb.ave_seq_length(cluster)
@@ -50,7 +50,7 @@ def main():
     parser.add_argument("clusters", action="store", help="path to clusters file")
     parser.add_argument("sequence_file", action="store", help="path to original sequence file")
     parser.add_argument("mode", action="store", nargs="?", default="list",
-                        help="Choose the output type [list, seq, sequences, aln, alignment, con, consensus]")
+                        help="Choose the output type [list, seqs, sequences, aln, alignment, con, consensus]")
     parser.add_argument("--aligner", "-a", action="store", default="clustalo",
                         help="Specify a multiple sequence alignment program")
     parser.add_argument("--groups", "-g", action="append", nargs="+", help="List the specific groups to process")
@@ -62,10 +62,14 @@ def main():
     in_args = parser.parse_args()
 
     mode = in_args.mode.lower()
-    mode = "seq" if "sequences".startswith(mode) else mode
+    mode = "seqs" if "sequences".startswith(mode) else mode
     mode = "aln" if "alignment".startswith(mode) else mode
     mode = "con" if "consensus".startswith(mode) else mode
     mode = "list" if "list".startswith(mode) else mode
+
+    if mode not in ["seqs", "aln", "con", "list"]:
+        Sb.br._stderr('Unrecognized mode, please select from ["seqs", "aln", "con", "list"].\n')
+        sys.exit()
 
     if in_args.groups:
         in_args.groups = [x.lower() for x in in_args.groups[0]]
@@ -102,7 +106,7 @@ def main():
                 rank_output += "\n%s %s" % (rec.id, rec.description)
             rank_output += "\n"
 
-        elif mode == "seq":
+        elif mode == "seqs":
             for rec in subset.records:
                 rec.description = "%s %s" % (rank, rec.description)
             rank_output += str(subset)
