@@ -9,7 +9,7 @@ DESCRIPTION OF PROGRAM
 import os
 from multiprocessing import Process
 from time import time, sleep
-from buddysuite.buddy_resources import DynamicPrint, TempFile
+from buddysuite.buddy_resources import DynamicPrint, TempFile, CustomHelpFormatter
 
 try:
     import helpers
@@ -95,11 +95,28 @@ class Monitor(object):
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(prog="monitor_dbs", description="",
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    def fmt(prog):
+        return CustomHelpFormatter(prog)
 
-    parser.add_argument("-wdb", "--workdb", action="store", default=os.getcwd(),
-                        help="Specify the directory where sqlite databases will be fed by RD-MCL", )
+    parser = argparse.ArgumentParser(prog="monitor_dbs", formatter_class=fmt, add_help=False, usage=argparse.SUPPRESS,
+                                     description='''\
+\033[1mMonitor Workers\033[m
+  Hey, you there. Whatchadoin?
+
+  Display the current state of the worker queue.
+
+\033[1mUsage\033[m:
+  monitor_dbs <args>
+''')
+
+    parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
+
+    parser_flags.add_argument("-wdb", "--workdb", action="store", metavar="", default=os.getcwd(),
+                              help="Specify the worker directory")
+
+    # Misc
+    misc = parser.add_argument_group(title="\033[1mMisc options\033[m")
+    misc.add_argument('-h', '--help', action="help", help="Show this help message and exit")
 
     in_args = parser.parse_args()
 
