@@ -456,23 +456,43 @@ def _write(self):
 def argparse_init():
     import argparse
 
-    parser = argparse.ArgumentParser(prog="launch_worker", description="",
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    def fmt(prog):
+        return br.CustomHelpFormatter(prog)
 
-    parser.add_argument("-wdb", "--workdb", action="store", default=os.getcwd(),
-                        help="Specify the directory where sqlite databases will be fed by RD-MCL", )
-    parser.add_argument("-hr", "--heart_rate", type=int, default=60,
-                        help="Specify how often the worker should check in")
-    parser.add_argument("-mw", "--max_wait", action="store", type=int, default=600,
-                        help="Specify the maximum time a worker will stay alive without seeing a master")
-    parser.add_argument("-dtw", "--dead_thread_wait", action="store", type=int, default=120,
-                        help="Specify the maximum time a worker will wait to see a heartbeat before killing a thread")
-    parser.add_argument("-cpu", "--max_cpus", type=int, action="store", default=cpu_count(), metavar="",
-                        help="Specify the maximum number of cores the worker can use (default=%s)" % cpu_count())
-    parser.add_argument("-js", "--job_size", type=int, action="store", default=cpu_count(), metavar="",
-                        help="Set a job size coffactor for how many comparisons to send to each core")
-    parser.add_argument("-log", "--log", help="Stream log data one line at a time", action="store_true")
-    parser.add_argument("-q", "--quiet", help="Suppress all output", action="store_true")
+    parser = argparse.ArgumentParser(prog="launch_worker", formatter_class=fmt, add_help=False, usage=argparse.SUPPRESS,
+                                     description='''\
+\033[1mLaunch Worker\033[m
+  Call the union, it's time to put those idle nodes to work.
+
+  Set up a queue and launch a worker node to calculate 
+  all-by-all similarity graphs for RD-MCL.
+
+\033[1mUsage\033[m:
+  launch_worker [-options]
+''')
+
+    parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
+
+    parser_flags.add_argument("-wdb", "--workdb", action="store", default=os.getcwd(), metavar="",
+                              help="Specify the directory where sqlite databases will be fed by RD-MCL", )
+    parser_flags.add_argument("-hr", "--heart_rate", type=int, default=60, metavar="",
+                              help="Specify how often the worker should check in (default=60)")
+    parser_flags.add_argument("-mw", "--max_wait", action="store", type=int, default=600, metavar="",
+                              help="Specify the maximum time a worker will stay alive "
+                                   "without seeing a master (default=600)")
+    parser_flags.add_argument("-dtw", "--dead_thread_wait", action="store", type=int, default=120, metavar="",
+                              help="Specify the maximum time a worker will wait to see a "
+                                   "heartbeat before killing a thread (default=120)")
+    parser_flags.add_argument("-cpu", "--max_cpus", type=int, action="store", default=cpu_count(), metavar="",
+                              help="Specify the maximum number of cores the worker can use (default=%s)" % cpu_count())
+    parser_flags.add_argument("-js", "--job_size", type=int, action="store", default=cpu_count(), metavar="",
+                              help="Set job size coffactor to adjust… well, job size. (default=300)")
+    parser_flags.add_argument("-log", "--log", help="Stream log data one line at a time", action="store_true")
+    parser_flags.add_argument("-q", "--quiet", help="Suppress all output", action="store_true")
+
+    # Misc
+    misc = parser.add_argument_group(title="\033[1mMisc options\033[m")
+    misc.add_argument('-h', '--help', action="help", help="Show this help message and exit")
 
     in_args = parser.parse_args()
     return in_args
