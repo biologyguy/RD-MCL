@@ -24,7 +24,6 @@ try:
 except ImportError:
     import rdmcl
 
-import os
 import re
 from collections import OrderedDict
 
@@ -37,16 +36,16 @@ def prepare_clusters(ifile, hierarchy=False):
 
     if hierarchy:
         for indx, line in enumerate(output):
-            regex = re.search("group_(.*)?\t", line).group(0)
-            line = re.sub("group_.*?\t", "", line)
-            line = re.sub("^-*[0-9]+\.[0-9]*\t", "", line)
+            regex = re.search("group_(.*)?\s", line).group(0)
+            line = re.sub("group_.*?\s+", "", line)
+            line = re.sub("^-*[0-9]+\.[0-9]*\s+", "", line)
             line = line.split()
             output[indx] = (regex, line)
         output = OrderedDict(output)
     else:
         for indx, line in enumerate(output):
-            line = re.sub("group_.*?\t", "", line)
-            line = re.sub("^-*[0-9]+\.[0-9]*\t", "", line)
+            line = re.sub("group_.*?\s+", "", line)
+            line = re.sub("^-*[0-9]+\.[0-9]*\s+", "", line)
             line = line.split()
             output[indx] = line
     return output
@@ -117,7 +116,8 @@ class Comparison(object):
                 tn = self.total_size - tp - fp - fn
 
             self.precision += (tp / (tp + fp)) * (len(self.query_clusters[q_indx]) / self.total_size)
-            self.recall += 0 if t_indx is None else (tp / (tp + fn)) * (len(self.query_clusters[q_indx]) / self.total_size)
+            self.recall += 0 if t_indx is None \
+                else (tp / (tp + fn)) * (len(self.query_clusters[q_indx]) / self.total_size)
             self.accuracy += ((tp + tn) / self.total_size) * (len(self.query_clusters[q_indx]) / self.total_size)
             self.tn_rate += (tn / (tn + fp)) * (len(self.query_clusters[q_indx]) / self.total_size)
 
@@ -182,19 +182,12 @@ def main():
 
     parser_flags.add_argument("--score", "-s", action="store_true",
                               help="Output a table of similarity instead of sequence ids")
-    # parser.add_argument("--group_split", "-gs", action="store", default="\n",
-    #                    help="specify the delimiting string between groups")
-    # parser.add_argument("--taxa_split", "-ts", action="store", default=" ",
-    #                    help="specify the delimiting string between taxa")
-    # parser.add_argument("--output_file", "-o", help="Specify a location to send an output file.", action="store")
 
     # Misc
     misc = parser.add_argument_group(title="\033[1mMisc options\033[m")
     misc.add_argument('-h', '--help', action="help", help="Show this help message and exit")
 
     in_args = parser.parse_args()
-
-    # ofile = None if not in_args.output_file else os.path.abspath(in_args.output_file)
 
     comparison = Comparison(in_args.true_clusters, in_args.query_clusters)
 
@@ -207,6 +200,7 @@ def main():
         print("True score:   %s\n" % round(comparison.true_score, 2))
     else:
         print(comparison.pretty_out)
+
 
 if __name__ == '__main__':
     main()
