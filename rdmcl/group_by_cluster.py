@@ -12,6 +12,7 @@ except ImportError:
 
 from buddysuite import SeqBuddy as Sb
 from buddysuite import AlignBuddy as Alb
+from buddysuite import buddy_resources as br
 import re
 import sys
 from collections import OrderedDict
@@ -44,21 +45,48 @@ def make_msa(cluster, aligner, trimal):
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(prog="group_by_cluster", description="",
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    def fmt(prog):
+        return br.CustomHelpFormatter(prog)
 
-    parser.add_argument("clusters", action="store", help="path to clusters file")
-    parser.add_argument("sequence_file", action="store", help="path to original sequence file")
-    parser.add_argument("mode", action="store", nargs="?", default="list",
-                        help="Choose the output type [list, seqs, sequences, aln, alignment, con, consensus]")
-    parser.add_argument("--aligner", "-a", action="store", default="clustalo",
-                        help="Specify a multiple sequence alignment program")
-    parser.add_argument("--groups", "-g", action="append", nargs="+", help="List the specific groups to process")
-    parser.add_argument("--max_group_size", "-max", action="store", type=int, help="Max cluster size to process")
-    parser.add_argument("--min_group_size", "-min", action="store", type=int, help="Min cluster size to process")
-    parser.add_argument("--trimal", "-trm", action="append", nargs="*", help="Specify trimal parameters",
-                        default=["gappyout", 0.5, 0.75, 0.9, 0.95, "clean"])
-    parser.add_argument("--write", "-w", action="store", help="Specify directory to write file(s)")
+    parser = argparse.ArgumentParser(prog="group_by_cluster", formatter_class=fmt, add_help=False,
+                                     usage=argparse.SUPPRESS, description='''\
+\033[1mGroup by Cluster\033[m
+  Oooo... It's so much easier to look at now.
+
+  Covert RD-MCL final_cluster output into sequence files,
+  alignments, consensus sequences, or lists of metadata.
+
+\033[1mUsage\033[m:
+  group_by_cluster "clusters" "sequence_file" [mode] [-options]
+''')
+
+    # Positional
+    positional = parser.add_argument_group(title="\033[1mPositional argument\033[m")
+
+    positional.add_argument("clusters", action="store", help="Path to clusters file")
+    positional.add_argument("sequence_file", action="store", help="Path to original sequence file")
+    positional.add_argument("mode", action="store", nargs="?", default="list",
+                            help="Choose the output type [list, seqs, sequences, aln, alignment, con, consensus]")
+
+    # Optional commands
+    parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
+    parser_flags.add_argument("--aligner", "-a", action="store", default="clustalo", metavar="",
+                              help="Specify a multiple sequence alignment program")
+    parser_flags.add_argument("--groups", "-g", action="append", nargs="+", metavar="group",
+                              help="List the specific groups to process")
+    parser_flags.add_argument("--max_size", "-max", action="store", type=int, metavar="",
+                              help="Max cluster size to process")
+    parser_flags.add_argument("--min_size", "-min", action="store", type=int, metavar="",
+                              help="Min cluster size to process")
+    parser_flags.add_argument("--trimal", "-trm", action="append", nargs="*", metavar="param",
+                              help="Specify trimal parameters",
+                              default=["gappyout", 0.5, 0.75, 0.9, 0.95, "clean"])
+    parser_flags.add_argument("--write", "-w", action="store", metavar="", help="Specify directory to write file(s)")
+
+    # Misc
+    misc = parser.add_argument_group(title="\033[1mMisc options\033[m")
+    misc.add_argument('-h', '--help', action="help", help="Show this help message and exit")
+
     in_args = parser.parse_args()
 
     mode = in_args.mode.lower()
@@ -86,12 +114,12 @@ def main():
                 continue
 
         node = [x.split("-")[1] for x in node]
-        if in_args.min_group_size:
-            if len(node) < in_args.min_group_size:
+        if in_args.min_size:
+            if len(node) < in_args.min_size:
                 continue
 
-        if in_args.max_group_size:
-            if len(node) > in_args.max_group_size:
+        if in_args.max_size:
+            if len(node) > in_args.max_size:
                 continue
 
         ids = "%s$" % "$|".join(node)
