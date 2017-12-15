@@ -29,13 +29,13 @@ def main():
   if it still really wants them to run.
 
 \033[1mUsage\033[m:
-  reset_workers [directory]
+  reset_workers <args>
 ''')
 
     parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
 
     parser_flags.add_argument("-wdb", "--workdb", action="store", default=os.getcwd(), metavar="",
-                              help="Specify the working directory")
+                              help="Specify the worker directory")
 
     # Misc
     misc = parser.add_argument_group(title="\033[1mMisc options\033[m")
@@ -43,8 +43,8 @@ def main():
 
     in_args = parser.parse_args()
 
-    work_db = os.path.join(in_args.wrkdb, "work_db.sqlite")
-    work_output_dir = os.path.join(in_args.wrkdb, ".worker_output")
+    work_db = os.path.join(in_args.workdb, "work_db.sqlite")
+    work_output_dir = os.path.join(in_args.workdb, ".worker_output")
 
     if os.path.isfile(work_db) and os.path.isdir(work_output_dir):
         with helpers.ExclusiveConnect(work_db) as cursor:
