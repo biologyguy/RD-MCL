@@ -2471,8 +2471,8 @@ Continue? y/[n] """ % len(sequences)
 
     logger_obj.move_log(os.path.join(in_args.outdir, "rdmcl.log"))
 
-    if os.path.isfile(os.path.join(in_args.outdir, "orphans.log")):
-        os.remove(os.path.join(in_args.outdir, "orphans.log"))
+    if os.path.isfile(os.path.join(in_args.outdir, "placement.log")):
+        os.remove(os.path.join(in_args.outdir, "placement.log"))
 
     if os.path.isfile(os.path.join(in_args.outdir, "cliques.log")):
         os.remove(os.path.join(in_args.outdir, "cliques.log"))
@@ -2614,7 +2614,7 @@ Continue? y/[n] """ % len(sequences)
 
     if not in_args.suppress_singlet_folding:
         logging.warning("\n** HMM-based sequence-to-cluster reassignment **")
-        with open(os.path.join(in_args.outdir, "orphans.log"), "a") as orphan_log_file:
+        with open(os.path.join(in_args.outdir, "placement.log"), "a") as orphan_log_file:
             orphan_log_file.write("""\
     ######################################
     #  Initiating Sequence Reassignment  #
@@ -2623,7 +2623,7 @@ Continue? y/[n] """ % len(sequences)
 """)
         seq2clust_obj = Seqs2Clusters(final_clusters, 3, sequences, in_args.outdir)
         seq2clust_obj.place_seqs_in_clusts()
-        with open(os.path.join(in_args.outdir, "orphans.log"), "a") as orphan_log_file:
+        with open(os.path.join(in_args.outdir, "placement.log"), "a") as orphan_log_file:
             orphan_log_file.write(seq2clust_obj.tmp_file.read())
 
         logging.warning("\t-- finished in %s --" % TIMER.split())
@@ -2654,7 +2654,7 @@ Continue? y/[n] """ % len(sequences)
 
         # Fold singletons and doublets back into groups.
         if not in_args.suppress_singlet_folding:
-            with open(os.path.join(in_args.outdir, "orphans.log"), "a") as orphan_log_file:
+            with open(os.path.join(in_args.outdir, "placement.log"), "a") as orphan_log_file:
                 orphan_log_file.write("""\
    #################################
    #  Initiating Orphan Placement  #
@@ -2665,7 +2665,7 @@ Continue? y/[n] """ % len(sequences)
                               psi_pred_ss2=psi_pred_files, outdir=in_args.outdir)
             orphans.place_orphans()
             final_clusters = orphans.clusters
-            with open(os.path.join(in_args.outdir, "orphans.log"), "a") as orphan_log_file:
+            with open(os.path.join(in_args.outdir, "placement.log"), "a") as orphan_log_file:
                 orphan_log_file.write(orphans.tmp_file.read())
             with open(os.path.join(in_args.outdir, "hmm", "pearsonr.csv"), "w") as pearsonr:
                 orphans.rsquare_vals_df.to_csv(pearsonr)
