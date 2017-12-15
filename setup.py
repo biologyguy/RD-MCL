@@ -53,12 +53,12 @@ KEYWORDS = [
 ENTRY_POINTS = {
     'console_scripts': [
         'rdmcl = rdmcl.rdmcl:main',
-        'compare_homolog_groups = rdmcl.compare_homolog_groups:main',
-        'group_by_cluster = rdmcl.group_by_cluster:main',
-        'homolog_tree_builder = rdmcl.homolog_tree_builder:main',
         'launch_worker = rdmcl.launch_worker:main',
+        'reset_workers = rdmcl.reset_workers:main',
         'monitor_dbs = rdmcl.monitor_dbs:main',
-        'reset_workers = rdmcl.reset_workers:main'
+        'group_by_cluster = rdmcl.group_by_cluster:main',
+        'compare_homolog_groups = rdmcl.compare_homolog_groups:main',
+        'homolog_tree_builder = rdmcl.homolog_tree_builder:main'
     ]
 }
 
