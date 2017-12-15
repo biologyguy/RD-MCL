@@ -2067,8 +2067,8 @@ class Seqs2Clusters(object):
                     log_output += "\tOrphaned\n"
                     new_groups["orphans"].add(seq_id)
 
-                if seq_id in new_groups["orphans"] or seq_id not in new_groups[group_id]:  # Else, it stays the same
-                    placed.append(seq_id)
+                placed.append(seq_id)
+                if seq_id in new_groups["orphans"] or seq_id not in new_groups[group_id]:  # The Sequence has moved
                     # Add
                     if seq_id not in new_groups["orphans"]:
                         log_output += "\tMoving from %s to %s\n\n" % (orig_clusters[seq_id], group_id)
@@ -2123,18 +2123,24 @@ class Seqs2Clusters(object):
                             seq2group_dists[si][group_id] = test_mean
                         breakout = False
                         break
-                else:
+                else:  # The sequence was returned to its original group
                     log_output += "\tReturned to group %s\n\n" % group_id
-                    placed.append(seq_id)
 
             for clust in self.clusters:
                 if clust.name() in new_groups:
+                    # The cluster has turned up in the new groups, so just update it
                     clust.reset_seq_ids(new_groups[clust.name()])
-                    clust.sim_scores = clust.pull_scores_subgraph(new_groups[clust.name()])
-                elif len(clust) > 1 or list(clust.seq_ids)[0] not in new_groups["orphans"]:
+                    clust.sim_scores = clust.get_base_cluster().pull_scores_subgraph(new_groups[clust.name()])
+                elif len(clust) > 1:
+                    # The cluster didn't make it into new_groups, so it must have been emptied out
                     clust.reset_seq_ids([])
                     clust.sim_scores = clust.pull_scores_subgraph([])
-                else:  # This can only be an orphaned sequence
+                elif list(clust.seq_ids)[0] not in new_groups["orphans"]:
+                    # An otherwise orphaned sequence was placed in a new cluster
+                    clust.reset_seq_ids([])
+                    clust.sim_scores = clust.pull_scores_subgraph([])
+                else:
+                    # Can only be a previously orphaned sequence. Remove it from new_group orphans to retain clust name.
                     new_groups["orphans"].remove(list(clust.seq_ids)[0])
 
             # Place any new orphans into new groups
