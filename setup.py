@@ -34,7 +34,6 @@ DEPENDENCIES = [
     'pandas>=0.19',
     'numpy',
     'scipy',
-    'statsmodels',
     'biopython',
     'buddysuite>=1.2.6',
     'pyvolve',

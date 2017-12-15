@@ -15,7 +15,7 @@ install:
   - /home/travis/miniconda/bin/conda install -c bioconda clustalo
   - /home/travis/miniconda/bin/pip install --upgrade
   - /home/travis/miniconda/bin/pip install py pytest pytest-xdist pytest-cov pytest-colordots
-  - /home/travis/miniconda/bin/pip install biopython statsmodels python-coveralls buddysuite dill
+  - /home/travis/miniconda/bin/pip install biopython python-coveralls buddysuite dill
   - /home/travis/miniconda/bin/git clone https://github.com/biologyguy/BuddySuite.git /home/travis/build/biologyguy/BuddySuite
   - /home/travis/miniconda/bin/git --git-dir=/home/travis/build/biologyguy/BuddySuite/.git --work-tree=/home/travis/build/biologyguy/BuddySuite checkout develop
   - mv /home/travis/build/biologyguy/BuddySuite/buddysuite/*.py /home/travis/miniconda/lib/python3.6/site-packages/buddysuite/

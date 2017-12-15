@@ -40,13 +40,13 @@ from random import choice, Random, randint, random
 from math import ceil, log2
 from collections import OrderedDict
 from copy import deepcopy, copy
-from hashlib import md5
+# from hashlib import md5
 
 
 # 3rd party
 import pandas as pd
 import numpy as np
-import statsmodels.api as sm
+# import statsmodels.api as sm
 # import statsmodels.stats.api as sms
 import scipy.stats
 from Bio.SubsMat import SeqMat, MatrixInfo
