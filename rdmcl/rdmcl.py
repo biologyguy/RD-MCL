@@ -2694,7 +2694,7 @@ Continue? y/[n] """ % len(sequences)
                 json.dump(clust.collapsed_genes, outfile)
                 outfile.write("\n\n")
             for gene_id, paralog_list in clust.collapsed_genes.items():
-                clust.seq_ids.union(set(paralog_list))
+                clust.reset_seq_ids(paralog_list + list(clust.seq_ids))
                 clust.taxa[gene_id.split(in_args.taxa_sep)[0]].append(gene_id)
         clust.score(force=True)
 
