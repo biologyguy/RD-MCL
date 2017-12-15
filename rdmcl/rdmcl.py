@@ -2219,7 +2219,7 @@ def argparse_init():
     parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
 
     outdir = os.path.join(os.getcwd(), "rdmcl-%s" % time.strftime("%d-%m-%Y"))
-    parser_flags.add_argument("-o", "--outdir", action="store", nargs="?", default=outdir,
+    parser_flags.add_argument("-o", "--outdir", action="store", nargs="?", default=outdir, metavar="path",
                               help="Where should results be written? (default=%s)" % outdir)
     parser_flags.add_argument("-rs", "--r_seed", type=int, metavar="",
                               help="Specify a random seed for repeating a specific run")
@@ -2246,11 +2246,11 @@ def argparse_init():
                               help="Penalty for opening a gap in pairwise alignment scoring (default=%s)" % GAP_OPEN)
     parser_flags.add_argument("-ep", "--ext_penalty", type=float, default=GAP_EXTEND, metavar="",
                               help="Penalty to extend a gap in pairwise alignment scoring (default=%s)" % GAP_EXTEND)
-    parser_flags.add_argument("-wdb", "--workdb", action="store", default="",
+    parser_flags.add_argument("-wdb", "--workdb", action="store", default="", metavar="",
                               help="Specify the directory that independent workers will be monitoring")
-    parser_flags.add_argument("-algn_m", "--align_method", action="store", default="clustalo",
+    parser_flags.add_argument("-algn_m", "--align_method", action="store", default="clustalo", metavar="",
                               help="Specify which alignment algorithm to use (supply full path if not in $PATH)")
-    parser_flags.add_argument("-algn_p", "--align_params", action="store", default="",
+    parser_flags.add_argument("-algn_p", "--align_params", action="store", default="", metavar="",
                               help="Supply alignment specific parameters")
     parser_flags.add_argument("-r", "--resume", action="store_true",
                               help="Try to pick up where a previous run left off (this breaks r_seed).")
@@ -2271,7 +2271,7 @@ def argparse_init():
                            help="Do not check for or merge singlets")
     dev_flags.add_argument("-sit", "--suppress_iteration", action="store_true",
                            help="Only check for cliques and orphans once")
-    dev_flags.add_argument("-trm", "--trimal", action="append", nargs="+",
+    dev_flags.add_argument("-trm", "--trimal", action="append", nargs="+", metavar="threshold",
                            help="Specify a list of trimal thresholds to apply (move from more strict to less)")
 
     # Misc
