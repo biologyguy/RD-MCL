@@ -1,0 +1,228 @@
+LOCUS       NP_116764                452 aa            linear   PRI 24-OCT-2017
+DEFINITION  caspase-2 isoform 1 preproprotein [Homo sapiens].
+ACCESSION   NP_116764
+VERSION     NP_116764.2
+KEYWORDS    RefSeq.
+SOURCE      Homo sapiens (human)
+  ORGANISM  Homo sapiens
+            Eukaryota; Metazoa; Chordata; Craniata; Vertebrata; Euteleostomi;
+            Mammalia; Eutheria; Euarchontoglires; Primates; Haplorrhini;
+            Catarrhini; Hominidae; Homo.
+REFERENCE   1  (residues 1 to 452)
+  AUTHORS   Kalabova D, Smidova A, Petrvalska O, Alblova M, Kosek D, Man P,
+            Obsil T and Obsilova V.
+  TITLE     Human procaspase-2 phosphorylation at both S139 and S164 is required
+            for 14-3-3 binding
+  JOURNAL   Biochem. Biophys. Res. Commun. 493 (2), 940-945 (2017)
+   PUBMED   28943433
+  REMARK    GeneRIF: This study shows that human procaspase-2 interaction with
+            14-3-3 zeta is governed by phosphorylation at both S139 and S164.
+REFERENCE   2  (residues 1 to 452)
+  AUTHORS   Bouchier-Hayes L.
+  TITLE     The role of caspase-2 in stress-induced apoptosis
+  JOURNAL   J. Cell. Mol. Med. 14 (6A), 1212-1224 (2010)
+   PUBMED   20158568
+  REMARK    GeneRIF: This review discusses recent advances that have been made
+            to help elucidate the true role of caspase 2 and the potential
+            contribution of caspase-2 to the pathology of human diseases
+            including cancer. Review article
+REFERENCE   3  (residues 1 to 452)
+  AUTHORS   Majumder P, Raychaudhuri S, Chattopadhyay B and Bhattacharyya NP.
+  TITLE     Increased caspase-2, calpain activations and decreased mitochondrial
+            complex II activity in cells expressing exogenous huntingtin exon 1
+            containing CAG repeat in the pathogenic range
+  JOURNAL   Cell. Mol. Neurobiol. 27 (8), 1127-1145 (2007)
+   PUBMED   17902043
+REFERENCE   4  (residues 1 to 452)
+  AUTHORS   Narkilahti S, Jutila L, Alafuzoff I, Karkola K, Paljarvi L, Immonen
+            A, Vapalahti M, Mervaala E, Kalviainen R and Pitkanen A.
+  TITLE     Increased expression of caspase 2 in experimental and human temporal
+            lobe epilepsy
+  JOURNAL   Neuromolecular Med. 9 (2), 129-144 (2007)
+   PUBMED   17627033
+  REMARK    GeneRIF: Data suggest that caspase 2-mediated programmed cell death
+            participates in the seizure-induced degenerative process in
+            experimental and human TLE.
+REFERENCE   5  (residues 1 to 452)
+  AUTHORS   Martinet W, Knaapen MW, De Meyer GR, Herman AG and Kockx MM.
+  TITLE     Overexpression of the anti-apoptotic caspase-2 short isoform in
+            macrophage-derived foam cells of human atherosclerotic plaques
+  JOURNAL   Am. J. Pathol. 162 (3), 731-736 (2003)
+   PUBMED   12598307
+  REMARK    GeneRIF: The short isoform is overexpressed in macrophage-derived
+            foam cells of human atherosclerotic plaques
+REFERENCE   6  (residues 1 to 452)
+  AUTHORS   Logette E, Wotawa A, Solier S, Desoche L, Solary E and Corcos L.
+  TITLE     The human caspase-2 gene: alternative promoters, pre-mRNA splicing
+            and AUG usage direct isoform-specific expression
+  JOURNAL   Oncogene 22 (6), 935-946 (2003)
+   PUBMED   12584573
+  REMARK    GeneRIF: caspase-2 gene: alternative promoters, pre-mRNA splicing
+            and AUG usage direct isoform-specific expression
+REFERENCE   7  (residues 1 to 452)
+  AUTHORS   Droin N, Beauchemin M, Solary E and Bertrand R.
+  TITLE     Identification of a caspase-2 isoform that behaves as an endogenous
+            inhibitor of the caspase cascade
+  JOURNAL   Cancer Res. 60 (24), 7039-7047 (2000)
+   PUBMED   11156409
+REFERENCE   8  (residues 1 to 452)
+  AUTHORS   Shimohama S, Tanino H and Fujimoto S.
+  TITLE     Changes in caspase expression in Alzheimer's disease: comparison
+            with development and aging
+  JOURNAL   Biochem. Biophys. Res. Commun. 256 (2), 381-384 (1999)
+   PUBMED   10079193
+REFERENCE   9
+  AUTHORS   Li,H., Bergeron,L., Cryns,V., Pasternack,M.S., Zhu,H., Shi,L.,
+            Greenberg,A. and Yuan,J.
+  TITLE     Activation of caspase-2 in apoptosis
+  JOURNAL   J. Biol. Chem. 272 (34), 21010-21017 (1997)
+   PUBMED   9261102
+REFERENCE   10  (residues 1 to 452)
+  AUTHORS   Kumar S, White DL, Takai S, Turczynowicz S, Juttner CA and Hughes
+            TP.
+  TITLE     Apoptosis regulatory gene NEDD2 maps to human chromosome segment
+            7q34-35, a region frequently affected in haematological neoplasms
+  JOURNAL   Hum. Genet. 95 (6), 641-644 (1995)
+   PUBMED   7789948
+REFERENCE   11  (residues 1 to 452)
+  AUTHORS   Wang L, Miura M, Bergeron L, Zhu H and Yuan J.
+  TITLE     Ich-1, an Ice/ced-3-related gene, encodes both positive and negative
+            regulators of programmed cell death
+  JOURNAL   Cell 78 (5), 739-750 (1994)
+   PUBMED   8087842
+COMMENT     ##Evidence-Data-START##
+            Transcript exon combination :: BC002427.2, SRR1163655.545966.1
+            RNAseq introns              :: single sample supports all introns
+            ##Evidence-Data-END##
+            REVIEWED REFSEQ: This record has been curated by NCBI staff. The
+            reference sequence was derived from DA505883.1, DB455837.1,
+            AK291274.1, AC073342.3 and BQ447606.1.
+            This sequence is a reference standard in the RefSeqGene project.
+            On Dec 17, 2003 this sequence version replaced gi:14790178.
+            Summary: This gene encodes a member of the cysteine-aspartic acid
+            protease (caspase) family. Caspases mediate cellular apoptosis
+            through the proteolytic cleavage of specific protein substrates.
+            The encoded protein may function in stress-induced cell death
+            pathways, cell cycle maintenance, and the suppression of
+            tumorigenesis. Increased expression of this gene may play a role in
+            neurodegenerative disorders including Alzheimer's disease,
+            Huntington's disease and temporal lobe epilepsy. Alternatively
+            spliced transcript variants encoding multiple isoforms have been
+            observed for this gene. [provided by RefSeq, Jan 2011].
+            Transcript Variant: This variant (1) encodes the longest isoform
+            (1, also known as ICH-1L), which has been shown to function as a
+            positive regulator of apoptosis (PMID:8087842).
+            Sequence Note: This RefSeq record was created from transcript and
+            genomic sequence data to make the sequence consistent with the
+            reference genome assembly. The genomic coordinates used for the
+            transcript record were based on transcript alignments.
+            Publication Note:  This RefSeq record includes a subset of the
+            publications that are available for this gene. Please see the Gene
+            record to access additional publications.
+            [ECO:0000332]
+            SAMEA1965299, SAMEA1966682
+            [ECO:0000348]
+FEATURES             Location/Qualifiers
+     source          1..452
+                     /organism="Homo sapiens"
+                     /db_xref="taxon:9606"
+                     /chromosome="7"
+                     /map="7q34"
+     Protein         1..452
+                     /product="caspase-2 isoform 1 preproprotein"
+                     /EC_number="3.4.22.55"
+                     /note="caspase 2 apoptosis-related cysteine peptidase;
+                     protease ICH-1; neural precursor cell expressed
+                     developmentally down-regulated protein 2; protein
+                     phosphatase 1, regulatory subunit 57"
+                     /calculated_mol_wt="50554"
+     Site            2
+                     /site_type="acetylation"
+                     /experiment="experimental evidence, no additional details
+                     recorded"
+                     /note="N-acetylalanine. {ECO:0000244|PubMed:19413330};
+                     propagated from UniProtKB/Swiss-Prot (P42575.2)"
+     Region          32..118
+                     /region_name="CARD_CASP2"
+                     /note="Caspase activation and recruitment domain of
+                     Caspase-2; cd08332"
+                     /db_xref="CDD:260040"
+     Site            157
+                     /site_type="phosphorylation"
+                     /experiment="experimental evidence, no additional details
+                     recorded"
+                     /note="Phosphoserine. {ECO:0000244|PubMed:23186163};
+                     propagated from UniProtKB/Swiss-Prot (P42575.2)"
+     Site            169
+                     /site_type="modified"
+                     /experiment="experimental evidence, no additional details
+                     recorded"
+                     /note="proteolytic cleavage site"
+                     /citation=[9]
+                     /db_xref="HPRD:02800"
+     mat_peptide     170..325
+                     /product="Caspase-2 subunit p18"
+                     /experiment="experimental evidence, no additional details
+                     recorded"
+                     /note="propagated from UniProtKB/Swiss-Prot (P42575.2)"
+                     /calculated_mol_wt="17498"
+     Region          192..447
+                     /region_name="CASc"
+                     /note="Caspase, interleukin-1 beta converting enzyme (ICE)
+                     homologues; smart00115"
+                     /db_xref="CDD:214521"
+     Site            order(219,278,318,325,375..380,384..385)
+                     /site_type="other"
+                     /note="substrate pocket [chemical binding]"
+                     /db_xref="CDD:237997"
+     Site            order(277,320)
+                     /site_type="active"
+                     /db_xref="CDD:237997"
+     Site            order(326,360..361,368,371,374,397,405,411,430,435..436,
+                     438,441..442)
+                     /site_type="other"
+                     /note="dimer interface [polypeptide binding]"
+                     /db_xref="CDD:237997"
+     Site            order(327,359)
+                     /site_type="other"
+                     /note="proteolytic cleavage site"
+                     /db_xref="CDD:237997"
+     mat_peptide     334..452
+                     /product="Caspase-2 subunit p13"
+                     /experiment="experimental evidence, no additional details
+                     recorded"
+                     /note="propagated from UniProtKB/Swiss-Prot (P42575.2)"
+                     /calculated_mol_wt="13270"
+     Site            340
+                     /site_type="phosphorylation"
+                     /experiment="experimental evidence, no additional details
+                     recorded"
+                     /note="Phosphoserine. {ECO:0000244|PubMed:21406692};
+                     propagated from UniProtKB/Swiss-Prot (P42575.2)"
+     mat_peptide     348..452
+                     /product="Caspase-2 subunit p12"
+                     /experiment="experimental evidence, no additional details
+                     recorded"
+                     /note="propagated from UniProtKB/Swiss-Prot (P42575.2)"
+                     /calculated_mol_wt="11901"
+     CDS             1..452
+                     /gene="CASP2"
+                     /gene_synonym="CASP-2; ICH1; NEDD-2; NEDD2; PPP1R57"
+                     /coded_by="NM_032982.3:242..1600"
+                     /note="isoform 1 preproprotein is encoded by transcript
+                     variant 1"
+                     /db_xref="CCDS:CCDS5879.1"
+                     /db_xref="GeneID:835"
+                     /db_xref="HGNC:HGNC:1503"
+                     /db_xref="MIM:600639"
+ORIGIN
+        1 maapsagsws tfqhkelmaa drgrrilgvc gmhphhqetl kknrvvlakq lllsellehl
+       61 lekdiitlem reliqakvgs fsqnvellnl lpkrgpqafd afcealretk qghledmllt
+      121 tlsglqhvlp plscdydlsl pfpvcescpl ykklrlstdt vehsldnkdg pvclqvkpct
+      181 pefyqthfql ayrlqsrprg lalvlsnvhf tgekelefrs ggdvdhstlv tlfkllgydv
+      241 hvlcdqtaqe mqeklqnfaq lpahrvtdsc ivallshgve gaiygvdgkl lqlqevfqlf
+      301 dnancpslqn kpkmffiqac rgdetdrgvd qqdgknhags pgceesdagk eklpkmrlpt
+      361 rsdmicgyac lkgtaamrnt krgswyieal aqvfseracd mhvadmlvkv nalikdregy
+      421 apgtefhrck emseycstlc rhlylfpghp pt
+//
+
