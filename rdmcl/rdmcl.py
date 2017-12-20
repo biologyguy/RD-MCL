@@ -1919,8 +1919,37 @@ class Seqs2Clusters(object):
 
     @staticmethod
     def _create_truncnorm(mu, sigma, lower=0, upper=1):
+        sigma = sigma if sigma > 0.001 else 0.001  # This prevents unrealistically small differences and DivBy0 errors
         dist = scipy.stats.truncnorm((lower - mu) / sigma, (upper - mu) / sigma, loc=mu, scale=sigma)
         return dist
+
+    @staticmethod
+    def get_sort_order(seq2group_dists, placed, new_group, orig_clusts):
+        """
+        Arrange seq_ids by cluster size (small to big), then by R² within each size bin (high to low)
+        :param seq2group_dists: {seq_id: {clust_name: R² mean, ...}, ...}
+        :param placed: [seq_id, ...]
+        :param new_group: {clust_name: {seq_id, ...}, ...}
+        :param orig_clusts: {seq_id: clust_name, ...}
+        :return: [[(seq_id, R² mean), ...], ...]
+        """
+        sort_vals = [(seq_id, max([val for group_id, val in group_vals.items()]), len(new_group[orig_clusts[seq_id]]))
+                     for seq_id, group_vals in seq2group_dists.items()]
+        sort_vals = [(seq_id, val, len_group) for seq_id, val, len_group in sorted(sort_vals, key=lambda i: i[2])
+                     if seq_id not in placed]
+        sort_order = [[]]
+        current_group_len = 0
+        valve = br.SafetyValve()
+        for seq_id, val, len_group in sort_vals:
+            while current_group_len < len_group:
+                valve.step()
+                if sort_order[-1]:
+                    sort_order.append([])
+                current_group_len += 1
+            else:
+                sort_order[-1].append((seq_id, val))
+            sort_order[-1] = sorted(sort_order[-1], key=lambda i: i[1], reverse=True)
+        return sort_order
 
     def place_seqs_in_clusts(self):
         """
@@ -1984,7 +2013,11 @@ class Seqs2Clusters(object):
             br.run_multicore_function(self.clusters, self._mc_build_cluster_nulls, args, max_processes=CPUS, quiet=True)
 
             global_null_df = pd.read_csv(global_null_file.path)
-            cluster_nulls = json.loads(cluster_nulls_file.read().strip(",") + "}")
+            try:
+                cluster_nulls = json.loads(cluster_nulls_file.read().strip(",") + "}")
+            except json.JSONDecodeError as err:
+                print(cluster_nulls_file.read())
+                raise err
             cluster_nulls = {clust_name: self._create_truncnorm(dist["mu"], dist["sigma"])
                              for clust_name, dist in cluster_nulls.items()}
             out_of_cluster_df = pd.read_csv(out_of_cluster_file.path)
@@ -2029,13 +2062,10 @@ class Seqs2Clusters(object):
             new_groups = OrderedDict([(clust.name(), copy(clust.seq_ids)) for clust in self.clusters])
             new_groups["orphans"] = set()
 
-            # Set a static order that sequences will be placed, based on current average r_squares
-            sort_order = [(seq_id, max([val for group_id, val in group_vals.items()]))
-                          for seq_id, group_vals in seq2group_dists.items()]
-            sort_order = [(seq_id, val) for seq_id, val in sorted(sort_order, key=lambda i: i[1], reverse=True)
-                          if seq_id not in placed]
+            # Set a static order that sequences will be placed. Smallest clusters and largest average r_square first.
+            sort_order = self.get_sort_order(seq2group_dists, placed, new_groups, orig_clusters)
             log_output += "\n\n# Sort order #\n%s\n\n" % sort_order
-            sort_order = [seq_id for seq_id, val in sort_order]
+            sort_order = [seq_id for group in sort_order for seq_id, val in group]
 
             log_output += "# Placement #\n"
             for seq_id in sort_order:
@@ -2047,8 +2077,11 @@ class Seqs2Clusters(object):
                 log_output += "\tCluster null = NONE\n" if group_id not in cluster_nulls \
                     else "\tCluster null = %s\n" % cluster_nulls[group_id].pdf(val)
 
-                # If the 'highest' cluster is not the original cluster, check the original cluster first
-                if group_id != orig_clusters[seq_id] and orig_clusters[seq_id] in cluster_nulls:
+                # If the 'highest' cluster is not the original cluster and is at least 90% smaller than the original
+                # cluster, then check the original cluster first
+                if group_id != orig_clusters[seq_id] \
+                        and orig_clusters[seq_id] in cluster_nulls \
+                        and len(new_groups[group_id]) <= len(new_groups[orig_clusters[seq_id]]) * 0.1:
                     orig_val = seq2group_dists[seq_id][orig_clusters[seq_id]]
                     if cluster_nulls[orig_clusters[seq_id]].pdf(orig_val) >= out_of_cluster_dist.pdf(orig_val) \
                             or null_dist.pdf(orig_val) >= out_of_cluster_dist.pdf(orig_val):

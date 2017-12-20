@@ -1844,16 +1844,43 @@ def test_place_seqs_in_clusts(hf, monkeypatch):
                         lambda *_: hmm_fwd_scores)
 
     seq2clust_obj.place_seqs_in_clusts()
-    assert len(seq2clust_obj.clusters) == 5
-    all_clusts = [sorted(c.seq_ids) for c in seq2clust_obj.clusters]
+    all_clusts = sorted([sorted(c.seq_ids) for c in seq2clust_obj.clusters])
+    assert len(seq2clust_obj.clusters) == 4, print(all_clusts)
     cstring = "\n".join([str(c) for c in all_clusts])
-    assert all_clusts[0] == ['Lla-PanxαA', 'Mle-Panxα11', 'Oma-PanxαD',
+    assert all_clusts[0] == ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE',
+                             'Bfr-PanxαA', 'Hca-PanxαA', 'Lcr-PanxαG'], print(cstring)
+    assert all_clusts[1] == ["Hvu-PanxβA"], print(cstring)
+    assert all_clusts[2] == ['Lla-PanxαA', 'Mle-Panxα11', 'Oma-PanxαD',
                              'Pba-PanxαB', 'Tin-PanxαF', 'Vpa-PanxαD'], print(cstring)
-    assert all_clusts[1] == ['Hca-PanxαA', 'Lcr-PanxαG'], print(cstring)
-    assert all_clusts[2] == ["Hvu-PanxβA"], print(cstring)
     assert all_clusts[3] == ["Oma-PanxαB"], print(cstring)
-    assert all_clusts[4] == ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE', 'Bfr-PanxαA'], print(cstring)
-    #assert hf.string2hash(seq2clust_obj.tmp_file.read()) == "92d4b9600d74732452c1d81b7d1a8ece"
+
+    # assert hf.string2hash(seq2clust_obj.tmp_file.read()) == "92d4b9600d74732452c1d81b7d1a8ece"
+
+
+def test_get_sort_order():
+    seq2group_dists = {"Bab-PanxαC": {"group_0_0": 0.088972934053, "group_0_1": 0.074113151245,
+                                      "group_0_2": 0.085232767421, "group_0_3": 0.496532640862,
+                                      "group_0_4": 0.935854279759},
+                       "Bab-PanxαA": {"group_0_0": 0.788972934053, "group_0_1": 0.074113151245,
+                                      "group_0_2": 0.085232767421, "group_0_3": 0.996532640862,
+                                      "group_0_4": 0.225854279759},
+                       "Bab-PanxαB": {"group_0_0": 0.088972934053, "group_0_1": 0.074113151245,
+                                      "group_0_2": 0.085232767421, "group_0_3": 0.496532640862,
+                                      "group_0_4": 0.925854279759}}
+    new_group = {"group_0_0": {"Mle-PanxαA", "Tin-PanxαA", "Dgl-PanxαA"},
+                 "group_0_1": {"Mle-PanxαC", "Tin-PanxαC", "Dgl-PanxαC"},
+                 "group_0_2": {"Mle-PanxαD", "Tin-PanxαD", "Dgl-PanxαD"},
+                 "group_0_3": {"Bab-PanxαA", "Bab-PanxαC", "Tin-PanxαE", "Dgl-PanxαE"},
+                 "group_0_4": {"Bab-PanxαB", "Tin-PanxαE", "Dgl-PanxαE"}}
+    placed = []
+    orig_clusts = {"Bab-PanxαA": "group_0_3", "Bab-PanxαB": "group_0_4", "Bab-PanxαC": "group_0_3"}
+    sort_order = rdmcl.Seqs2Clusters.get_sort_order(seq2group_dists, placed, new_group, orig_clusts)
+    assert sort_order == [[('Bab-PanxαB', 0.925854279759)], [('Bab-PanxαA', 0.996532640862),
+                                                             ('Bab-PanxαC', 0.935854279759)]], print(sort_order)
+
+    placed = ['Bab-PanxαA']
+    sort_order = rdmcl.Seqs2Clusters.get_sort_order(seq2group_dists, placed, new_group, orig_clusts)
+    assert sort_order == [[('Bab-PanxαB', 0.925854279759)], [('Bab-PanxαC', 0.935854279759)]], print(sort_order)
 
 
 def test_place_orphans(hf):
