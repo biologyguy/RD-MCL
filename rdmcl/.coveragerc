@@ -3,6 +3,7 @@ source = /home/travis/build/biologyguy/RD-MCL/rdmcl/rdmcl.py
          /home/travis/build/biologyguy/RD-MCL/rdmcl/launch_worker.py
          /home/travis/build/biologyguy/RD-MCL/rdmcl/helpers.py
          /home/travis/build/biologyguy/RD-MCL/rdmcl/mcmcmc.py
+         /home/travis/build/biologyguy/RD-MCL/rdmcl/group_by_cluster.py
          /home/travis/build/biologyguy/RD-MCL/rdmcl/tests/conftest.py
          /home/travis/build/biologyguy/RD-MCL/rdmcl/tests/__init__.py
 
@@ -13,4 +14,5 @@ exclude_lines=
  except ImportError:
  except CalledProcessError:
  if os.name == .nt.:
+ def fmt.prog.:
 show_missing=True

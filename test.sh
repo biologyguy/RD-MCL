@@ -45,8 +45,17 @@ if [ $? -ne 0 ]
 then
     FAILURE=1
 fi
-mv .coverage /home/travis/build/biologyguy/RD-MCL/
 
+#### Group by cluster tests
+TEST_SCRIPTS='test_group_by_cluster.py '
+py.test ${TEST_SCRIPTS} --cache-clear -p no:cacheprovider -p no:logging --cov --cov-append --cov-report= --cov-config ../.coveragerc --durations=10
+if [ $? -ne 0 ]
+then
+    FAILURE=1
+fi
+
+#### Move coverage report file
+mv .coverage /home/travis/build/biologyguy/RD-MCL/
 
 #### Run Coveralls
 cd /home/travis/build/biologyguy/RD-MCL
