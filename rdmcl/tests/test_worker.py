@@ -82,12 +82,19 @@ def test_start_worker_clean_dead_master(hf, capsys, monkeypatch):
     assert "PASSED" in out
 
 
-def test_start_worker_fetch_queue(hf, capsys):
+def test_start_worker_fetch_queue(hf, capsys, monkeypatch):
     temp_dir = br.TempDir()
     temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
     temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
-    worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=1)
 
+    def kill(*args):
+        self = args[0]
+        os.remove(self.worker_file)
+        return
+
+    monkeypatch.setattr(launch_worker.Worker, "process_final_results", kill)
+
+    worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=1)
     work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
     work_cursor = work_con.cursor()
     work_cursor.execute("INSERT INTO "
@@ -119,7 +126,7 @@ def test_start_worker_fetch_queue(hf, capsys):
     work_con.close()
 
 
-def test_start_worker_1seq_error(hf, capsys):
+def test_start_worker_1seq_error(hf, capsys, monkeypatch):
     temp_dir = br.TempDir()
     temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
     temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
@@ -141,6 +148,7 @@ def test_start_worker_1seq_error(hf, capsys):
     seqbuddy = Sb.pull_recs(seqbuddy, "Oma-PanxαC")
     seqbuddy.write(os.path.join(worker.output, "foo.seqs"))
 
+    monkeypatch.setattr(launch_worker.Worker, "check_masters", lambda *_, **__: True)
     with pytest.raises(SystemExit):
         worker.start()
 
@@ -179,6 +187,7 @@ def test_start_worker_missing_ss2(hf, monkeypatch, capsys):
     seqbuddy.write(os.path.join(worker.output, "foo.seqs"))
     monkeypatch.setattr(Alb, "generate_msa", lambda *_, **__: "Blahh")
     monkeypatch.setattr(Alb, "AlignBuddy", lambda *_, **__: "Blahh")
+    monkeypatch.setattr(launch_worker.Worker, "check_masters", lambda *_, **__: True)
     with pytest.raises(SystemExit):
         worker.start()
     out, err = capsys.readouterr()
@@ -192,6 +201,7 @@ def test_start_worker_deleted_check(hf, capsys, monkeypatch):
     temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
     worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=1)
     monkeypatch.setattr(helpers, "dummy_func", lambda *_: os.remove(worker.worker_file))
+    monkeypatch.setattr(launch_worker.Worker, "check_masters", lambda *_, **__: True)
 
     with pytest.raises(SystemExit):
         worker.start()
@@ -222,6 +232,7 @@ def test_start_worker_deal_with_subjobs(hf, capsys, monkeypatch):
     monkeypatch.setattr(rdmcl, "prepare_all_by_all", lambda *_: [136, []])
     monkeypatch.setattr(launch_worker.Worker, "spawn_subjobs", lambda *_: [2, [], 1, 3])
     monkeypatch.setattr(launch_worker.Worker, "load_subjob", lambda *_: [4, []])
+    monkeypatch.setattr(launch_worker.Worker, "check_masters", lambda *_, **__: True)
 
     def kill_worker(*args, **kwargs):
         worker.terminate("unit test kill")
