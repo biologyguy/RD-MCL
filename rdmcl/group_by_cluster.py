@@ -17,16 +17,24 @@ import re
 import sys
 from collections import OrderedDict
 import os
+import argparse
 
 
-def make_msa(cluster, aligner, trimal):
+def make_msa(seqbuddy, aligner, trimal=()):
+    """
+    Create a multiple sequence alignment
+    :param seqbuddy: SeqBuddy object
+    :param aligner: path to alignment program
+    :param trimal: List of TrimAl thresholds to try
+    :return: AlignBuddy object
+    """
     trimal = trimal if trimal else ["clean"]
 
-    if len(cluster) == 1:
-        alignment = Alb.AlignBuddy(str(cluster))
+    if len(seqbuddy) == 1:
+        alignment = Alb.AlignBuddy(str(seqbuddy))
     else:
-        alignment = Alb.generate_msa(Sb.make_copy(cluster), aligner, quiet=True)
-        ave_seq_length = Sb.ave_seq_length(cluster)
+        alignment = Alb.generate_msa(Sb.make_copy(seqbuddy), aligner, quiet=True)
+        ave_seq_length = Sb.ave_seq_length(seqbuddy)
         for threshold in trimal:
             align_copy = Alb.trimal(Alb.make_copy(alignment), threshold=threshold)
             cleaned_seqs = Sb.clean_seq(Sb.SeqBuddy(str(align_copy)))
@@ -42,9 +50,7 @@ def make_msa(cluster, aligner, trimal):
     return alignment
 
 
-def main():
-    import argparse
-
+def argparse_init():
     def fmt(prog):
         return br.CustomHelpFormatter(prog)
 
@@ -88,7 +94,11 @@ def main():
     misc.add_argument('-h', '--help', action="help", help="Show this help message and exit")
 
     in_args = parser.parse_args()
+    return in_args
 
+
+def main():
+    in_args = argparse_init()
     mode = in_args.mode.lower()
     mode = "seqs" if "sequences".startswith(mode) else mode
     mode = "aln" if "alignment".startswith(mode) else mode
@@ -113,7 +123,6 @@ def main():
             if not re.search(in_args.groups, rank):
                 continue
 
-        node = [x.split("-")[1] for x in node]
         if in_args.min_size:
             if len(node) < in_args.min_size:
                 continue
@@ -122,7 +131,7 @@ def main():
             if len(node) > in_args.max_size:
                 continue
 
-        ids = "%s$" % "$|".join(node)
+        ids = "^%s$" % "$|^".join(node)
         subset = Sb.pull_recs(Sb.make_copy(seqbuddy), ids)
         subset = Sb.order_ids(subset)
 
