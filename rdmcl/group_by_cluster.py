@@ -87,6 +87,8 @@ def argparse_init():
     parser_flags.add_argument("--trimal", "-trm", action="append", nargs="*", metavar="param",
                               help="Specify trimal parameters",
                               default=["gappyout", 0.5, 0.75, 0.9, 0.95, "clean"])
+    parser_flags.add_argument("--strip_taxa", "-s", action="store_true",
+                              help="Remove taxa prefix before searching sequence file.")
     parser_flags.add_argument("--write", "-w", action="store", metavar="", help="Specify directory to write file(s)")
 
     # Misc
@@ -130,6 +132,9 @@ def main():
         if in_args.max_size:
             if len(node) > in_args.max_size:
                 continue
+
+        if in_args.strip_taxa:
+            node = [re.sub("^.*?\-", "", x) for x in node]
 
         ids = "^%s$" % "$|^".join(node)
         subset = Sb.pull_recs(Sb.make_copy(seqbuddy), ids)

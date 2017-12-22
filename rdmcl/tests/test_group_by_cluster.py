@@ -110,36 +110,6 @@ def test_argparse_init(monkeypatch, hf):
     assert temp_in_args.trimal == ["gappyout", 0.5, 0.75, 0.9, 0.95, "clean"]
 
 
-"""
-parser = argparse.ArgumentParser(prog="group_by_cluster", formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                 description="")
-# Positional
-parser.add_argument("clusters", action="store", help="Path to clusters file")
-parser.add_argument("sequence_file", action="store", help="Path to original sequence file")
-parser.add_argument("mode", action="store", nargs="?", default="list",
-                        help="Choose the output type [list, seqs, sequences, aln, alignment, con, consensus]")
-# Optional commands
-parser.add_argument("--aligner", "-a", action="store", default="clustalo", metavar="",
-                          help="Specify a multiple sequence alignment program")
-parser.add_argument("--groups", "-g", action="append", nargs="+", metavar="group",
-                          help="List the specific groups to process")
-parser.add_argument("--max_size", "-max", action="store", type=int, metavar="",
-                          help="Max cluster size to process")
-parser.add_argument("--min_size", "-min", action="store", type=int, metavar="",
-                          help="Min cluster size to process")
-parser.add_argument("--trimal", "-trm", action="append", nargs="*", metavar="param",
-                          help="Specify trimal parameters",
-                          default=["gappyout", 0.5, 0.75, 0.9, 0.95, "clean"])
-parser.add_argument("--write", "-w", action="store", metavar="", help="Specify directory to write file(s)")
-# Misc
-misc = parser.add_argument_group(title="\033[1mMisc options\033[m")
-misc.add_argument('-h', '--help', action="help", help="Show this help message and exit")
-
-# This is to allow py.test to work with its own flags
-in_args = parser.parse_args([])
-"""
-
-
 def test_main_list(monkeypatch, hf, capsys):
     argv = ['rdmcl.py', os.path.join(hf.resource_path, "final_clusters.txt"),
             os.path.join(hf.resource_path, "Cteno_pannexins.fa"), "list"]
@@ -192,6 +162,19 @@ def test_main_min_max(monkeypatch, hf, capsys):
     group_by_cluster.main()
     out, err = capsys.readouterr()
     assert hf.string2hash(out) == "c15356cb75c752a1f1b4db69de58114f", print(out)
+
+
+def test_main_strip_taxa(monkeypatch, hf, capsys):
+    tmp_file = br.TempFile()
+    seqbuddy = Sb.SeqBuddy(os.path.join(hf.resource_path, "Cteno_pannexins.fa"))
+    seqbuddy = Sb.rename(seqbuddy, "^.*?\-")
+    tmp_file.write(str(seqbuddy))
+    argv = ['rdmcl.py', os.path.join(hf.resource_path, "final_clusters.txt"),
+            tmp_file.path, "-s"]
+    monkeypatch.setattr(sys, "argv", argv)
+    group_by_cluster.main()
+    out, err = capsys.readouterr()
+    assert hf.string2hash(out) == "3020ea067affd21c77b7446f35689a6a", print(out)
 
 
 def test_main_write(monkeypatch, hf, capsys):
