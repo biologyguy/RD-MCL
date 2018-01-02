@@ -1623,17 +1623,6 @@ def test_instantiate_seqs2clusters(hf, monkeypatch):
     large_clusters = [clust.seq_ids for clust_name, clust in seq2clust_obj.large_clusters.items()]
     assert large_clusters == [cluster1.seq_ids, cluster2.seq_ids]
     assert len([seq_id for sub_clust in small_clusters + large_clusters for seq_id in sub_clust]) == 15
-    assert "RD-MCL{0}rdmcl{0}hmmer{0}hmm_fwd_back".format(os.sep) in seq2clust_obj.hmm_fwd_back_prog
-
-    monkeypatch.setattr(os.path, "isfile", lambda *_: False)
-    seq2clust_obj = rdmcl.Seqs2Clusters(clusters, 3, parent_sb, tmpdir.path)
-    assert "RD-MCL{0}rdmcl{0}hmmer{0}hmm_fwd_back".format(os.sep) not in seq2clust_obj.hmm_fwd_back_prog
-    assert os.path.exists(seq2clust_obj.hmm_fwd_back_prog)
-
-    monkeypatch.setattr(shutil, "which", lambda *_: False)
-    with pytest.raises(SystemError) as err:
-        rdmcl.Seqs2Clusters(clusters, 3, parent_sb, tmpdir.path)
-    assert "hmm_fwd_back program not found" in str(err)
     broker.close()
 
 

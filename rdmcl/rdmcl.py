@@ -91,6 +91,26 @@ MASTER_PULSE = 60
 PSIPREDDIR = ""
 TRIMAL = ["gappyout", 0.5, 0.75, 0.9, 0.95, "clean"]
 
+if os.path.isfile(os.path.join(SCRIPT_PATH, "hmmer", "hmm_fwd_back")):
+    HMM_FWD_BACK = os.path.join(SCRIPT_PATH, "hmmer", "hmm_fwd_back")
+elif shutil.which("hmm_fwd_back"):
+    HMM_FWD_BACK = shutil.which("hmm_fwd_back")
+elif "-setup" in sys.argv:
+    HMM_FWD_BACK = ""
+else:
+    sys.stderr.write("Error: hmm_fwd_back program not found. Please run `rdmcl.py -setup` to fix this.\n")
+    sys.exit()
+
+if os.path.isfile(os.path.join(SCRIPT_PATH, "hmmer", "hmmbuild")):
+    HMMBUILD = os.path.join(SCRIPT_PATH, "hmmer", "hmmbuild")
+elif shutil.which("hmmbuild"):
+    HMMBUILD = shutil.which("hmmbuild")
+elif "-setup" in sys.argv:
+    HMM_FWD_BACK = ""
+else:
+    sys.stderr.write("Error: hmmbuild program not found. Please run `rdmcl.py -setup` to fix this.\n")
+    sys.exit()
+
 ambiguous_X = {"A": 0, "R": -1, "N": -1, "D": -1, "C": -2, "Q": -1, "E": -1, "G": -1, "H": -1, "I": -1, "L": -1,
                "K": -1, "M": -1, "F": -1, "P": -2, "S": 0, "T": 0, "W": -2, "Y": -1, "V": -1}
 for aa in ambiguous_X:
@@ -730,7 +750,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         alignment.write(os.path.join(outdir, "alignments", master_cluster.name()))
         master_cluster.sim_scores.to_csv(os.path.join(outdir, "sim_scores", "%s.scores" % master_cluster.name()),
                                          header=None, index=False, sep="\t")
-        alignment = Alb.generate_hmm(alignment)
+        alignment = Alb.generate_hmm(alignment, HMMBUILD)
         with open(os.path.join(outdir, "hmm", master_cluster.name()), "w") as _ofile:
             _ofile.write(alignment.alignments[0].hmm)
         update = len(master_cluster.seq_ids) if not master_cluster.subgroup_counter else 0
@@ -845,7 +865,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
             _, align = retrieve_all_by_all_scores(Sb.pull_recs(Sb.make_copy(seqbuddy),
                                                                "^%s$" % ("$|^".join(sub_cluster.seq_ids))),
                                                   psi_pred_ss2, sql_broker, quiet=True)
-            align = Alb.generate_hmm(align)
+            align = Alb.generate_hmm(align, HMMBUILD)
             with open(os.path.join(outdir, "hmm", sub_cluster.name()), "w") as ofile:
                 ofile.write(align.alignments[0].hmm)
             cluster_list.append(sub_cluster)
@@ -1758,13 +1778,6 @@ class Seqs2Clusters(object):
         self.large_clusters = OrderedDict()
         self._separate_large_small()
 
-        if os.path.isfile(os.path.join(SCRIPT_PATH, "hmmer", "hmm_fwd_back")):
-            self.hmm_fwd_back_prog = os.path.join(SCRIPT_PATH, "hmmer", "hmm_fwd_back")
-        elif shutil.which("hmm_fwd_back"):
-            self.hmm_fwd_back_prog = shutil.which("hmm_fwd_back")
-        else:
-            raise SystemError("hmm_fwd_back program not found. Please run `rdmcl.py -setup` to fix this.")
-
     def _separate_large_small(self):
         for cluster in self.clusters:
             if len(cluster.seq_ids) < self.min_clust_size:
@@ -1861,7 +1874,7 @@ class Seqs2Clusters(object):
         for rec in self.seqbuddy.records:
             if not os.path.isfile(os.path.join(hmm_dir, "%s.hmm" % rec.id)):
                 align = Alb.AlignBuddy(rec.format("fasta"))
-                align = Alb.generate_hmm(align)
+                align = Alb.generate_hmm(align, HMMBUILD)
                 with open(os.path.join(hmm_dir, "%s.hmm" % rec.id), "w") as _ofile:
                     _ofile.write(align.alignments[0].hmm)
         return hmm_dir
@@ -1873,7 +1886,7 @@ class Seqs2Clusters(object):
         self.seqbuddy.write(self.tmp_dir.subfiles[0], out_format="fasta")
         for rec in self.seqbuddy.records:
             hmm_path = os.path.join(hmm_dir, "%s.hmm" % rec.id)
-            fwdback_output = Popen("%s %s %s" % (self.hmm_fwd_back_prog, hmm_path, self.tmp_dir.subfiles[0]),
+            fwdback_output = Popen("%s %s %s" % (HMM_FWD_BACK, hmm_path, self.tmp_dir.subfiles[0]),
                                    shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
             fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
                                         header=None, comment="#", index_col=False)
