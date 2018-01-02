@@ -39,6 +39,8 @@ def main():
 
     # Misc
     misc = parser.add_argument_group(title="\033[1mMisc options\033[m")
+    misc.add_argument('-v', '--version', action='version', version="Reset workers version %s\n\n%s" % (helpers.VERSION,
+                                                                                                       helpers.NOTICE))
     misc.add_argument('-h', '--help', action="help", help="Show this help message and exit")
 
     in_args = parser.parse_args()

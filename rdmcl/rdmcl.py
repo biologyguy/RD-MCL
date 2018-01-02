@@ -66,27 +66,11 @@ from buddysuite import AlignBuddy as Alb
 from buddysuite import buddy_resources as br
 
 # Globals
-SCRIPT_PATH = os.path.abspath(os.path.dirname(__file__))
-try:
-    git_commit = check_output(['git', '--git-dir={0}{1}..{1}.git'.format(SCRIPT_PATH, os.sep), 'rev-parse',
-                               '--short', 'HEAD'], stderr=PIPE).decode().strip()
-    git_commit = " (git %s)" % git_commit if git_commit else ""
-    VERSION = "1.0.4%s" % git_commit
-except CalledProcessError:
-    VERSION = "1.0.4"
-
+SCRIPT_PATH = helpers.SCRIPT_PATH
+VERSION = helpers.VERSION
+NOTICE = helpers.NOTICE
 ALIGNMETHOD = "clustalo"
 ALIGNPARAMS = ""
-
-NOTICE = '''\
-Public Domain Notice
---------------------
-This is free software; see the LICENSE for further details.
-There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE.
-Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
---------------------
-'''
 LOCK = Lock()
 MULTICORE_LOCK = Lock()
 PROGRESS_LOCK = Lock()

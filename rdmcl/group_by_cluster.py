@@ -6,9 +6,11 @@ Output the description line for each record in each cluster, neatly organized as
 """
 
 try:
-    from rdmcl.compare_homolog_groups import prepare_clusters
+    from .compare_homolog_groups import prepare_clusters
+    from . import helpers
 except ImportError:
     from compare_homolog_groups import prepare_clusters
+    import helpers
 
 from buddysuite import SeqBuddy as Sb
 from buddysuite import AlignBuddy as Alb
@@ -93,6 +95,8 @@ def argparse_init():
 
     # Misc
     misc = parser.add_argument_group(title="\033[1mMisc options\033[m")
+    misc.add_argument('-v', '--version', action='version', version="Group by cluster version %s\n\n%s" %
+                                                                   (helpers.VERSION, helpers.NOTICE))
     misc.add_argument('-h', '--help', action="help", help="Show this help message and exit")
 
     in_args = parser.parse_args()

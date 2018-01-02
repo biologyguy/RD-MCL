@@ -3,6 +3,7 @@ import sqlite3
 import json
 import logging
 import shutil
+import os
 import pandas as pd
 import numpy as np
 from math import log, sqrt
@@ -10,12 +11,33 @@ from time import time, sleep
 from copy import copy
 from hashlib import md5
 from multiprocessing import SimpleQueue, Process, Pipe
+from subprocess import PIPE, check_output, CalledProcessError
 from buddysuite.buddy_resources import pretty_time, SafetyValve
 import signal
 
 # Set global precision levels
 np.set_printoptions(precision=12)
 pd.set_option("display.precision", 12)
+
+SCRIPT_PATH = os.path.abspath(os.path.dirname(__file__))
+
+try:
+    git_commit = check_output(['git', '--git-dir={0}{1}..{1}.git'.format(SCRIPT_PATH, os.sep), 'rev-parse',
+                               '--short', 'HEAD'], stderr=PIPE).decode().strip()
+    git_commit = " (git %s)" % git_commit if git_commit else ""
+    VERSION = "1.1.0%s" % git_commit
+except CalledProcessError:
+    VERSION = "1.1.0"
+
+NOTICE = '''\
+Public Domain Notice
+--------------------
+This is free software; see the LICENSE for further details.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.
+Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
+--------------------
+'''
 
 
 class AttrWrapper(object):
