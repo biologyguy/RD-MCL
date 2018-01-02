@@ -35,7 +35,7 @@ DEPENDENCIES = [
     'numpy',
     'scipy',
     'biopython',
-    'buddysuite>=1.2.6',
+    'buddysuite>=1.3.0',
     'pyvolve',
     'dill',
 ]
@@ -63,7 +63,7 @@ ENTRY_POINTS = {
 }
 
 setup(name='rdmcl',
-      version='1.0.4',
+      version='1.1.0',
       description='RDMCL recursively clusters groups of homologous sequences into orthogroups.',
       long_description=open(os.path.join(os.path.dirname(__file__), 'README.rst'), encoding="utf-8").read(),
       author='Stephen Bond',
