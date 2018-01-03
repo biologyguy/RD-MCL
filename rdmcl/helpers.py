@@ -32,7 +32,7 @@ try:
 except CalledProcessError:
     git_commit = ""
 
-VERSION = br.Version("", 1, "1.0" + git_commit, contributor_list, {"year": 2018, "month": 1, "day": 3})
+VERSION = br.Version("", 1, "2b" + git_commit, contributor_list, {"year": 2018, "month": 1, "day": 3})
 
 
 class AttrWrapper(object):
