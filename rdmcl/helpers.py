@@ -12,12 +12,16 @@ from copy import copy
 from hashlib import md5
 from multiprocessing import SimpleQueue, Process, Pipe
 from subprocess import PIPE, check_output, CalledProcessError
-from buddysuite.buddy_resources import pretty_time, SafetyValve
+
+from buddysuite import buddy_resources as br
 import signal
 
 # Set global precision levels
 np.set_printoptions(precision=12)
 pd.set_option("display.precision", 12)
+
+contributor_list = [br.Contributor("Stephen", "Bond", commits=520, github="https://github.com/biologyguy"),
+                    br.Contributor("Karl", "Keat", commits=30, github="https://github.com/KarlKeat")]
 
 SCRIPT_PATH = os.path.abspath(os.path.dirname(__file__))
 
@@ -25,19 +29,10 @@ try:
     git_commit = check_output(['git', '--git-dir={0}{1}..{1}.git'.format(SCRIPT_PATH, os.sep), 'rev-parse',
                                '--short', 'HEAD'], stderr=PIPE).decode().strip()
     git_commit = " (git %s)" % git_commit if git_commit else ""
-    VERSION = "1.1.0%s" % git_commit
 except CalledProcessError:
-    VERSION = "1.1.0"
+    git_commit = ""
 
-NOTICE = '''\
-Public Domain Notice
---------------------
-This is free software; see the LICENSE for further details.
-There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE.
-Questions/comments/concerns can be directed to Steve Bond, steve.bond@nih.gov
---------------------
-'''
+VERSION = br.Version("", 1, "1.0" + git_commit, contributor_list, {"year": 2018, "month": 1, "day": 3})
 
 
 class AttrWrapper(object):
@@ -186,7 +181,7 @@ class SQLiteBroker(object):
 
         values = () if not values else values
         recvpipe, sendpipe = Pipe(False)
-        valve = SafetyValve(150)
+        valve = br.SafetyValve(150)
         while True:
             valve.step("To many threads being called, tried for 5 minutes but couldn't find an open thread.")
             try:
@@ -247,10 +242,10 @@ class Timer(object):
     def split(self, prefix="", postfix=""):
         split = round(time()) - self.split_time
         self.split_time = round(time())
-        return "%s%s%s" % (prefix, pretty_time(split), postfix)
+        return "%s%s%s" % (prefix, br.pretty_time(split), postfix)
 
     def total_elapsed(self, prefix="", postfix=""):
-        return "%s%s%s" % (prefix, pretty_time(round(time()) - self.start), postfix)
+        return "%s%s%s" % (prefix, br.pretty_time(round(time()) - self.start), postfix)
 
 
 def mean(series):
@@ -357,7 +352,7 @@ class MarkovClustering(object):
         return
 
     def run(self):
-        valve = SafetyValve(global_reps=1000)
+        valve = br.SafetyValve(global_reps=1000)
         while True:
             try:
                 valve.step()

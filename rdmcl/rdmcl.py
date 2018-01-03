@@ -34,7 +34,7 @@ import time
 import argparse
 import sqlite3
 from io import StringIO
-from subprocess import Popen, PIPE, check_output, CalledProcessError
+from subprocess import Popen, PIPE
 from multiprocessing import Lock, Process
 from random import choice, Random, randint, random
 from math import ceil, log2
@@ -68,7 +68,7 @@ from buddysuite import buddy_resources as br
 # Globals
 SCRIPT_PATH = helpers.SCRIPT_PATH
 VERSION = helpers.VERSION
-NOTICE = helpers.NOTICE
+VERSION.name = "rdmcl"
 ALIGNMETHOD = "clustalo"
 ALIGNPARAMS = ""
 LOCK = Lock()
@@ -2313,7 +2313,7 @@ def argparse_init():
     # Misc
     misc = parser.add_argument_group(title="\033[1mMisc options\033[m")
     misc.add_argument('-h', '--help', action="help", help="Show this help message and exit")
-    misc.add_argument('-v', '--version', action='version', version="RD-MCL version %s\n\n%s" % (VERSION, NOTICE))
+    misc.add_argument('-v', '--version', action='version', version=str(VERSION))
     misc.add_argument("-setup", action="setup", dest=argparse.SUPPRESS, default=argparse.SUPPRESS)
 
     in_args = parser.parse_args()
@@ -2343,7 +2343,7 @@ def full_run(in_args):
     tmp_name = "".join([choice(br.string.ascii_letters + br.string.digits) for _ in range(10)])
     logger_obj = helpers.Logger(tmp_name)
     logging.info("*************************** Recursive Dynamic Markov Clustering ****************************")
-    logging.warning("RD-MCL version %s\n\n%s" % (VERSION, NOTICE))
+    logging.warning(str(VERSION))
     logging.info("********************************************************************************************\n")
 
     if not os.path.isfile(os.path.join(SCRIPT_PATH, "config.ini")):
