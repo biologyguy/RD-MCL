@@ -553,12 +553,14 @@ class Cluster(object):
                 total_kde = scipy.stats.gaussian_kde(outer_scores.raw_score, bw_method='silverman')
                 log_file.write("""\
 \t\t\tOuter KDE: {'shape': %s, 'covariance': %s, 'inv_cov': %s, '_norm_factor': %s}
-""" % (total_kde.dataset.shape, total_kde.covariance[0][0], total_kde.inv_cov[0][0], total_kde._norm_factor))
+""" % (total_kde.dataset.shape, round(total_kde.covariance[0][0], 12),
+       round(total_kde.inv_cov[0][0], 12), round(total_kde._norm_factor, 12)))
 
                 clique_kde = scipy.stats.gaussian_kde(clique_scores.raw_score, bw_method='silverman')
                 log_file.write("""\
 \t\t\tClique KDE: {'shape': %s, 'covariance': %s, 'inv_cov': %s,  '_norm_factor': %s}
-""" % (clique_kde.dataset.shape, clique_kde.covariance[0][0], clique_kde.inv_cov[0][0], clique_kde._norm_factor))
+""" % (clique_kde.dataset.shape, round(clique_kde.covariance[0][0], 12),
+       round(clique_kde.inv_cov[0][0], 12), round(clique_kde._norm_factor, 12)))
 
                 clique_resample = clique_kde.resample(10000)[0]  # ToDo: figure out how to control this with r_seed!
                 clique95 = [np.percentile(clique_resample, 2.5), np.percentile(clique_resample, 97.5)]
