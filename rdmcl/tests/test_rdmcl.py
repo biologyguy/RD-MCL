@@ -477,10 +477,10 @@ def test_rbhc_fail_integration(hf):
     assert cliques[0] == cluster
     assert """Test for KDE separation:
 \t\t\t['BOL-PanxαF', 'Lcr-PanxαI', 'Lcr-PanxαL', 'Mle-Panxα11', 'Mle-Panxα4']
-\t\t\tOuter KDE: {'shape': (1, 5), 'covariance': 0.03207031769228259, 'inv_cov': 31.18148094431381,\
- '_norm_factor': 2.2444584476034053}
-\t\t\tClique KDE: {'shape': (1, 10), 'covariance': 0.0196599709780622, 'inv_cov': 50.86477498445248,\
-  '_norm_factor': 3.514644232193886}""" in log_file.read(), print(log_file.read())
+\t\t\tOuter KDE: {'shape': (1, 5), 'covariance': 0.032070317692, 'inv_cov': 31.181480944314,\
+ '_norm_factor': 2.244458447603}
+\t\t\tClique KDE: {'shape': (1, 10), 'covariance': 0.019659970978, 'inv_cov': 50.864774984452,\
+  '_norm_factor': 3.514644232194}""" in log_file.read(), print(log_file.read())
     assert "FAIL" in log_file.read()
 
 
@@ -497,10 +497,10 @@ def test_rbhc_multi_clique_pass(hf):
 
     assert """Test for KDE separation:
 \t\t\t['BOL-PanxαF', 'Lcr-PanxαI', 'Mle-Panxα4']
-\t\t\tOuter KDE: {'shape': (1, 9), 'covariance': 0.024741531460431374, 'inv_cov': 40.41786991234878,\
- '_norm_factor': 3.5485075430233506}
-\t\t\tClique KDE: {'shape': (1, 3), 'covariance': 9.93711384680704e-05, 'inv_cov': 10063.284122696416,\
-  '_norm_factor': 0.07496202701783479}
+\t\t\tOuter KDE: {'shape': (1, 9), 'covariance': 0.02474153146, 'inv_cov': 40.417869912349,\
+ '_norm_factor': 3.548507543023}
+\t\t\tClique KDE: {'shape': (1, 3), 'covariance': 9.9371138e-05, 'inv_cov': 10063.284122696416,\
+  '_norm_factor': 0.074962027018}
 """ in log_file.read(), print(log_file.read())
 
     assert """Cliques identified and spun off:
