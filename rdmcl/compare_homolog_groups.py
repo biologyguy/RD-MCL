@@ -41,8 +41,8 @@ def prepare_clusters(ifile, hierarchy=False):
 
     if hierarchy:
         for indx, line in enumerate(output):
-            regex = re.search("group_(.*)?\s", line).group(0)
-            line = re.sub("group_.*?\s+", "", line)
+            regex = re.search("group[_0-9]+", line).group(0)
+            line = re.sub("^group[_0-9]+\s", "", line)
             line = re.sub("^-*[0-9]+\.[0-9]*\s+", "", line)
             line = line.split()
             output[indx] = (regex, line)
