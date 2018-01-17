@@ -10,18 +10,12 @@ Only allow groups to be placed in larger groups
 try:
     from .compare_homolog_groups import prepare_clusters, Cluster
     from . import helpers
-    #from . import rdmcl
 except ImportError:
     from compare_homolog_groups import prepare_clusters, Cluster
     import helpers
-    #import rdmcl
 
-#from buddysuite import SeqBuddy as Sb
-#from buddysuite import AlignBuddy as Alb
 from buddysuite import buddy_resources as br
-#import re
 import sys
-#from collections import OrderedDict
 import os
 import argparse
 import pandas as pd
@@ -69,35 +63,6 @@ class Check(object):
         self.between_group_dist = create_truncnorm(helpers.mean(self.between_group_rsquares.r_square),
                                                    helpers.std(self.between_group_rsquares.r_square))
 
-    def check(self, group_name):
-        self.group_name = group_name
-        query = self.clusters[group_name]
-        query_score = Cluster(query, parent=self.master_clust).score()
-
-        self.output = []
-        for g, seqs in self.clusters.items():
-            if g == group_name or len(seqs) < len(query):
-                continue
-            compare = self.r_squares.loc[((self.r_squares["rec_id1"].isin(query)) &
-                                          (self.r_squares["rec_id2"].isin(seqs))) |
-                                         ((self.r_squares["rec_id1"].isin(seqs)) &
-                                          (self.r_squares["rec_id2"].isin(query))) &
-                                         (self.r_squares["rec_id1"] != self.r_squares["rec_id2"])].copy()
-
-            ave, std = helpers.mean(compare.r_square), helpers.std(compare.r_square)
-            upper2 = ave + (std * 2)
-            upper2 = 1 if upper2 > 1 else upper2
-            lower2 = ave - (std * 2)
-            lower2 = 0 if lower2 < 0 else lower2
-            orig_clust = Cluster(self.clusters[g], parent=self.master_clust)
-            new_clust = Cluster(self.clusters[g] + query, parent=self.master_clust)
-            self.output.append([g,
-                                round(self.within_group_dist.cdf(upper2) - self.within_group_dist.cdf(lower2), 4),
-                                round(self.between_group_dist.cdf(upper2) - self.between_group_dist.cdf(lower2), 4),
-                                round(orig_clust.score() + query_score, 3),
-                                round(new_clust.score(), 3)])
-        self.output = sorted(self.output, key=lambda x: (x[1], -x[2]), reverse=True)
-
     def _prepare_within_group_df(self):
         if not os.path.isfile(join(self.rdmcl_dir, "hmm", "within_group_rsquares.csv")):
             sys.stderr.write("Preparing hmm/within_group_rsquares.csv...\n")
@@ -137,7 +102,82 @@ class Check(object):
             between_group_rsquares = pd.read_csv(join(self.rdmcl_dir, "hmm", "between_group_rsquares.csv"))
         return between_group_rsquares
 
+    def check(self, group_name):
+        self.group_name = group_name
+        query = self.clusters[group_name]
+        query_score = Cluster(query, parent=self.master_clust).score()
+
+        self.output = []
+        for g, seqs in self.clusters.items():
+            if g == group_name or len(seqs) < len(query):
+                continue
+            compare = self.r_squares.loc[((self.r_squares["rec_id1"].isin(query)) &
+                                          (self.r_squares["rec_id2"].isin(seqs))) |
+                                         ((self.r_squares["rec_id1"].isin(seqs)) &
+                                          (self.r_squares["rec_id2"].isin(query))) &
+                                         (self.r_squares["rec_id1"] != self.r_squares["rec_id2"])].copy()
+
+            ave, std = helpers.mean(compare.r_square), helpers.std(compare.r_square)
+            upper2 = ave + (std * 2)
+            upper2 = 1 if upper2 > 1 else upper2
+            lower2 = ave - (std * 2)
+            lower2 = 0 if lower2 < 0 else lower2
+            orig_clust = Cluster(self.clusters[g], parent=self.master_clust)
+            new_clust = Cluster(self.clusters[g] + query, parent=self.master_clust)
+            self.output.append([g,
+                                round(self.within_group_dist.cdf(upper2) - self.within_group_dist.cdf(lower2), 4),
+                                round(self.between_group_dist.cdf(upper2) - self.between_group_dist.cdf(lower2), 4),
+                                round(orig_clust.score() + query_score, 3),
+                                round(new_clust.score(), 3)])
+        self.output = sorted(self.output, key=lambda x: (x[1], -x[2]), reverse=True)
+
+    def merge(self, merge_group_name, force=False):
+        merge_group = [l for l in self.output if l[0] == merge_group_name]
+        if not merge_group:
+            sys.stderr.write("Error: %s is not a group that %s can be merged with.\n")
+            return
+        merge_group = merge_group[0]
+
+        do_merge = True
+        if self.output[0][0] != merge_group[0] and not force:
+            if not br.ask("{0}Merge Warning{1}: The group that appears to be the most\n"
+                          "appropriate for {5}{2}{1} is {5}{3}{1}, but you have\n"
+                          "selected {5}{4}{1}.\n"
+                          "Do you wish to continue? y/[n]: ".format(RED, END, self.group_name, self.output[0][0],
+                                                                    merge_group[0], GREEN), default="no"):
+                do_merge = False
+            print()
+
+        if merge_group[1] < 0.05 and do_merge and not force:
+            if not br.ask("{0}Merge Warning{1}: Less than 5% of sequences within current\n"
+                          "clusters have a similarity distribution that matches the\n"
+                          "similarity distribution between {4}{2}{1} and {4}{3}{1}.\n"
+                          "This makes the merge questionable.\n"
+                          "Do you wish to continue? y/[n]: ".format(RED, END, self.group_name, merge_group_name, GREEN),
+                          default="no"):
+                do_merge = False
+            print()
+
+        if merge_group[3] > merge_group[4] and do_merge and not force:
+            if not br.ask("{0}Merge Warning{1}: Merging {4}{2}{1} and {4}{3}{1} will\n"
+                          "reduce the combined orthogroup score, which means you will\n"
+                          "increase the number of paralogs per group.\n"
+                          "Do you wish to continue? y/[n]: ".format(RED, END, self.group_name, merge_group_name, GREEN),
+                          default="no"):
+                do_merge = False
+            print()
+
+        if do_merge and \
+                (force or br.ask("Last chance to abort!\n"
+                                 "Merge {2}{0}{3} into {2}{1}{3}? "
+                                 "y/[n]: ".format(self.group_name, merge_group_name, GREEN, END), default="no")):
+            print("%sMerged!%s" % (GREEN, END))
+        else:
+            print("%sMerge aborted!%s" % (RED, END))
+
     def __str__(self):
+        if not self.output:
+            return "You must run Check.check() before printing"
         out_str = "%sTesting %s%s\n" % (BOLD, self.group_name, END)
         longest_group_name = len(sorted([g[0] for g in self.output], key=lambda x: len(x), reverse=True)[0]) + 2
 
@@ -176,6 +216,8 @@ def argparse_init():
     # Optional commands
     parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
     parser_flags.add_argument("--merge", "-m", action="store", metavar="", help="Name of group to add to")
+    parser_flags.add_argument("--force", "-f", action="store_true",
+                              help="Automatically answer 'yes' to any warning messages. Use caution!")
 
     # Misc
     misc = parser.add_argument_group(title="\033[1mMisc options\033[m")
@@ -205,7 +247,11 @@ def main():
 
     check = Check(in_args.rdmcl_dir)
     check.check(in_args.group_name)
+
     print(check)
+
+    if in_args.merge:
+        check.merge(in_args.merge, in_args.force)
 
 
 if __name__ == '__main__':
