@@ -26,6 +26,7 @@ the groups are refined further to include orphan sequences and/or be broken up i
 # Std library
 import sys
 import os
+from os.path import join
 import re
 import shutil
 import json
@@ -91,8 +92,8 @@ MASTER_PULSE = 60
 PSIPREDDIR = ""
 TRIMAL = ["gappyout", 0.5, 0.75, 0.9, 0.95, "clean"]
 
-if os.path.isfile(os.path.join(SCRIPT_PATH, "hmmer", "hmm_fwd_back")):
-    HMM_FWD_BACK = os.path.join(SCRIPT_PATH, "hmmer", "hmm_fwd_back")
+if os.path.isfile(join(SCRIPT_PATH, "hmmer", "hmm_fwd_back")):
+    HMM_FWD_BACK = join(SCRIPT_PATH, "hmmer", "hmm_fwd_back")
 elif shutil.which("hmm_fwd_back"):
     HMM_FWD_BACK = shutil.which("hmm_fwd_back")
 elif "-setup" in sys.argv:
@@ -101,8 +102,8 @@ else:
     sys.stderr.write("Error: hmm_fwd_back program not found. Please run `rdmcl.py -setup` to fix this.\n")
     sys.exit()
 
-if os.path.isfile(os.path.join(SCRIPT_PATH, "hmmer", "hmmbuild")):
-    HMMBUILD = os.path.join(SCRIPT_PATH, "hmmer", "hmmbuild")
+if os.path.isfile(join(SCRIPT_PATH, "hmmer", "hmmbuild")):
+    HMMBUILD = join(SCRIPT_PATH, "hmmer", "hmmbuild")
 elif shutil.which("hmmbuild"):
     HMMBUILD = shutil.which("hmmbuild")
 elif "-setup" in sys.argv:
@@ -551,16 +552,15 @@ class Cluster(object):
                 outer_scores = self.perturb(outer_scores, "raw_score")
 
                 total_kde = scipy.stats.gaussian_kde(outer_scores.raw_score, bw_method='silverman')
-                log_file.write("""\
-\t\t\tOuter KDE: {'shape': %s, 'covariance': %s, 'inv_cov': %s, '_norm_factor': %s}
-""" % (total_kde.dataset.shape, round(total_kde.covariance[0][0], 12),
-       round(total_kde.inv_cov[0][0], 12), round(total_kde._norm_factor, 12)))
+                log_file.write("\t\t\tOuter KDE: {'shape': %s, 'covariance': %s, 'inv_cov': %s, '_norm_factor': %s}\n" %
+                               (total_kde.dataset.shape, round(total_kde.covariance[0][0], 12),
+                                round(total_kde.inv_cov[0][0], 12), round(total_kde._norm_factor, 12)))
 
                 clique_kde = scipy.stats.gaussian_kde(clique_scores.raw_score, bw_method='silverman')
-                log_file.write("""\
-\t\t\tClique KDE: {'shape': %s, 'covariance': %s, 'inv_cov': %s,  '_norm_factor': %s}
-""" % (clique_kde.dataset.shape, round(clique_kde.covariance[0][0], 12),
-       round(clique_kde.inv_cov[0][0], 12), round(clique_kde._norm_factor, 12)))
+                log_file.write("\t\t\tClique KDE: {'shape': %s, 'covariance': %s, "
+                               "'inv_cov': %s,  '_norm_factor': %s}\n" %
+                               (clique_kde.dataset.shape, round(clique_kde.covariance[0][0], 12),
+                                round(clique_kde.inv_cov[0][0], 12), round(clique_kde._norm_factor, 12)))
 
                 clique_resample = clique_kde.resample(10000)[0]  # ToDo: figure out how to control this with r_seed!
                 clique95 = [np.percentile(clique_resample, 2.5), np.percentile(clique_resample, 97.5)]
@@ -653,10 +653,10 @@ def cluster2database(cluster, sql_broker, alignment):
 # ################ PSI-PRED FUNCTIONS ################ #
 def mc_psi_pred(seq_obj, args):
     outdir = args[0]
-    if os.path.isfile(os.path.join(outdir, "%s.ss2" % seq_obj.id)):
+    if os.path.isfile(join(outdir, "%s.ss2" % seq_obj.id)):
         return
     result = run_psi_pred(seq_obj)
-    with open(os.path.join(outdir, "%s.ss2" % seq_obj.id), "w") as ofile:
+    with open(join(outdir, "%s.ss2" % seq_obj.id), "w") as ofile:
         ofile.write(result)
     return
 
@@ -664,7 +664,7 @@ def mc_psi_pred(seq_obj, args):
 def run_psi_pred(seq_rec):
     temp_dir = br.TempDir()
     pwd = os.getcwd()
-    psipred_dir = os.path.join(SCRIPT_PATH, "psipred")
+    psipred_dir = join(SCRIPT_PATH, "psipred")
     os.chdir(temp_dir.path)
     with open("sequence.fa", "w") as ofile:
         ofile.write(seq_rec.format("fasta"))
@@ -677,7 +677,7 @@ psipass2 {0}{3}data{3}weights_p2.dat 1 1.0 1.0 {1}{3}{2}.ss2 {1}{3}{2}.ss > {1}{
 '''.format(psipred_dir, temp_dir.path, seq_rec.id, os.sep)
 
     else:
-        data_weights = os.path.join(psipred_dir, "data", "weights")
+        data_weights = join(psipred_dir, "data", "weights")
         command = '''\
     {0}{3}bin{3}seq2mtx sequence.fa > {1}{3}{2}.mtx;
     {0}{3}bin{3}psipred {1}{3}{2}.mtx {4}.dat {4}.dat2 {4}.dat3 > {1}{3}{2}.ss;
@@ -686,7 +686,7 @@ psipass2 {0}{3}data{3}weights_p2.dat 1 1.0 1.0 {1}{3}{2}.ss2 {1}{3}{2}.ss > {1}{
 
     Popen(command, shell=True).wait()
     os.chdir(pwd)
-    with open(os.path.join(temp_dir.path, "%s.ss2" % seq_rec.id), "r") as ifile:
+    with open(join(temp_dir.path, "%s.ss2" % seq_rec.id), "r") as ifile:
         result = ifile.read()
     return result
 
@@ -741,19 +741,19 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     """
     def save_cluster(end_message=None):
         cluster_list.append(master_cluster)
-        if not os.path.isfile(os.path.join(mcmcmc_path, "best_group")):
-            with open(os.path.join(mcmcmc_path, "best_group"), "w") as _ofile:
+        if not os.path.isfile(join(mcmcmc_path, "best_group")):
+            with open(join(mcmcmc_path, "best_group"), "w") as _ofile:
                 _ofile.write('\t'.join(master_cluster.seq_ids))
         if end_message:
-            with open(os.path.join(mcmcmc_path, "end_message.log"), "w") as _ofile:
+            with open(join(mcmcmc_path, "end_message.log"), "w") as _ofile:
                 _ofile.write(end_message + "\n")
 
         _, alignment = retrieve_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=True)
-        alignment.write(os.path.join(outdir, "alignments", master_cluster.name()))
-        master_cluster.sim_scores.to_csv(os.path.join(outdir, "sim_scores", "%s.scores" % master_cluster.name()),
+        alignment.write(join(outdir, "alignments", master_cluster.name()))
+        master_cluster.sim_scores.to_csv(join(outdir, "sim_scores", "%s.scores" % master_cluster.name()),
                                          header=None, index=False, sep="\t")
         alignment = Alb.generate_hmm(alignment, HMMBUILD)
-        with open(os.path.join(outdir, "hmm", master_cluster.name()), "w") as _ofile:
+        with open(join(outdir, "hmm", master_cluster.name()), "w") as _ofile:
             _ofile.write(alignment.alignments[0].hmm)
         update = len(master_cluster.seq_ids) if not master_cluster.subgroup_counter else 0
         progress.update("placed", update)
@@ -761,9 +761,9 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
     rand_gen = Random(r_seed)
     master_cluster.set_name()
-    mcmcmc_path = os.path.join(outdir, "mcmcmc", master_cluster.name())
+    mcmcmc_path = join(outdir, "mcmcmc", master_cluster.name())
     os.makedirs(mcmcmc_path, exist_ok=True)
-    open(os.path.join(mcmcmc_path, "max.txt"), "w").close()
+    open(join(mcmcmc_path, "max.txt"), "w").close()
     convergence = GELMAN_RUBIN if convergence is None else float(convergence)
 
     # If there are no paralogs in the cluster, then it is already at its highest score and MCL is unnecessary
@@ -806,7 +806,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                      taxa_sep, sql_broker, psi_pred_ss2, progress, chains * (walkers + 2)]
     mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, quiet=quiet,
                                    num_walkers=walkers, num_chains=chains, convergence=convergence,
-                                   outfile_root=os.path.join(mcmcmc_path, "mcmcmc_out"), params=mcmcmc_params,
+                                   outfile_root=join(mcmcmc_path, "mcmcmc_out"), params=mcmcmc_params,
                                    include_lava=True, include_ice=True, r_seed=rand_gen.randint(1, 999999999999999),
                                    min_max=(worst_possible_score, best_possible_score))
 
@@ -822,7 +822,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
     best_score = pd.DataFrame()
     for indx in range(len(mcmcmc_factory.chains)):
-        mcmcmc_output = pd.read_csv(os.path.join(mcmcmc_path, "mcmcmc_out_%s.csv" % (indx+1)), "\t", index_col=False)
+        mcmcmc_output = pd.read_csv(join(mcmcmc_path, "mcmcmc_out_%s.csv" % (indx+1)), "\t", index_col=False)
         result = mcmcmc_output.loc[mcmcmc_output["result"] == mcmcmc_output["result"].max()]
         best_score = result if best_score.empty or result["result"].iloc[0] > best_score["result"].iloc[0] \
             else best_score
@@ -840,7 +840,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
     # Write out the actual best clusters
     best_clusters = ['\t'.join(cluster) for cluster in mcl_clusters]
-    with open(os.path.join(mcmcmc_path, "best_group"), "w") as ofile:
+    with open(join(mcmcmc_path, "best_group"), "w") as ofile:
         ofile.write('\n'.join(best_clusters))
 
     recursion_clusters = []
@@ -868,7 +868,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                                                                "^%s$" % ("$|^".join(sub_cluster.seq_ids))),
                                                   psi_pred_ss2, sql_broker, quiet=True)
             align = Alb.generate_hmm(align, HMMBUILD)
-            with open(os.path.join(outdir, "hmm", sub_cluster.name()), "w") as ofile:
+            with open(join(outdir, "hmm", sub_cluster.name()), "w") as ofile:
                 ofile.write(align.alignments[0].hmm)
             cluster_list.append(sub_cluster)
             continue
@@ -892,22 +892,22 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 class Progress(object):
     def __init__(self, outdir, base_cluster):
         self.outdir = outdir
-        with open(os.path.join(self.outdir, ".progress"), "w") as progress_file:
+        with open(join(self.outdir, ".progress"), "w") as progress_file:
             _progress = {"mcl_runs": 0, "placed": 0, "total": len(base_cluster)}
             json.dump(_progress, progress_file)
 
     def update(self, key, value):
         with PROGRESS_LOCK:
-            with open(os.path.join(self.outdir, ".progress"), "r") as ifile:
+            with open(join(self.outdir, ".progress"), "r") as ifile:
                 _progress = json.load(ifile)
                 _progress[key] += value
-            with open(os.path.join(self.outdir, ".progress"), "w") as _ofile:
+            with open(join(self.outdir, ".progress"), "w") as _ofile:
                 json.dump(_progress, _ofile)
         return
 
     def read(self):
         with PROGRESS_LOCK:
-            with open(os.path.join(self.outdir, ".progress"), "r") as ifile:
+            with open(join(self.outdir, ".progress"), "r") as ifile:
                 return json.load(ifile)
 
     def __str__(self):
@@ -1338,14 +1338,14 @@ class WorkerJob(object):
         return True
 
     def process_finished(self):
-        location = os.path.join(WORKER_OUT, self.job_id)
+        location = join(WORKER_OUT, self.job_id)
         alignment = Alb.AlignBuddy("%s.aln" % location, in_format="fasta")
         sim_scores = pd.read_csv("%s.graph" % location, index_col=False, header=None)
         sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
         cluster2database(Cluster(self.seq_ids, sim_scores), self.sql_broker, alignment)
 
         for del_file in [".aln", ".graph", ".seqs"]:
-            os.remove(os.path.join(WORKER_OUT, "%s%s" % (self.job_id, del_file)))
+            os.remove(join(WORKER_OUT, "%s%s" % (self.job_id, del_file)))
         with helpers.ExclusiveConnect(WORKER_DB) as cursor:
             cursor.execute("DELETE FROM proc_comp WHERE hash=?", (self.job_id,))
         return sim_scores, alignment
@@ -1366,7 +1366,7 @@ class WorkerJob(object):
                 cursor.execute("DELETE FROM queue WHERE hash=?", (self.job_id,))
                 cursor.execute("DELETE FROM waiting WHERE master_id=?", (self.heartbeat.id,))
                 try:
-                    os.remove(os.path.join(WORKER_OUT, "%s.seqs" % self.job_id))
+                    os.remove(join(WORKER_OUT, "%s.seqs" % self.job_id))
                 except FileNotFoundError:
                     pass
                 return False
@@ -1476,13 +1476,13 @@ def mcmcmc_mcl(args, params):
                     break
 
     with LOCK:
-        with open(os.path.join(exter_tmp_dir, "max.txt"), "r") as ifile:
+        with open(join(exter_tmp_dir, "max.txt"), "r") as ifile:
             results = ifile.readlines()
             results = [result.strip() for result in results]
             results.append(",".join([cluster.seq_id_hash for cluster in clusters]))
             results = sorted(results)
 
-        with open(os.path.join(exter_tmp_dir, "max.txt"), "w") as ofile:
+        with open(join(exter_tmp_dir, "max.txt"), "w") as ofile:
             ofile.write("\n".join(results))
 
     if len(results) == expect_num_results:
@@ -1511,9 +1511,9 @@ def mcmcmc_mcl(args, params):
 
         best_clusters = [cluster.replace(', ', '\t') for cluster in best_clusters[0]]
         with LOCK:
-            with open(os.path.join(exter_tmp_dir, "best_group"), "w") as ofile:
+            with open(join(exter_tmp_dir, "best_group"), "w") as ofile:
                 ofile.write('\n'.join(best_clusters))
-            open(os.path.join(exter_tmp_dir, "max.txt"), "w").close()
+            open(join(exter_tmp_dir, "max.txt"), "w").close()
     elif len(results) > expect_num_results:  # This should never be able to happen
         raise ValueError("More results written to max.txt than expect_num_results")
     return score
@@ -1567,7 +1567,7 @@ class Orphans(object):  # Deprecated
         # Create HMM forward-score dataframe from initial input --> p(seq|hmm)
         self.hmm_fwd_scores = pd.DataFrame(columns=["group", "rec_id", "fwd_raw"])
         for group_name in self.large_clusters:
-            hmm_path = os.path.join(self.outdir, "hmm", group_name)
+            hmm_path = join(self.outdir, "hmm", group_name)
             fwdback_output = Popen("generic_fwdback_example %s %s" % (hmm_path, self.tmp_dir.subfiles[0]),
                                    shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
             fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
@@ -1872,12 +1872,12 @@ class Seqs2Clusters(object):
 
     def create_hmms_for_every_rec(self):
         # First check to see if they already exist
-        hmm_dir = os.path.join(self.outdir, "hmm")
+        hmm_dir = join(self.outdir, "hmm")
         for rec in self.seqbuddy.records:
-            if not os.path.isfile(os.path.join(hmm_dir, "%s.hmm" % rec.id)):
+            if not os.path.isfile(join(hmm_dir, "%s.hmm" % rec.id)):
                 align = Alb.AlignBuddy(rec.format("fasta"))
                 align = Alb.generate_hmm(align, HMMBUILD)
-                with open(os.path.join(hmm_dir, "%s.hmm" % rec.id), "w") as _ofile:
+                with open(join(hmm_dir, "%s.hmm" % rec.id), "w") as _ofile:
                     _ofile.write(align.alignments[0].hmm)
         return hmm_dir
 
@@ -1887,7 +1887,7 @@ class Seqs2Clusters(object):
         hmm_fwd_scores = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
         self.seqbuddy.write(self.tmp_dir.subfiles[0], out_format="fasta")
         for rec in self.seqbuddy.records:
-            hmm_path = os.path.join(hmm_dir, "%s.hmm" % rec.id)
+            hmm_path = join(hmm_dir, "%s.hmm" % rec.id)
             fwdback_output = Popen("%s %s %s" % (HMM_FWD_BACK, hmm_path, self.tmp_dir.subfiles[0]),
                                    shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
             fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
@@ -1958,7 +1958,7 @@ class Seqs2Clusters(object):
         # Calculate HMMs from every sequence, calculate the forward probability for every sequences against every HMM,
         # and then calculate correlation coefficients between every pair of sequences (i.e., make an all-by-all matrix)
         log_output = "# HMM forward scores all-by-all R² dataframe #\n"
-        rsquares_df_path = os.path.join(self.outdir, "hmm", "rsquares_matrix.csv")
+        rsquares_df_path = join(self.outdir, "hmm", "rsquares_matrix.csv")
         if os.path.isfile(rsquares_df_path):
             log_output += "\tRead from %s\n\n" % rsquares_df_path
             rsquare_vals_df = pd.read_csv(rsquares_df_path)
@@ -2256,7 +2256,7 @@ def argparse_init():
     # Optional commands
     parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
 
-    outdir = os.path.join(os.getcwd(), "rdmcl-%s" % time.strftime("%d-%m-%Y"))
+    outdir = join(os.getcwd(), "rdmcl-%s" % time.strftime("%d-%m-%Y"))
     parser_flags.add_argument("-o", "--outdir", action="store", nargs="?", default=outdir, metavar="path",
                               help="Where should results be written? (default=%s)" % outdir)
     parser_flags.add_argument("-rs", "--r_seed", type=int, metavar="",
@@ -2348,7 +2348,7 @@ def full_run(in_args):
     logging.warning(str(VERSION))
     logging.info("********************************************************************************************\n")
 
-    if not os.path.isfile(os.path.join(SCRIPT_PATH, "config.ini")):
+    if not os.path.isfile(join(SCRIPT_PATH, "config.ini")):
         print("""Error: You have not run the rdmcl setup script.
 Please do so now:
 
@@ -2430,7 +2430,7 @@ Please do so now:
 
     logging.warning("\nLaunching SQLite Daemons")
 
-    sqlite_path = os.path.join(in_args.outdir, "sqlite_db.sqlite") if not in_args.sqlite_db \
+    sqlite_path = join(in_args.outdir, "sqlite_db.sqlite") if not in_args.sqlite_db \
         else os.path.abspath(in_args.sqlite_db)
     broker = helpers.SQLiteBroker(db_file=sqlite_path, lock_wait_time=in_args.lock_wait_time)
     broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
@@ -2443,10 +2443,10 @@ Please do so now:
 
     if in_args.workdb:
         in_args.workdb = os.path.abspath(in_args.workdb)
-        WORKER_OUT = os.path.join(in_args.workdb, ".worker_output")
-        WORKER_DB = os.path.join(in_args.workdb, "work_db.sqlite")
+        WORKER_OUT = join(in_args.workdb, ".worker_output")
+        WORKER_DB = join(in_args.workdb, "work_db.sqlite")
 
-        HEARTBEAT_DB = os.path.join(in_args.workdb, "heartbeat_db.sqlite")
+        HEARTBEAT_DB = join(in_args.workdb, "heartbeat_db.sqlite")
         heartbeat = HeartBeat(HEARTBEAT_DB, MASTER_PULSE)
         heartbeat.start()
     else:
@@ -2482,8 +2482,7 @@ Continue? y/[n] """ % len(sequences)
                         "        All cached resources will be reused.")
 
     # Make sure all the necessary directories are present and emptied of old run files
-    for _path in [os.path.join(in_args.outdir, x) for x in ["", "alignments", "mcmcmc",
-                                                            "sim_scores", "psi_pred", "hmm"]]:
+    for _path in [join(in_args.outdir, x) for x in ["", "alignments", "mcmcmc", "sim_scores", "psi_pred", "hmm"]]:
         if not os.path.isdir(_path):
             logging.info("mkdir %s" % _path)
             os.makedirs(_path)
@@ -2492,24 +2491,24 @@ Continue? y/[n] """ % len(sequences)
             root, dirs, files = next(os.walk(_path))
             for _file in files:
                 if "group" in _file:
-                    os.remove(os.path.join(root, _file))
+                    os.remove(join(root, _file))
             for _dir in dirs:
                 if "group" in _dir:
-                    shutil.rmtree(os.path.join(root, _dir))
+                    shutil.rmtree(join(root, _dir))
 
     # Prepare log files into output directory
-    if os.path.isfile(os.path.join(in_args.outdir, "rdmcl.log")):
-        os.remove(os.path.join(in_args.outdir, "rdmcl.log"))
+    if os.path.isfile(join(in_args.outdir, "rdmcl.log")):
+        os.remove(join(in_args.outdir, "rdmcl.log"))
 
-    logger_obj.move_log(os.path.join(in_args.outdir, "rdmcl.log"))
+    logger_obj.move_log(join(in_args.outdir, "rdmcl.log"))
 
-    if os.path.isfile(os.path.join(in_args.outdir, "placement.log")):
-        os.remove(os.path.join(in_args.outdir, "placement.log"))
+    if os.path.isfile(join(in_args.outdir, "placement.log")):
+        os.remove(join(in_args.outdir, "placement.log"))
 
-    if os.path.isfile(os.path.join(in_args.outdir, "cliques.log")):
-        os.remove(os.path.join(in_args.outdir, "cliques.log"))
+    if os.path.isfile(join(in_args.outdir, "cliques.log")):
+        os.remove(join(in_args.outdir, "cliques.log"))
 
-    with open(os.path.join(in_args.outdir, "paralog_cliques"), "w") as outfile:
+    with open(join(in_args.outdir, "paralog_cliques"), "w") as outfile:
         outfile.write("###########################################################\n"
                       "# If a named cluster contains reciprocal best hit cliques #\n"
                       "# among a group of paralogs, they are collapsed down to a #\n"
@@ -2536,7 +2535,7 @@ Continue? y/[n] """ % len(sequences)
     PSIPREDDIR = os.path.abspath(in_args.psipred_dir)
 
     for record in sequences.records:
-        if os.path.isfile(os.path.join(in_args.psipred_dir, "%s.ss2" % record.id)):
+        if os.path.isfile(join(in_args.psipred_dir, "%s.ss2" % record.id)):
             records_with_ss_files.append(record.id)
         else:
             records_missing_ss_files.append(record)
@@ -2553,7 +2552,7 @@ Continue? y/[n] """ % len(sequences)
 
     psi_pred_files = []
     for record in sequences.records:
-        psi_pred_files.append((record.id, os.path.join(in_args.psipred_dir, "%s.ss2" % record.id)))
+        psi_pred_files.append((record.id, join(in_args.psipred_dir, "%s.ss2" % record.id)))
 
     psi_pred_files = OrderedDict(psi_pred_files)
 
@@ -2565,7 +2564,7 @@ Continue? y/[n] """ % len(sequences)
     logging.warning("Generating initial all-by-all similarity graph (%s comparisons)" % int(num_comparisons))
     logging.info(" written to: {0}{1}sim_scores{1}complete_all_by_all.scores".format(in_args.outdir, os.sep))
     scores_data, alignbuddy = retrieve_all_by_all_scores(sequences, psi_pred_files, broker)
-    scores_data.to_csv(os.path.join(in_args.outdir, "sim_scores", "complete_all_by_all.scores"),
+    scores_data.to_csv(join(in_args.outdir, "sim_scores", "complete_all_by_all.scores"),
                        header=None, index=False, sep="\t")
     logging.info("\t-- finished in %s --\n" % TIMER.split())
 
@@ -2582,7 +2581,7 @@ Continue? y/[n] """ % len(sequences)
         group_0_cluster = uncollapsed_group_0
 
     if group_0_cluster.collapsed_genes:
-        with open(os.path.join(in_args.outdir, "paralog_cliques"), "a") as outfile:
+        with open(join(in_args.outdir, "paralog_cliques"), "a") as outfile:
             outfile.write("# group_0\n")
             json.dump(group_0_cluster.collapsed_genes, outfile)
             outfile.write("\n\n")
@@ -2646,7 +2645,7 @@ Continue? y/[n] """ % len(sequences)
 
     if not in_args.suppress_singlet_folding:
         logging.warning("\n** HMM-based sequence-to-cluster reassignment **")
-        with open(os.path.join(in_args.outdir, "placement.log"), "a") as orphan_log_file:
+        with open(join(in_args.outdir, "placement.log"), "a") as orphan_log_file:
             orphan_log_file.write("""\
     ######################################
     #  Initiating Sequence Reassignment  #
@@ -2655,7 +2654,7 @@ Continue? y/[n] """ % len(sequences)
 """)
         seq2clust_obj = Seqs2Clusters(final_clusters, 3, sequences, in_args.outdir)
         seq2clust_obj.place_seqs_in_clusts()
-        with open(os.path.join(in_args.outdir, "placement.log"), "a") as orphan_log_file:
+        with open(join(in_args.outdir, "placement.log"), "a") as orphan_log_file:
             orphan_log_file.write(seq2clust_obj.tmp_file.read())
 
         logging.warning("\t-- finished in %s --" % TIMER.split())
@@ -2673,7 +2672,7 @@ Continue? y/[n] """ % len(sequences)
         # Sort out reciprocal best hit cliques
         if not in_args.suppress_clique_check:
             final_cliques = []
-            with open(os.path.join(in_args.outdir, "cliques.log"), "a") as clique_log_file:
+            with open(join(in_args.outdir, "cliques.log"), "a") as clique_log_file:
                 clique_log_file.write("""\
    #################################
    #  Initiating Clique Detection  #
@@ -2686,7 +2685,7 @@ Continue? y/[n] """ % len(sequences)
 
         # Fold singletons and doublets back into groups.
         if not in_args.suppress_singlet_folding:
-            with open(os.path.join(in_args.outdir, "placement.log"), "a") as orphan_log_file:
+            with open(join(in_args.outdir, "placement.log"), "a") as orphan_log_file:
                 orphan_log_file.write("""\
    #################################
    #  Initiating Orphan Placement  #
@@ -2697,11 +2696,11 @@ Continue? y/[n] """ % len(sequences)
                               psi_pred_ss2=psi_pred_files, outdir=in_args.outdir)
             orphans.place_orphans()
             final_clusters = orphans.clusters
-            with open(os.path.join(in_args.outdir, "placement.log"), "a") as orphan_log_file:
+            with open(join(in_args.outdir, "placement.log"), "a") as orphan_log_file:
                 orphan_log_file.write(orphans.tmp_file.read())
-            with open(os.path.join(in_args.outdir, "hmm", "pearsonr.csv"), "w") as pearsonr:
+            with open(join(in_args.outdir, "hmm", "pearsonr.csv"), "w") as pearsonr:
                 orphans.rsquare_vals_df.to_csv(pearsonr)
-            with open(os.path.join(in_args.outdir, "hmm", "fwd.csv"), "w") as fwd_file:
+            with open(join(in_args.outdir, "hmm", "fwd.csv"), "w") as fwd_file:
                 orphans.hmm_fwd_scores.to_csv(fwd_file)
 
         if in_args.suppress_iteration:
@@ -2713,7 +2712,7 @@ Continue? y/[n] """ % len(sequences)
 
     logging.warning("\nPlacing any collapsed paralogs into their respective clusters")
     if group_0_cluster.collapsed_genes:
-        with open(os.path.join(in_args.outdir, "paralog_cliques"), "a") as outfile:
+        with open(join(in_args.outdir, "paralog_cliques"), "a") as outfile:
             outfile.write("###########################################################\n"
                           "#  Paralogs were expanded back into the following groups  #\n"
                           "###########################################################\n\n")
@@ -2721,7 +2720,7 @@ Continue? y/[n] """ % len(sequences)
     for clust in final_clusters:
         clust.parent = uncollapsed_group_0
         if clust.collapsed_genes:
-            with open(os.path.join(in_args.outdir, "paralog_cliques"), "a") as outfile:
+            with open(join(in_args.outdir, "paralog_cliques"), "a") as outfile:
                 outfile.write("# %s\n" % clust.name())
                 json.dump(clust.collapsed_genes, outfile)
                 outfile.write("\n\n")
@@ -2747,7 +2746,7 @@ Continue? y/[n] """ % len(sequences)
         del final_clusters[ind]
 
     logging.warning("\nTotal execution time: %s" % TIMER.total_elapsed())
-    with open(os.path.join(in_args.outdir, "final_clusters.txt"), "w") as outfile:
+    with open(join(in_args.outdir, "final_clusters.txt"), "w") as outfile:
         outfile.write(output)
         logging.warning("Final score: %s" % round(final_score, 4))
         if final_score < base_score:
