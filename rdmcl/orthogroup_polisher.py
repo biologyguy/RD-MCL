@@ -17,12 +17,12 @@ except ImportError:
 from buddysuite import buddy_resources as br
 import sys
 import os
+from os.path import join
 import argparse
 import pandas as pd
 import numpy as np
 from scipy import stats
-
-join = os.path.join
+from datetime import date
 
 VERSION = helpers.VERSION
 VERSION.name = "orthogroup_polisher"
@@ -63,8 +63,8 @@ class Check(object):
         self.between_group_dist = create_truncnorm(helpers.mean(self.between_group_rsquares.r_square),
                                                    helpers.std(self.between_group_rsquares.r_square))
 
-    def _prepare_within_group_df(self):
-        if not os.path.isfile(join(self.rdmcl_dir, "hmm", "within_group_rsquares.csv")):
+    def _prepare_within_group_df(self, force=False):
+        if not os.path.isfile(join(self.rdmcl_dir, "hmm", "within_group_rsquares.csv")) or force:
             sys.stderr.write("Preparing hmm/within_group_rsquares.csv...\n")
             within_group_rsquares = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
             for g, seqs in self.clusters.items():
@@ -79,8 +79,8 @@ class Check(object):
             within_group_rsquares = pd.read_csv(join(self.rdmcl_dir, "hmm", "within_group_rsquares.csv"))
         return within_group_rsquares
 
-    def _prepare_between_group_df(self):
-        if not os.path.isfile(join(self.rdmcl_dir, "hmm", "between_group_rsquares.csv")):
+    def _prepare_between_group_df(self, force=False):
+        if not os.path.isfile(join(self.rdmcl_dir, "hmm", "between_group_rsquares.csv")) or force:
             sys.stderr.write("Preparing hmm/between_group_rsquares.csv...\n")
             between_group_rsquares = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
             i = 0
@@ -171,7 +171,37 @@ class Check(object):
                 (force or br.ask("Last chance to abort!\n"
                                  "Merge {2}{0}{3} into {2}{1}{3}? "
                                  "y/[n]: ".format(self.group_name, merge_group_name, GREEN, END), default="no")):
-            print("%sMerged!%s" % (GREEN, END))
+
+            # 1) Update clusters in self
+            self.clusters[merge_group_name] = sorted(self.clusters[merge_group_name] + self.clusters[self.group_name])
+            del self.clusters[self.group_name]
+
+            # 2) Append to polisher.log
+            with open(join(self.rdmcl_dir, "polisher.log"), "a") as ofile:
+                ofile.write("%s %s -> %s\n" % (date.today(), self.group_name, merge_group_name))
+
+            # 3) Rewrite final_clusters.txt
+            with open(join(self.rdmcl_dir, "final_clusters.txt"), "r") as ifile:
+                final_lines = ifile.readlines()
+            final_lines = [l for l in final_lines if not l.startswith("%s\t" % self.group_name)]
+            for indx, l in enumerate(final_lines):
+                if l.startswith("%s\t" % merge_group_name):
+                    final_lines[indx] = [merge_group_name, str(merge_group[4]), *self.clusters[merge_group_name]]
+                    final_lines[indx] = "\t".join(final_lines[indx])
+                    final_lines[indx] += "\n"
+                    break
+            with open(join(self.rdmcl_dir, "final_clusters.txt"), "w") as ofile:
+                ofile.write("".join(final_lines))
+
+            # 4) Update within_group_df and between_group_df files
+            self._prepare_within_group_df(force=True)
+            self._prepare_between_group_df(force=True)
+
+            # 5) Delete group HMM
+            if os.path.isfile(join(self.rdmcl_dir, "hmm", self.group_name)):
+                os.remove(join(self.rdmcl_dir, "hmm", self.group_name))
+
+            print("%sMerged!%s\n" % (GREEN, END))
         else:
             print("%sMerge aborted!%s" % (RED, END))
 
