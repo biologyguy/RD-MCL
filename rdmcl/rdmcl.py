@@ -1870,6 +1870,26 @@ class Seqs2Clusters(object):
                 ofile.write(log_output)
         return
 
+    def _mc_fwd_back_run(self, rec, args):
+        hmm_scores_file = args[0]
+        hmm_path = join(self.outdir, "hmm", "%s.hmm" % rec.id)
+
+        fwdback_output = Popen("%s %s %s" % (HMM_FWD_BACK, hmm_path, self.tmp_dir.subfiles[0]),
+                               shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
+        fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
+                                    header=None, comment="#", index_col=False)
+        fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
+        fwd_scores_df["hmm_id"] = rec.id
+
+        hmm_fwd_scores = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
+        hmm_fwd_scores = hmm_fwd_scores.append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
+                                               ignore_index=True)
+        hmm_fwd_scores = hmm_fwd_scores.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
+        with LOCK:
+            with open(hmm_scores_file, "a") as ofile:
+                ofile.write(hmm_fwd_scores)
+        return
+
     def create_hmms_for_every_rec(self):
         # First check to see if they already exist
         hmm_dir = join(self.outdir, "hmm")
@@ -1883,19 +1903,13 @@ class Seqs2Clusters(object):
 
     def create_hmm_fwd_score_df(self):
         # Create HMM forward-score dataframe from initial input --> p(seq|hmm)
-        hmm_dir = self.create_hmms_for_every_rec()
-        hmm_fwd_scores = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
+        self.create_hmms_for_every_rec()
         self.seqbuddy.write(self.tmp_dir.subfiles[0], out_format="fasta")
-        for rec in self.seqbuddy.records:
-            hmm_path = join(hmm_dir, "%s.hmm" % rec.id)
-            fwdback_output = Popen("%s %s %s" % (HMM_FWD_BACK, hmm_path, self.tmp_dir.subfiles[0]),
-                                   shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
-            fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
-                                        header=None, comment="#", index_col=False)
-            fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
-            fwd_scores_df["hmm_id"] = rec.id
-            hmm_fwd_scores = hmm_fwd_scores.append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
-                                                   ignore_index=True)
+        hmm_scores_file = br.TempFile()
+        br.run_multicore_function(self.seqbuddy.records, self._mc_fwd_back_run, [hmm_scores_file.path],
+                                  max_processes=CPUS, quiet=True)
+        hmm_fwd_scores = pd.read_csv(hmm_scores_file.path, header=None)
+        hmm_fwd_scores.columns = ["hmm_id", "rec_id", "fwd_raw"]
         return hmm_fwd_scores
 
     def create_fwd_score_rsquared_matrix(self):

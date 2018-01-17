@@ -3,11 +3,12 @@
 
 import pytest
 import os
+from os.path import join
 import sqlite3
 import pandas as pd
 import shutil
 import argparse
-import numpy as np
+#import numpy as np
 from .. import rdmcl
 from .. import helpers
 from math import ceil
@@ -579,21 +580,21 @@ def test_cluster2database(hf, monkeypatch):
 # #########  PSI-PRED  ########## #
 def test_mc_psi_pred(hf, monkeypatch):
     outdir = br.TempDir()
-    with open(os.path.join(hf.resource_path, "psi_pred", "BOL-PanxαB.ss2"), "r") as ofile:
+    with open(join(hf.resource_path, "psi_pred", "BOL-PanxαB.ss2"), "r") as ofile:
         ss2_file = ofile.read()
     monkeypatch.setattr(rdmcl, "run_psi_pred", lambda *_: ss2_file)
     seq_rec = hf.get_data("cteno_panxs").to_dict()["BOL-PanxαB"]
     rdmcl.mc_psi_pred(seq_rec, [outdir.path])
-    with open(os.path.join(outdir.path, "BOL-PanxαB.ss2"), "r") as ifile:
+    with open(join(outdir.path, "BOL-PanxαB.ss2"), "r") as ifile:
         output = ifile.read()
         assert hf.string2hash(output) == "da4192e125808e501495dfe4169d56c0", print(output)
 
-    with open(os.path.join(outdir.path, "BOL-PanxαB.ss2"), "a") as ofile:
+    with open(join(outdir.path, "BOL-PanxαB.ss2"), "a") as ofile:
         ofile.write("\nfoo")
 
     # Confirm that sequences are not reprocessed if already present
     rdmcl.mc_psi_pred(hf.get_data("cteno_panxs").to_dict()["BOL-PanxαB"], [outdir.path])
-    with open(os.path.join(outdir.path, "BOL-PanxαB.ss2"), "r") as ifile:
+    with open(join(outdir.path, "BOL-PanxαB.ss2"), "r") as ifile:
         output = ifile.read()
         assert hf.string2hash(output) == "af9666d37426caa2bbf6b9075ce8df96", print(output)
 
@@ -632,11 +633,11 @@ Name: 1, dtype: object"""
 
 
 def test_compare_psi_pred(hf):
-    ss2_1 = os.path.join(hf.resource_path, "psi_pred", "Mle-Panxα10A.ss2")
+    ss2_1 = join(hf.resource_path, "psi_pred", "Mle-Panxα10A.ss2")
     ss2_1 = pd.read_csv(ss2_1, comment="#", header=None, delim_whitespace=True)
     ss2_1.columns = ["indx", "aa", "ss", "coil_prob", "helix_prob", "sheet_prob"]
 
-    ss2_2 = os.path.join(hf.resource_path, "psi_pred", "Mle-Panxα8.ss2")
+    ss2_2 = join(hf.resource_path, "psi_pred", "Mle-Panxα8.ss2")
     ss2_2 = pd.read_csv(ss2_2, comment="#", header=None, delim_whitespace=True)
     ss2_2.columns = ["indx", "aa", "ss", "coil_prob", "helix_prob", "sheet_prob"]
 
@@ -673,10 +674,10 @@ def test_orthogroup_caller(hf):
     outdir.subdir("sim_scores")
     outdir.subdir("hmm")
 
-    progress = rdmcl.Progress(os.path.join(outdir.path, "progress"), cluster)
+    progress = rdmcl.Progress(join(outdir.path, "progress"), cluster)
     psi_pred_ss2_dfs = OrderedDict()
     for rec in seq_ids:
-        psi_pred_ss2_dfs[rec] = os.path.join(hf.resource_path, "psi_pred", "%s.ss2" % rec)
+        psi_pred_ss2_dfs[rec] = join(hf.resource_path, "psi_pred", "%s.ss2" % rec)
 
     steps = 10
     r_seed = 2
@@ -988,7 +989,7 @@ def test_mc_create_all_by_all_scores(capsys, monkeypatch):
 
 
 def test_retrieve_all_by_all_scores_single(hf):
-    sql_broker = helpers.SQLiteBroker(os.path.join(hf.resource_path, "db.sqlite"))
+    sql_broker = helpers.SQLiteBroker(join(hf.resource_path, "db.sqlite"))
     sql_broker.start_broker()
 
     seqbuddy = rdmcl.Sb.pull_recs(hf.get_data("cteno_panxs"), "Mle-Panxα5")
@@ -1000,7 +1001,7 @@ def test_retrieve_all_by_all_scores_single(hf):
 
 
 def test_retrieve_all_by_all_scores_from_db(hf, monkeypatch):
-    sql_broker = helpers.SQLiteBroker(os.path.join(hf.resource_path, "db.sqlite"))
+    sql_broker = helpers.SQLiteBroker(join(hf.resource_path, "db.sqlite"))
     sql_broker.start_broker()
 
     seqbuddy = rdmcl.Sb.pull_recs(hf.get_data("cteno_panxs"), "Bfo-PanxαF|Hca-PanxαD|Mle-Panxα6")
@@ -1020,7 +1021,7 @@ def test_retrieve_all_by_all_scores_from_db(hf, monkeypatch):
 
 
 def test_retrieve_all_by_all_scores_feed_worker(hf, monkeypatch):
-    sql_broker = helpers.SQLiteBroker(os.path.join(hf.resource_path, "db.sqlite"))
+    sql_broker = helpers.SQLiteBroker(join(hf.resource_path, "db.sqlite"))
     sql_broker.start_broker()
 
     seqbuddy = rdmcl.Sb.pull_recs(hf.get_data("cteno_panxs"), "Mle")
@@ -1045,7 +1046,7 @@ def test_retrieve_all_by_all_scores_feed_worker(hf, monkeypatch):
 
 
 def test_retrieve_all_by_all_scores_new_run(hf, monkeypatch):
-    sql_broker = helpers.SQLiteBroker(os.path.join(hf.resource_path, "db.sqlite"))
+    sql_broker = helpers.SQLiteBroker(join(hf.resource_path, "db.sqlite"))
     sql_broker.start_broker()
 
     monkeypatch.setattr(rdmcl, "MIN_SIZE_TO_WORKER", 1000)
@@ -1073,14 +1074,14 @@ def test_allbyallscores_init(hf):
 
 def test_allbyallscores_create(hf):
     tmpdir = br.TempDir()
-    sql_broker = helpers.SQLiteBroker(os.path.join(tmpdir.path, "db.sqlite"))
+    sql_broker = helpers.SQLiteBroker(join(tmpdir.path, "db.sqlite"))
     sql_broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
                                            "graph TEXT", "cluster_score TEXT"])
     sql_broker.start_broker()
 
     seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
     rdmcl.Sb.pull_recs(seqbuddy, "Mle")
-    psi_pred_files = [(rec.id, os.path.join(hf.resource_path, "psi_pred", "%s.ss2" % rec.id))
+    psi_pred_files = [(rec.id, join(hf.resource_path, "psi_pred", "%s.ss2" % rec.id))
                       for rec in seqbuddy.records]
     psi_pred_files = OrderedDict(psi_pred_files)
 
@@ -1247,7 +1248,7 @@ def test_workerjob_run(hf, monkeypatch, capsys):
     temp_dir = br.TempDir()
     hb_db = temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
 
-    hb_con = sqlite3.connect(os.path.join(temp_dir.path, "heartbeat_db.sqlite"))
+    hb_con = sqlite3.connect(join(temp_dir.path, "heartbeat_db.sqlite"))
     hb_cursor = hb_con.cursor()
 
     hb_cursor.execute("DELETE FROM heartbeat")
@@ -1298,7 +1299,7 @@ def test_workerjob_run(hf, monkeypatch, capsys):
 def test_workerjob_queue_job(hf, monkeypatch):
     monkeypatch.setattr(rdmcl, "HeartBeat", MockHeartBeat)
     temp_dir = br.TempDir()
-    work_db = temp_dir.copy_to(os.path.join(hf.resource_path, "work_db.sqlite"))
+    work_db = temp_dir.copy_to(join(hf.resource_path, "work_db.sqlite"))
     rdmcl.WORKER_DB = work_db
     rdmcl.WORKER_OUT = temp_dir.path
 
@@ -1309,7 +1310,7 @@ def test_workerjob_queue_job(hf, monkeypatch):
     worker = rdmcl.WorkerJob(seqbuddy, "sql_broker")
 
     assert not worker.queue_job()
-    assert os.path.isfile(os.path.join(temp_dir.path, "%s.seqs" % worker.job_id))
+    assert os.path.isfile(join(temp_dir.path, "%s.seqs" % worker.job_id))
     queue = work_cursor.execute("SELECT * FROM queue").fetchall()
     assert queue == [('a2aaca4f79bd56fbf8debfdc281660fd', '', 'clustalo', '',
                       'gappyout 0.5 0.75 0.9 0.95 clean', -5.0, 0.0)], print(queue)
@@ -1318,11 +1319,11 @@ def test_workerjob_queue_job(hf, monkeypatch):
 def test_workerjob_pull_from_db(hf, monkeypatch):
     monkeypatch.setattr(rdmcl, "HeartBeat", MockHeartBeat)
     temp_dir = br.TempDir()
-    broker_db = temp_dir.copy_to(os.path.join(hf.resource_path, "db.sqlite"))
+    broker_db = temp_dir.copy_to(join(hf.resource_path, "db.sqlite"))
     sql_broker = helpers.SQLiteBroker(broker_db)
     sql_broker.start_broker()
 
-    work_db = temp_dir.copy_to(os.path.join(hf.resource_path, "work_db.sqlite"))
+    work_db = temp_dir.copy_to(join(hf.resource_path, "work_db.sqlite"))
     rdmcl.WORKER_DB = work_db
     rdmcl.WORKER_OUT = temp_dir.path
 
@@ -1426,9 +1427,9 @@ def test_workerjob_process_finished(hf, monkeypatch):
     work_con.commit()
 
     # Run through but don't delete files
-    seqs_path = os.path.join(temp_dir.path, "%s.seqs" % worker.job_id)
+    seqs_path = join(temp_dir.path, "%s.seqs" % worker.job_id)
     seqbuddy.write(seqs_path)
-    aln_path = os.path.join(temp_dir.path, "%s.aln" % worker.job_id)
+    aln_path = join(temp_dir.path, "%s.aln" % worker.job_id)
     alignment.write(aln_path)
     graph_path = temp_dir.subfile("%s.graph" % worker.job_id)
     sim_scores.to_csv(graph_path, header=None, index=False)
@@ -1461,7 +1462,7 @@ def test_workerjob_check_if_active(hf, monkeypatch, capsys):
     rdmcl.WORKER_OUT = temp_dir.path
 
     hb_db = temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
-    hb_con = sqlite3.connect(os.path.join(temp_dir.path, "heartbeat_db.sqlite"))
+    hb_con = sqlite3.connect(join(temp_dir.path, "heartbeat_db.sqlite"))
     hb_cursor = hb_con.cursor()
     rdmcl.HEARTBEAT_DB = hb_db
 
@@ -1544,14 +1545,14 @@ def test_mcmcmc_mcl(hf):
     # graph, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqbuddy, psi_pred_ss2_paths, sql_broker)
 
     cluster = rdmcl.Cluster(cluster_ids, hf.get_db_graph("3c15516819aa19b069b0e8858444f876", sql_broker))
-    os.makedirs(os.path.join(ext_tmp_dir.path, "progress"))
-    progress = rdmcl.Progress(os.path.join(ext_tmp_dir.path, "progress"), cluster)
+    os.makedirs(join(ext_tmp_dir.path, "progress"))
+    progress = rdmcl.Progress(join(ext_tmp_dir.path, "progress"), cluster)
 
     args = (6.372011782427792, 0.901221218627, 1)  # inflation, gq, r_seed
     params = [ext_tmp_dir.path, seqbuddy, cluster, taxa_sep, sql_broker, hf.get_data("ss2_paths"), progress, 3]
 
     assert rdmcl.mcmcmc_mcl(args, params) == 19.538461538461537
-    with open(os.path.join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
+    with open(join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
         output = ifile.read()
         assert output == "6b39ebc4f5fe7dfef786d8ee3e1594ed,cb23cf3b4d355140e525a1158af5102d," \
                          "8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9," \
@@ -1559,7 +1560,7 @@ def test_mcmcmc_mcl(hf):
 
     args = (3.1232, 0.73432, 1)  # inflation, gq, r_seed
     assert rdmcl.mcmcmc_mcl(args, params) == 20.923076923076923
-    with open(os.path.join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
+    with open(join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
         output = ifile.read()
         assert output == "6b39ebc4f5fe7dfef786d8ee3e1594ed,cb23cf3b4d355140e525a1158af5102d," \
                          "8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9," \
@@ -1569,11 +1570,11 @@ def test_mcmcmc_mcl(hf):
 
     args = (10.1232, 0.43432, 1)  # inflation, gq, r_seed
     assert rdmcl.mcmcmc_mcl(args, params) == 24.153846153846153
-    with open(os.path.join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
+    with open(join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
         output = ifile.read()
         assert output == "", print(output)
 
-    with open(os.path.join(ext_tmp_dir.path, "best_group"), "r") as ifile:
+    with open(join(ext_tmp_dir.path, "best_group"), "r") as ifile:
         output = ifile.read()
         assert output == "BOL-PanxαA	Bab-PanxαB	Bch-PanxαC	Bfo-PanxαB	Dgl-PanxαE	Hca-PanxαB	Hru-PanxαA	" \
                          "Lcr-PanxαH	Mle-Panxα10A	Oma-PanxαC	Tin-PanxαC	Vpa-PanxαB\n" \
@@ -1627,7 +1628,7 @@ def test_instantiate_seqs2clusters(hf, monkeypatch):
 
 
 def test_mc_build_cluster_nulls(hf):
-    rsquare_vals_df = pd.read_csv(os.path.join(hf.resource_path, "hmms", "full_r2.csv"), index_col=0)
+    rsquare_vals_df = pd.read_csv(join(hf.resource_path, "hmms", "full_r2.csv"), index_col=0)
     global_null_file = br.TempFile()
     cluster_nulls_file = br.TempFile()
     out_of_cluster_file = br.TempFile()
@@ -1702,7 +1703,7 @@ group_0_2
 
 
 def test_mc_build_seq2group(hf):
-    rsquare_vals_df = pd.read_csv(os.path.join(hf.resource_path, "hmms", "full_r2.csv"), index_col=0)
+    rsquare_vals_df = pd.read_csv(join(hf.resource_path, "hmms", "full_r2.csv"), index_col=0)
     seq2group_dists_file = br.TempFile()
     orig_clusters_file = br.TempFile()
     temp_log_output = br.TempFile()
@@ -1739,48 +1740,78 @@ def test_create_hmms_for_every_rec(hf):
 
     tmpdir = br.TempDir()
     hmm_dir = tmpdir.subdir("hmm")
-    with open(os.path.join(hmm_dir, "Bab-PanxαA.hmm"), "w") as ofile:
+    with open(join(hmm_dir, "Bab-PanxαA.hmm"), "w") as ofile:
         ofile.write("Testing testing, 1, 2, 3...")
     seq2clust_obj = rdmcl.Seqs2Clusters(clusters, 3, parent_sb, tmpdir.path)
     seq2clust_obj.seqbuddy.records = seq2clust_obj.seqbuddy.records[0:2]
     seq2clust_obj.create_hmms_for_every_rec()
-    assert sorted(os.listdir(os.path.join(seq2clust_obj.outdir, "hmm"))) == ['BOL-PanxαB.hmm', 'Bab-PanxαA.hmm']
-    with open(os.path.join(hmm_dir, "Bab-PanxαA.hmm"), "r") as ifile:
+    assert sorted(os.listdir(join(seq2clust_obj.outdir, "hmm"))) == ['BOL-PanxαB.hmm', 'Bab-PanxαA.hmm']
+    with open(join(hmm_dir, "Bab-PanxαA.hmm"), "r") as ifile:
         assert ifile.read() == "Testing testing, 1, 2, 3..."
-    with open(os.path.join(hmm_dir, "BOL-PanxαB.hmm"), "r") as ifile:
+    with open(join(hmm_dir, "BOL-PanxαB.hmm"), "r") as ifile:
         assert "HMM          A        C        D        E        F        G        H        I        K" in ifile.read()
     broker.close()
 
 
+def test_mc_fwd_back_run(hf):
+    parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
+    records = ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE']
+    parent_sb.records = [rec for rec in parent_sb.records if rec.id in records]
+    
+    tmp_dir = br.TempDir()
+    hmm_dir = tmp_dir.subdir("hmm")
+    for seq_id in records:
+        shutil.copyfile(join(hf.resource_path, "hmms", "%s.hmm" % seq_id), join(hmm_dir, "%s.hmm" % seq_id))
+    
+    seq2clust_obj = rdmcl.Seqs2Clusters([], 3, parent_sb, tmp_dir.path)
+
+    hmm_scores_file = br.TempFile()
+    seq2clust_obj._mc_fwd_back_run(parent_sb.records[0], [hmm_scores_file.path])
+    with open(hmm_scores_file.path, "r") as ifile:
+        assert ifile.read() == """\
+BOL-PanxαB,BOL-PanxαB,702.0341
+BOL-PanxαB,Bab-PanxαA,641.091
+BOL-PanxαB,Bch-PanxαA,626.8386
+BOL-PanxαB,Bfo-PanxαE,619.856
+"""
+
+
 def test_create_hmm_fwd_score_df(hf, monkeypatch):
     parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
-    parent_sb.records = [rec for rec in parent_sb.records if rec.id in
-                         ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE']]
-    seq2clust_obj = rdmcl.Seqs2Clusters([], 3, parent_sb, "foo.path")
+    records = ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE']
+    parent_sb.records = [rec for rec in parent_sb.records if rec.id in records]
+
+    tmp_dir = br.TempDir()
+    hmm_dir = tmp_dir.subdir("hmm")
+    for seq_id in records:
+        shutil.copyfile(join(hf.resource_path, "hmms", "%s.hmm" % seq_id), join(hmm_dir, "%s.hmm" % seq_id))
+
+    seq2clust_obj = rdmcl.Seqs2Clusters([], 3, parent_sb, tmp_dir.path)
 
     monkeypatch.setattr(rdmcl.Seqs2Clusters, "_separate_large_small", lambda *_: True)
     monkeypatch.setattr(rdmcl.Seqs2Clusters, "create_hmms_for_every_rec",
-                        lambda *_: os.path.join(hf.resource_path, "hmms"))
+                        lambda *_: join(hf.resource_path, "hmms"))
     hmm_fwd_scores = seq2clust_obj.create_hmm_fwd_score_df()
+    hmm_fwd_scores = hmm_fwd_scores.sort_values('fwd_raw').reset_index(drop=True)
     # hmm_fwd_scores.to_csv("tests/unit_test_resources/hmms/fwd_df.csv")
     assert str(hmm_fwd_scores) == """\
         hmm_id      rec_id   fwd_raw
-0   BOL-PanxαB  BOL-PanxαB  702.0341
-1   BOL-PanxαB  Bab-PanxαA  641.0910
-2   BOL-PanxαB  Bch-PanxαA  626.8386
+0   Bfo-PanxαE  Bch-PanxαA  615.3356
+1   Bfo-PanxαE  BOL-PanxαB  615.9315
+2   Bch-PanxαA  Bfo-PanxαE  619.3785
 3   BOL-PanxαB  Bfo-PanxαE  619.8560
-4   Bab-PanxαA  BOL-PanxαB  636.7927
-5   Bab-PanxαA  Bab-PanxαA  696.4839
-6   Bab-PanxαA  Bch-PanxαA  663.5856
-7   Bab-PanxαA  Bfo-PanxαE  623.7233
-8   Bch-PanxαA  BOL-PanxαB  627.4737
-9   Bch-PanxαA  Bab-PanxαA  668.5334
-10  Bch-PanxαA  Bch-PanxαA  702.3412
-11  Bch-PanxαA  Bfo-PanxαE  619.3785
-12  Bfo-PanxαE  BOL-PanxαB  615.9315
-13  Bfo-PanxαE  Bab-PanxαA  624.0910
-14  Bfo-PanxαE  Bch-PanxαA  615.3356
-15  Bfo-PanxαE  Bfo-PanxαE  702.2801""", print(str(hmm_fwd_scores))
+4   Bab-PanxαA  Bfo-PanxαE  623.7233
+5   Bfo-PanxαE  Bab-PanxαA  624.0910
+6   BOL-PanxαB  Bch-PanxαA  626.8386
+7   Bch-PanxαA  BOL-PanxαB  627.4737
+8   Bab-PanxαA  BOL-PanxαB  636.7927
+9   BOL-PanxαB  Bab-PanxαA  641.0910
+10  Bab-PanxαA  Bch-PanxαA  663.5856
+11  Bch-PanxαA  Bab-PanxαA  668.5334
+12  Bab-PanxαA  Bab-PanxαA  696.4839
+13  BOL-PanxαB  BOL-PanxαB  702.0341
+14  Bfo-PanxαE  Bfo-PanxαE  702.2801
+15  Bch-PanxαA  Bch-PanxαA  702.3412""", print(str(hmm_fwd_scores))
 
 
 def test_create_fwd_score_rsquared_matrix(hf, monkeypatch):
@@ -1788,7 +1819,7 @@ def test_create_fwd_score_rsquared_matrix(hf, monkeypatch):
     parent_sb.records = [rec for rec in parent_sb.records if rec.id in
                          ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE']]
     seq2clust_obj = rdmcl.Seqs2Clusters([], 3, parent_sb, "foo.path")
-    hmm_fwd_scores = pd.read_csv(os.path.join(hf.resource_path, "hmms", "fwd_df.csv"), index_col=0)
+    hmm_fwd_scores = pd.read_csv(join(hf.resource_path, "hmms", "fwd_df.csv"), index_col=0)
 
     monkeypatch.setattr(rdmcl.Seqs2Clusters, "_separate_large_small", lambda *_: True)
     monkeypatch.setattr(rdmcl.Seqs2Clusters, "create_hmm_fwd_score_df",
@@ -1811,7 +1842,7 @@ def test_create_fwd_score_rsquared_matrix(hf, monkeypatch):
 
 
 def test_create_truncnorm(hf):
-    hmm_fwd_scores = pd.read_csv(os.path.join(hf.resource_path, "hmms", "fwd_r2.csv"), index_col=0)
+    hmm_fwd_scores = pd.read_csv(join(hf.resource_path, "hmms", "fwd_r2.csv"), index_col=0)
     truncnorm = rdmcl.Seqs2Clusters._create_truncnorm(helpers.mean(hmm_fwd_scores.r_square),
                                                       helpers.std(hmm_fwd_scores.r_square))
     assert truncnorm.pdf(0.8) == 1.0920223528477309
@@ -1828,7 +1859,7 @@ def test_place_seqs_in_clusts(hf, monkeypatch):
     tmpdir.subdir("hmm")
     seq2clust_obj = rdmcl.Seqs2Clusters(clusters, 3, parent_sb, tmpdir.path)
 
-    hmm_fwd_scores = pd.read_csv(os.path.join(hf.resource_path, "hmms", "full_r2.csv"), index_col=0)
+    hmm_fwd_scores = pd.read_csv(join(hf.resource_path, "hmms", "full_r2.csv"), index_col=0)
     monkeypatch.setattr(rdmcl.Seqs2Clusters, "create_fwd_score_rsquared_matrix",
                         lambda *_: hmm_fwd_scores)
 
@@ -1960,7 +1991,7 @@ group_0_3\tgroup_0_0\t0.0174886528987
 parser = argparse.ArgumentParser(prog="orthogroup_caller", description="",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("sequences", help="Location of sequence file", action="store", nargs="*")
-parser.add_argument("outdir", action="store", default=os.path.join(os.getcwd(), "rd-mcd"), nargs="*",
+parser.add_argument("outdir", action="store", default=join(os.getcwd(), "rd-mcd"), nargs="*",
                     help="Where should results be written?")
 parser.add_argument("-sql", "--sqlite_db", action="store", help="Specify a SQLite database location.")
 parser.add_argument("-psi", "--psipred_dir", action="store",
@@ -2018,7 +2049,7 @@ in_args = parser.parse_args([])
 
 def test_argparse_init(monkeypatch, hf):
     out_dir = br.TempDir()
-    argv = ['rdmcl.py', os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa"), "-o", out_dir.path]
+    argv = ['rdmcl.py', join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa"), "-o", out_dir.path]
     monkeypatch.setattr(rdmcl.sys, "argv", argv)
     temp_in_args = rdmcl.argparse_init()
     assert temp_in_args.mcmc_steps == 0
@@ -2033,23 +2064,23 @@ def test_full_run(hf, capsys):
 
     # First try a RESUME run
     test_in_args = deepcopy(in_args)
-    test_in_args.sequences = os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa")
+    test_in_args.sequences = join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa")
     test_in_args.outdir = out_dir.path
-    test_in_args.sqlite_db = os.path.join(hf.resource_path, "db.sqlite")
-    test_in_args.psipred_dir = os.path.join(hf.resource_path, "psi_pred")
+    test_in_args.sqlite_db = join(hf.resource_path, "db.sqlite")
+    test_in_args.psipred_dir = join(hf.resource_path, "psi_pred")
     test_in_args.mcmc_steps = 10
     test_in_args.r_seed = 1
     rdmcl.full_run(test_in_args)
 
     for expected_dir in ["alignments", "hmm", "mcmcmc", "psi_pred", "sim_scores"]:
-        expected_dir = os.path.join(out_dir.path, expected_dir)
+        expected_dir = join(out_dir.path, expected_dir)
         assert os.path.isdir(expected_dir), print(expected_dir)
 
     for expected_file in ["final_clusters.txt", "placement.log", "paralog_cliques", "rdmcl.log"]:
-        expected_file = os.path.join(out_dir.path, expected_file)
+        expected_file = join(out_dir.path, expected_file)
         assert os.path.isfile(expected_file), print(expected_file)
 
-    with open(os.path.join(out_dir.path, "final_clusters.txt"), "r") as ifile:
+    with open(join(out_dir.path, "final_clusters.txt"), "r") as ifile:
         content = ifile.read()
         assert content == """\
 group_0_0_0\t20.3333\tBOL-PanxαA\tLcr-PanxαH\tMle-Panxα10A\tMle-Panxα9\tVpa-PanxαB
@@ -2066,13 +2097,13 @@ group_0_1_0\t2.0833\tBOL-PanxαG
 
     '''
     # Now a full run from scratch (on smaller set), with non-existant psi-pred dir
-    open(os.path.join(out_dir.path, "rdmcl.log"), "w").close()
-    shutil.move(os.path.join(out_dir.path, "rdmcl.log"), "rdmcl.log")
+    open(join(out_dir.path, "rdmcl.log"), "w").close()
+    shutil.move(join(out_dir.path, "rdmcl.log"), "rdmcl.log")
     test_in_args = deepcopy(in_args)
     out_dir = br.TempDir()
     # Make some files and a directory that will need to be removed
     out_dir.subdir("mcmcmc")
-    out_dir.subdir(os.path.join("mcmcmc", "group_0"))
+    out_dir.subdir(join("mcmcmc", "group_0"))
     out_dir.subdir("psi_pred")
     out_dir.subfile("group_0.txt")
     out_dir.subfile("orphans.log")
@@ -2080,28 +2111,28 @@ group_0_1_0\t2.0833\tBOL-PanxαG
     subset_ids = ['BOL-PanxαA', 'BOL-PanxαG', 'BOL-PanxαH', 'Lcr-PanxαH', 'Lcr-PanxαK', 'Mle-Panxα5',
                   'Mle-Panxα7A', 'Mle-Panxα8', 'Mle-Panxα9', 'Mle-Panxα10A', 'Vpa-PanxαB']
     for seq in subset_ids[:-1]:
-        shutil.copyfile(os.path.join(hf.resource_path, "psi_pred", seq + ".ss2"),
-                        os.path.join(out_dir.path, "psi_pred", seq + ".ss2"))
-    seqbuddy = rdmcl.Sb.SeqBuddy(os.path.join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa"))
+        shutil.copyfile(join(hf.resource_path, "psi_pred", seq + ".ss2"),
+                        join(out_dir.path, "psi_pred", seq + ".ss2"))
+    seqbuddy = rdmcl.Sb.SeqBuddy(join(hf.resource_path, "BOL_Lcr_Mle_Vpa.fa"))
     rdmcl.Sb.pull_recs(seqbuddy, "^%s$" % "$|^".join(subset_ids))
-    seqbuddy.write(os.path.join(out_dir.path, "seqbuddy"))
-    test_in_args.sequences = os.path.join(out_dir.path, "seqbuddy")
+    seqbuddy.write(join(out_dir.path, "seqbuddy"))
+    test_in_args.sequences = join(out_dir.path, "seqbuddy")
     test_in_args.outdir = out_dir.path
     test_in_args.psipred_dir = "foo-bared_psi_pred"  # This doesn't exist
     test_in_args.mcmc_steps = 10
     test_in_args.r_seed = 1
     rdmcl.full_run(test_in_args)
 
-    # shutil.copyfile(os.path.join(out_dir.path, "sqlite_db.sqlite"), "unit_test_db")
+    # shutil.copyfile(join(out_dir.path, "sqlite_db.sqlite"), "unit_test_db")
 
     for expected_dir in ['alignments', 'hmm', 'mcmcmc', 'psi_pred', 'sim_scores']:
-        assert os.path.isdir(os.path.join(out_dir.path, expected_dir)), print(next(os.walk(out_dir.path))[1])
+        assert os.path.isdir(join(out_dir.path, expected_dir)), print(next(os.walk(out_dir.path))[1])
 
     for expected_file in ["final_clusters.txt", "orphans.log",
                           "paralog_cliques", "rdmcl.log", "sqlite_db.sqlite"]:
-        assert os.path.isfile(os.path.join(out_dir.path, expected_file)), print(next(os.walk(out_dir.path))[2])
+        assert os.path.isfile(join(out_dir.path, expected_file)), print(next(os.walk(out_dir.path))[2])
 
-    with open(os.path.join(out_dir.path, "final_clusters.txt"), "r") as ifile:
+    with open(join(out_dir.path, "final_clusters.txt"), "r") as ifile:
         content = ifile.read()
         assert content == """\
 group_0_0_0\t20.3333\tBOL-PanxαA\tLcr-PanxαH\tMle-Panxα10A\tMle-Panxα9\tVpa-PanxαB
