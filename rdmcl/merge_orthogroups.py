@@ -25,7 +25,7 @@ from scipy import stats
 from datetime import date
 
 VERSION = helpers.VERSION
-VERSION.name = "orthogroup_polisher"
+VERSION.name = "merge_orthogroups"
 RED = "\033[91m"
 GREEN = "\033[92m"
 DEF_FONT = "\033[39m"
@@ -176,8 +176,8 @@ class Check(object):
             self.clusters[merge_group_name] = sorted(self.clusters[merge_group_name] + self.clusters[self.group_name])
             del self.clusters[self.group_name]
 
-            # 2) Append to polisher.log
-            with open(join(self.rdmcl_dir, "polisher.log"), "a") as ofile:
+            # 2) Append to manual_merge.log
+            with open(join(self.rdmcl_dir, "manual_merge.log"), "a") as ofile:
                 ofile.write("%s %s -> %s\n" % (date.today(), self.group_name, merge_group_name))
 
             # 3) Rewrite final_clusters.txt
@@ -225,16 +225,16 @@ def argparse_init():
     def fmt(prog):
         return br.CustomHelpFormatter(prog)
 
-    parser = argparse.ArgumentParser(prog="orthogroup_polisher", formatter_class=fmt, add_help=False,
+    parser = argparse.ArgumentParser(prog="merge_orthogroups", formatter_class=fmt, add_help=False,
                                      usage=argparse.SUPPRESS, description='''\
-\033[1mOrthogroup Polisher\033[m
+\033[1mMerge Orthogroups\033[m
   It's not really manual curation if a computer does it for you.
 
   Test how well RD-MCL-generated clusters fit into larger 
   clusters from that same run.
 
 \033[1mUsage\033[m:
-  orthogroup_polisher rdmcl_dir group_name [-options]
+  merge_orthogroups rdmcl_dir group_name [-options]
 ''')
 
     # Positional
