@@ -161,7 +161,7 @@ def test_main_min_max(monkeypatch, hf, capsys):
     monkeypatch.setattr(sys, "argv", argv)
     group_by_cluster.main()
     out, err = capsys.readouterr()
-    assert hf.string2hash(out) == "c15356cb75c752a1f1b4db69de58114f", print(out)
+    assert hf.string2hash(out) == "5454151083c986560930f5755a18503b", print(out)
 
 
 def test_main_strip_taxa(monkeypatch, hf, capsys):

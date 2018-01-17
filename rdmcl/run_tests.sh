@@ -20,6 +20,10 @@ echo "test_worker.py"
 TEST_SCRIPTS=${DIR}'/tests/test_worker.py '
 py.test ${TEST_SCRIPTS} --cov rdmcl.launch_worker --cov-report html --cov-config .coveragerc -n 8 -p no:cacheprovider -p no:logging --durations=10 $@
 
+echo "test_group_by_cluster.py"
+TEST_SCRIPTS=${DIR}'/tests/test_group_by_cluster.py '
+py.test ${TEST_SCRIPTS} --cov rdmcl.group_by_cluster --cov-report html --cov-config .coveragerc -n 8 -p no:cacheprovider -p no:logging --durations=10 $@
+
 echo "test_rdmcl.py"
 TEST_SCRIPTS=${DIR}'/tests/test_rdmcl.py '
 py.test ${TEST_SCRIPTS} --cov rdmcl.rdmcl --cov-report html -n 8 --cov-config .coveragerc -p no:cacheprovider -p no:logging --durations=10 -m "not slow" $@
