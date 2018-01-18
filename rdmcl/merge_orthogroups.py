@@ -103,6 +103,9 @@ class Check(object):
         return between_group_rsquares
 
     def check(self, group_name):
+        if group_name not in self.clusters:
+            raise IndexError("Provided group name '%s' not found in named clusters: %s" %
+                             (group_name, "\n".join(br.num_sorted([g for g in self.clusters]))))
         self.group_name = group_name
         query = self.clusters[group_name]
         query_score = Cluster(query, parent=self.master_clust).score()
@@ -134,7 +137,8 @@ class Check(object):
     def merge(self, merge_group_name, force=False):
         merge_group = [l for l in self.output if l[0] == merge_group_name]
         if not merge_group:
-            sys.stderr.write("Error: %s is not a group that %s can be merged with.\n")
+            sys.stderr.write("Error: %s is not a group that %s can be merged with.\n" %
+                             (merge_group_name, self.group_name))
             return
         merge_group = merge_group[0]
 
@@ -276,7 +280,13 @@ def main():
         sys.exit()
 
     check = Check(in_args.rdmcl_dir)
-    check.check(in_args.group_name)
+    try:
+        check.check(in_args.group_name)
+    except IndexError as err:
+        if "Provided group name" not in str(err):
+            raise err
+        sys.stderr.write("%s\n" % str(err))
+        sys.exit()
 
     print(check)
 
