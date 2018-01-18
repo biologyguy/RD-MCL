@@ -6,6 +6,7 @@ import shutil
 import os
 import pandas as pd
 import numpy as np
+from scipy import stats
 from math import log, sqrt
 from time import time, sleep
 from copy import copy
@@ -291,6 +292,12 @@ def bit_score(raw_score):
     bit_lambda = 0.252
     bits = ((bit_lambda * raw_score) - (log(bit_k_value))) / log(2)
     return bits
+
+
+def create_truncnorm(mu, sigma, lower=0, upper=1):
+    sigma = sigma if sigma > 0.001 else 0.001  # This prevents unrealistically small differences and DivBy0 errors
+    dist = stats.truncnorm((lower - mu) / sigma, (upper - mu) / sigma, loc=mu, scale=sigma)
+    return dist
 
 
 # ToDo: implement Regularized MCL to take into account flows of neighbors (Expansion step is M*M_G, instead of M*M)

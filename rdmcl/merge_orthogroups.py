@@ -20,8 +20,6 @@ import os
 from os.path import join
 import argparse
 import pandas as pd
-import numpy as np
-from scipy import stats
 from datetime import date
 
 VERSION = helpers.VERSION
@@ -34,20 +32,6 @@ UNDERLINE = "\033[4m"
 END = '\033[0m'
 
 
-def create_truncnorm(mu, sigma, lower=0, upper=1):
-    sigma = sigma if sigma > 0.001 else 0.001  # This prevents unrealistically small differences and DivBy0 errors
-    dist = stats.truncnorm((lower - mu) / sigma, (upper - mu) / sigma, loc=mu, scale=sigma)
-    return dist
-
-
-def mean_confidence_interval(data, confidence=0.95):
-    a = 1.0 * np.array(data)
-    n = len(a)
-    m, se = np.mean(a), stats.sem(a)
-    h = se * stats.t._ppf((1 + confidence) / 2, n - 1)
-    return m, m - h, m + h
-
-
 class Check(object):
     def __init__(self, rdmcl_dir):
         self.group_name = None
@@ -57,11 +41,11 @@ class Check(object):
         self.master_clust = Cluster([seq for group, ids in self.clusters.items() for seq in ids])
         self.r_squares = pd.read_csv(join(self.rdmcl_dir, "hmm", "rsquares_matrix.csv"))
         self.within_group_rsquares = self._prepare_within_group_df()
-        self.within_group_dist = create_truncnorm(helpers.mean(self.within_group_rsquares.r_square),
-                                                  helpers.std(self.within_group_rsquares.r_square))
+        self.within_group_dist = helpers.create_truncnorm(helpers.mean(self.within_group_rsquares.r_square),
+                                                          helpers.std(self.within_group_rsquares.r_square))
         self.between_group_rsquares = self._prepare_between_group_df()
-        self.between_group_dist = create_truncnorm(helpers.mean(self.between_group_rsquares.r_square),
-                                                   helpers.std(self.between_group_rsquares.r_square))
+        self.between_group_dist = helpers.create_truncnorm(helpers.mean(self.between_group_rsquares.r_square),
+                                                           helpers.std(self.between_group_rsquares.r_square))
 
     def _prepare_within_group_df(self, force=False):
         if not os.path.isfile(join(self.rdmcl_dir, "hmm", "within_group_rsquares.csv")) or force:

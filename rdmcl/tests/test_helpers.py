@@ -318,6 +318,11 @@ def test_bit_score():
     assert helpers.bit_score(100) == 41.192416298119
 
 
+def test_create_truncnorm():
+    dist = helpers.create_truncnorm(0.5, 0.2)
+    assert round(dist.cdf(0.6), 12) == 0.693870199384
+
+
 def test_markov_clustering_init():
     data = """\
 Bab\tCfu\t1
