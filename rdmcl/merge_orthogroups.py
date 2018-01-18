@@ -219,9 +219,10 @@ class Check(object):
                                                                                    UNDERLINE, END)
         for line in self.output:
             test1 = GREEN if line[1] > line[2] and line[1] >= 0.05 else RED
-            test2 = GREEN if line[3] < line[4] else RED
-            out_str += "{0: <{5}}{6}{1: <10}{2: <8}{7}{3: <11}{4}{8}\n".format(*line, longest_group_name, test1, test2,
-                                                                               DEF_FONT)
+            test2 = GREEN if line[2] < 0.05 else RED
+            test3 = GREEN if line[3] < line[4] else RED
+            out_str += "{0: <{5}}{6}{1: <10}{7}{2: <8}{8}{3: <11}{4}{9}\n".format(*line, longest_group_name, test1,
+                                                                                  test2, test3, DEF_FONT)
         return out_str
 
 
