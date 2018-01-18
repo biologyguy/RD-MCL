@@ -2007,15 +2007,12 @@ class Seqs2Clusters(object):
             # Create a distribution from all R² values between records in each pre-called large cluster
             global_null_file = br.TempFile()
             global_null_file.write("rec_id1,rec_id2,r_square\n")
-            # global_null_df = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
 
             out_of_cluster_file = br.TempFile()
             out_of_cluster_file.write("rec_id1,rec_id2,r_square\n")
-            # out_of_cluster_df = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
 
             # Also calculate sub-distributions from within each pre-called cluster, creating a cluster null
             log_output += "# Cluster R² distribution statistics #\n"
-            # cluster_nulls = OrderedDict()
             cluster_nulls_file = br.TempFile()
             cluster_nulls_file.write("{")
 
@@ -2221,6 +2218,12 @@ class Seqs2Clusters(object):
             for indx, clust in enumerate(self.clusters):
                 if not len(clust):
                     del_list.append(indx)
+                    # Remove the associated group files if the group doesn't exist any longer
+                    shutil.rmtree(join(self.outdir, "alignments", clust.name()), ignore_errors=True)
+                    shutil.rmtree(join(self.outdir, "hmm", clust.name()), ignore_errors=True)
+                    shutil.rmtree(join(self.outdir, "mcmcmc", clust.name()), ignore_errors=True)
+                    shutil.rmtree(join(self.outdir, "sim_scores", "%s.scores" % clust.name()), ignore_errors=True)
+
             for indx in sorted(del_list, reverse=True):
                 del self.clusters[indx]
 
