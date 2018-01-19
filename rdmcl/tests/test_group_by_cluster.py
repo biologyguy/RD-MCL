@@ -153,6 +153,14 @@ def test_main_select_groups(monkeypatch, hf, capsys):
     group_by_cluster.main()
     out, err = capsys.readouterr()
     assert hf.string2hash(out) == "9a03d8619d686cc553f09138635c8685", print(out)
+    assert not err
+
+    argv = ['rdmcl.py', os.path.join(hf.resource_path, "final_clusters.txt"),
+            os.path.join(hf.resource_path, "Cteno_pannexins.fa"), "-g", "group_0_1", "group_wonky"]
+    monkeypatch.setattr(sys, "argv", argv)
+    group_by_cluster.main()
+    out, err = capsys.readouterr()
+    assert "'group_wonky' not present in clusters." in err
 
 
 def test_main_min_max(monkeypatch, hf, capsys):

@@ -117,13 +117,18 @@ def main():
         Sb.br._stderr('Unrecognized mode, please select from ["seqs", "aln", "con", "list"].\n')
         sys.exit()
 
-    if in_args.groups:
-        in_args.groups = [x.lower() for x in in_args.groups[0]]
-        in_args.groups = "^%s$" % "$|^".join(in_args.groups)
-
     cluster_file = prepare_clusters(in_args.clusters, hierarchy=True)
     seqbuddy = Sb.SeqBuddy(in_args.sequence_file)
     output = OrderedDict()
+
+    if in_args.groups:
+        groups = []
+        for group in in_args.groups[0]:
+            if group not in cluster_file:
+                sys.stderr.write("%sWARNING%s: '%s' not present in clusters.\n" % (hlp.RED, hlp.END, group))
+            else:
+                groups.append(group.lower())
+        in_args.groups = "^%s$" % "$|^".join(groups)
 
     for rank, node in cluster_file.items():
         rank = rank.split()[0]
