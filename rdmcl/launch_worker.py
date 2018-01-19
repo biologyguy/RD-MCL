@@ -23,16 +23,16 @@ import traceback
 
 # My packages
 try:
-    from . import helpers
+    from . import helpers as hlp
     from . import rdmcl
 except ImportError:
-    import helpers
+    import helpers as hlp
     import rdmcl
 
 
 # Globals
 WORKERLOCK = Lock()
-VERSION = helpers.VERSION
+VERSION = hlp.VERSION
 VERSION.name = "launch_worker"
 
 # Set global precision levels
@@ -80,7 +80,7 @@ class Worker(object):
         self.data_file = os.path.join(self.working_dir, ".Worker_%s.dat" % self.heartbeat.id)
         open(self.data_file, "w").close()
 
-        helpers.dummy_func()
+        hlp.dummy_func()
 
         self.last_heartbeat_from_master = time.time()
         self.printer.write("Starting Worker_%s" % self.heartbeat.id)
@@ -144,7 +144,7 @@ class Worker(object):
                     self.printer.write("Trimal (%s seqs)" % len(seqbuddy))
                     alignment = rdmcl.trimal(seqbuddy, trimal, alignment)
 
-                    with helpers.ExclusiveConnect(os.path.join(self.output, "write.lock"), max_lock=0):
+                    with hlp.ExclusiveConnect(os.path.join(self.output, "write.lock"), max_lock=0):
                         # Place these write commands in ExclusiveConnect to ensure a writing lock
                         if not os.path.isfile(os.path.join(self.output, "%s.aln" % id_hash)):
                             alignment.write(os.path.join(self.output, "%s.aln" % id_hash), out_format="fasta")
@@ -181,7 +181,7 @@ class Worker(object):
                 if num_subjobs == 1:
                         self.terminate("something wrong with primary cluster %s\n%s" % (full_name, err))
                 else:
-                    with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+                    with hlp.ExclusiveConnect(self.wrkdb_path) as cursor:
                         cursor.execute("DELETE FROM processing WHERE hash=?", (full_name,))
                     continue
 
@@ -193,10 +193,10 @@ class Worker(object):
 
     def idle_workers(self):
         # Calculate how many workers are just sitting around
-        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+        with hlp.ExclusiveConnect(self.hbdb_path) as cursor:
             workers = cursor.execute("SELECT COUNT(*) FROM heartbeat WHERE thread_type='worker'").fetchone()[0]
 
-        with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+        with hlp.ExclusiveConnect(self.wrkdb_path) as cursor:
             jobs = cursor.execute("SELECT * FROM processing WHERE hash NOT LIKE '%%^_%%' ESCAPE '^'").fetchall()
             subjobs = cursor.execute("SELECT * FROM processing WHERE hash LIKE '%%^_%%' ESCAPE '^'").fetchall()
 
@@ -211,7 +211,7 @@ class Worker(object):
     def check_masters(self, idle):
         if time.time() - self.last_heartbeat_from_master > self.max_wait:
             terminate = False
-            with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+            with hlp.ExclusiveConnect(self.hbdb_path) as cursor:
                 cursor.execute("SELECT * FROM heartbeat WHERE thread_type='master' "
                                "AND pulse>?", (time.time() - self.max_wait - cursor.lag,))
                 masters = cursor.fetchall()
@@ -224,7 +224,7 @@ class Worker(object):
         return
 
     def clean_dead_threads(self):
-        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+        with hlp.ExclusiveConnect(self.hbdb_path) as cursor:
             wait_time = time.time() - self.dead_thread_wait - cursor.lag
             dead_masters = cursor.execute("SELECT thread_id FROM heartbeat WHERE thread_type='master' "
                                           "AND pulse < ?", (wait_time,)).fetchall()
@@ -243,7 +243,7 @@ class Worker(object):
                 dead_workers = ", ".join([str(x[0]) for x in dead_workers])
                 cursor.execute("DELETE FROM heartbeat WHERE thread_id IN (%s)" % dead_workers)
 
-        with helpers.ExclusiveConnect(self.wrkdb_path, max_lock=120) as cursor:
+        with hlp.ExclusiveConnect(self.wrkdb_path, max_lock=120) as cursor:
             # Remove any jobs in the 'processing' table where the worker is dead
             if dead_workers:
                 cursor.execute("DELETE FROM processing WHERE worker_id IN (%s)" % dead_workers)
@@ -284,7 +284,7 @@ class Worker(object):
 
     def fetch_queue_job(self):
         while True:
-            with helpers.ExclusiveConnect(self.wrkdb_path, priority=True) as cursor:
+            with hlp.ExclusiveConnect(self.wrkdb_path, priority=True) as cursor:
                 data = cursor.execute('SELECT * FROM queue').fetchone()
                 if data:
                     id_hash, psipred_dir, align_m, align_p, trimal, gap_open, gap_extend = data
@@ -327,11 +327,11 @@ class Worker(object):
         if not sim_scores.empty:
             sim_scores = rdmcl.set_final_sim_scores(sim_scores)
 
-            with helpers.ExclusiveConnect(os.path.join(self.output, "write.lock"), max_lock=0):
+            with hlp.ExclusiveConnect(os.path.join(self.output, "write.lock"), max_lock=0):
                 # Place these write commands in ExclusiveConnect to ensure a writing lock
                 sim_scores.to_csv(os.path.join(self.output, "%s.graph" % id_hash), header=None, index=False)
 
-            with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+            with hlp.ExclusiveConnect(self.wrkdb_path) as cursor:
                 # Confirm that the job is still being waited on and wasn't killed before adding to the `complete` table
                 waiting = cursor.execute("SELECT master_id FROM waiting WHERE hash=?", (id_hash,)).fetchall()
                 processing = cursor.execute("SELECT worker_id FROM processing WHERE hash=?",
@@ -373,7 +373,7 @@ class Worker(object):
                     ofile.write("%s %s\n" % (pair[0], pair[1]))
 
         # Push all jobs into the queue except the first job, which is held back for the current node to work on
-        with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+        with hlp.ExclusiveConnect(self.wrkdb_path) as cursor:
             for indx, subjob in enumerate(data[1:]):
                 # NOTE: the 'indx + 2' is necessary to push index to '1' start and account for the job already removed
                 cursor.execute("INSERT INTO queue (hash, psi_pred_dir, gap_open, gap_extend) "
@@ -408,7 +408,7 @@ class Worker(object):
             full_id_hash = "%s_%s_%s" % (subjob_num, num_subjobs, id_hash)
             sim_scores.to_csv(os.path.join(subjob_out_dir, "%s_of_%s.sim_df" % (subjob_num, num_subjobs)), index=False)
 
-            with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+            with hlp.ExclusiveConnect(self.wrkdb_path) as cursor:
                 # Confirm that the job is still being waited on and wasn't killed before adding to the `complete` table
                 waiting = cursor.execute("SELECT master_id FROM waiting WHERE hash=?", (id_hash,)).fetchall()
                 processing = cursor.execute("SELECT worker_id FROM processing WHERE hash=? AND worker_id=?",
@@ -433,7 +433,7 @@ class Worker(object):
     def terminate(self, message):
         self.printer.write("Terminating Worker_%s because of %s." % (self.heartbeat.id, message))
         self.printer.new_line(1)
-        with helpers.ExclusiveConnect(self.wrkdb_path) as cursor:
+        with hlp.ExclusiveConnect(self.wrkdb_path) as cursor:
             cursor.execute("DELETE FROM processing WHERE worker_id=?", (self.heartbeat.id,))
         if os.path.isfile(self.data_file):
             os.remove(self.data_file)
@@ -547,7 +547,7 @@ def main():
             wrkr.terminate("KeyboardInterrupt")
 
         except Exception as err:
-            with helpers.ExclusiveConnect(wrkr.wrkdb_path) as cursor:
+            with hlp.ExclusiveConnect(wrkr.wrkdb_path) as cursor:
                 cursor.execute("DELETE FROM processing WHERE worker_id=?", (wrkr.heartbeat.id,))
 
             if "Too many Worker crashes detected" in str(err):

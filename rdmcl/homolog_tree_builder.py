@@ -7,15 +7,15 @@ Convert the output from orthogroup_caller into an SVG tree of polytomies
 """
 try:
     from .compare_homolog_groups import prepare_clusters
-    from . import helpers
+    from . import helpers as hlp
 except ImportError:
     from compare_homolog_groups import prepare_clusters
-    import helpers
+    import helpers as hlp
 
 from collections import OrderedDict
 from random import random
 
-VERSION = helpers.VERSION
+VERSION = hlp.VERSION
 VERSION.name = "homolog_tree_builder"
 
 

@@ -9,10 +9,10 @@ Only allow groups to be placed in larger groups
 
 try:
     from .compare_homolog_groups import prepare_clusters, Cluster
-    from . import helpers
+    from . import helpers as hlp
 except ImportError:
     from compare_homolog_groups import prepare_clusters, Cluster
-    import helpers
+    import helpers as hlp
 
 from buddysuite import buddy_resources as br
 import sys
@@ -22,14 +22,8 @@ import argparse
 import pandas as pd
 from datetime import date
 
-VERSION = helpers.VERSION
+VERSION = hlp.VERSION
 VERSION.name = "merge_orthogroups"
-RED = "\033[91m"
-GREEN = "\033[92m"
-DEF_FONT = "\033[39m"
-BOLD = "\033[1m"
-UNDERLINE = "\033[4m"
-END = '\033[0m'
 
 
 class Check(object):
@@ -41,11 +35,11 @@ class Check(object):
         self.master_clust = Cluster([seq for group, ids in self.clusters.items() for seq in ids])
         self.r_squares = pd.read_csv(join(self.rdmcl_dir, "hmm", "rsquares_matrix.csv"))
         self.within_group_rsquares = self._prepare_within_group_df()
-        self.within_group_dist = helpers.create_truncnorm(helpers.mean(self.within_group_rsquares.r_square),
-                                                          helpers.std(self.within_group_rsquares.r_square))
+        self.within_group_dist = hlp.create_truncnorm(hlp.mean(self.within_group_rsquares.r_square),
+                                                      hlp.std(self.within_group_rsquares.r_square))
         self.between_group_rsquares = self._prepare_between_group_df()
-        self.between_group_dist = helpers.create_truncnorm(helpers.mean(self.between_group_rsquares.r_square),
-                                                           helpers.std(self.between_group_rsquares.r_square))
+        self.between_group_dist = hlp.create_truncnorm(hlp.mean(self.between_group_rsquares.r_square),
+                                                       hlp.std(self.between_group_rsquares.r_square))
 
     def _prepare_within_group_df(self, force=False):
         if not os.path.isfile(join(self.rdmcl_dir, "hmm", "within_group_rsquares.csv")) or force:
@@ -104,7 +98,7 @@ class Check(object):
                                           (self.r_squares["rec_id2"].isin(query))) &
                                          (self.r_squares["rec_id1"] != self.r_squares["rec_id2"])].copy()
 
-            ave, std = helpers.mean(compare.r_square), helpers.std(compare.r_square)
+            ave, std = hlp.mean(compare.r_square), hlp.std(compare.r_square)
             upper2 = ave + (std * 2)
             upper2 = 1 if upper2 > 1 else upper2
             lower2 = ave - (std * 2)
@@ -131,8 +125,9 @@ class Check(object):
             if not br.ask("{0}Merge Warning{1}: The group that appears to be the most\n"
                           "appropriate for {5}{2}{1} is {5}{3}{1}, but you have\n"
                           "selected {5}{4}{1}.\n"
-                          "Do you wish to continue? y/[n]: ".format(RED, END, self.group_name, self.output[0][0],
-                                                                    merge_group[0], GREEN), default="no"):
+                          "Do you wish to continue? y/[n]: ".format(hlp.RED, hlp.END, self.group_name,
+                                                                    self.output[0][0], merge_group[0], hlp.GREEN),
+                          default="no"):
                 do_merge = False
             print()
 
@@ -141,8 +136,8 @@ class Check(object):
                           "clusters have a similarity distribution that matches the\n"
                           "similarity distribution between {4}{2}{1} and {4}{3}{1}.\n"
                           "This makes the merge questionable.\n"
-                          "Do you wish to continue? y/[n]: ".format(RED, END, self.group_name, merge_group_name, GREEN),
-                          default="no"):
+                          "Do you wish to continue? y/[n]: ".format(hlp.RED, hlp.END, self.group_name,
+                                                                    merge_group_name, hlp.GREEN), default="no"):
                 do_merge = False
             print()
 
@@ -150,15 +145,16 @@ class Check(object):
             if not br.ask("{0}Merge Warning{1}: Merging {4}{2}{1} and {4}{3}{1} will\n"
                           "reduce the combined orthogroup score, which means you will\n"
                           "increase the number of paralogs per group.\n"
-                          "Do you wish to continue? y/[n]: ".format(RED, END, self.group_name, merge_group_name, GREEN),
-                          default="no"):
+                          "Do you wish to continue? y/[n]: ".format(hlp.RED, hlp.END, self.group_name,
+                                                                    merge_group_name, hlp.GREEN), default="no"):
                 do_merge = False
             print()
 
         if do_merge and \
                 (force or br.ask("Last chance to abort!\n"
                                  "Merge {2}{0}{3} into {2}{1}{3}? "
-                                 "y/[n]: ".format(self.group_name, merge_group_name, GREEN, END), default="no")):
+                                 "y/[n]: ".format(self.group_name, merge_group_name,
+                                                  hlp.GREEN, hlp.END), default="no")):
 
             # 1) Update clusters in self
             self.clusters[merge_group_name] = sorted(self.clusters[merge_group_name] + self.clusters[self.group_name])
@@ -189,24 +185,24 @@ class Check(object):
             if os.path.isfile(join(self.rdmcl_dir, "hmm", self.group_name)):
                 os.remove(join(self.rdmcl_dir, "hmm", self.group_name))
 
-            print("%sMerged!%s\n" % (GREEN, END))
+            print("%sMerged!%s\n" % (hlp.GREEN, hlp.END))
         else:
-            print("%sMerge aborted!%s" % (RED, END))
+            print("%sMerge aborted!%s" % (hlp.RED, hlp.END))
 
     def __str__(self):
         if not self.output:
             return "You must run Check.check() before printing"
-        out_str = "%sTesting %s%s\n" % (BOLD, self.group_name, END)
+        out_str = "%sTesting %s%s\n" % (hlp.BOLD, self.group_name, hlp.END)
         longest_group_name = len(sorted([g[0] for g in self.output], key=lambda x: len(x), reverse=True)[0]) + 2
 
         out_str += "{2}{0: <{1}}R²Within  R²Btw   OrigScore  NewScore{3}\n".format("Groups", longest_group_name,
-                                                                                   UNDERLINE, END)
+                                                                                   hlp.UNDERLINE, hlp.END)
         for line in self.output:
-            test1 = GREEN if line[1] > line[2] and line[1] >= 0.05 else RED
-            test2 = GREEN if line[2] < 0.05 else RED
-            test3 = GREEN if line[3] < line[4] else RED
+            test1 = hlp.GREEN if line[1] > line[2] and line[1] >= 0.05 else hlp.RED
+            test2 = hlp.GREEN if line[2] < 0.05 else hlp.RED
+            test3 = hlp.GREEN if line[3] < line[4] else hlp.RED
             out_str += "{0: <{5}}{6}{1: <10}{7}{2: <8}{8}{3: <11}{4}{9}\n".format(*line, longest_group_name, test1,
-                                                                                  test2, test3, DEF_FONT)
+                                                                                  test2, test3, hlp.DEF_FONT)
         return out_str
 
 

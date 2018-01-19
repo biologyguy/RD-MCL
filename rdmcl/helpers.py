@@ -17,6 +17,13 @@ from subprocess import PIPE, check_output, CalledProcessError
 from buddysuite import buddy_resources as br
 import signal
 
+RED = "\033[91m"
+GREEN = "\033[92m"
+DEF_FONT = "\033[39m"
+BOLD = "\033[1m"
+UNDERLINE = "\033[4m"
+END = '\033[0m'
+
 # Set global precision levels
 np.set_printoptions(precision=12)
 pd.set_option("display.precision", 12)

@@ -818,7 +818,7 @@ def test_main(monkeypatch, capsys):
     assert "Starting Worker_3\n" in out and "Terminating Worker_3 because of 2 sec of master inactivity" in out
 
     # Test termination types
-    monkeypatch.setattr(launch_worker.helpers, "dummy_func", mock_valueerror)
+    monkeypatch.setattr(launch_worker.hlp, "dummy_func", mock_valueerror)
     argv = ['launch_worker.py', '--workdb', out_dir.path, "--max_wait", "2"]
     monkeypatch.setattr(launch_worker.sys, "argv", argv)
 
@@ -827,7 +827,7 @@ def test_main(monkeypatch, capsys):
     out, err = capsys.readouterr()
     assert 'Terminating Worker_7 because of too many Worker crashes' in out
 
-    monkeypatch.setattr(launch_worker.helpers, "dummy_func", mock_keyboardinterupt)
+    monkeypatch.setattr(launch_worker.hlp, "dummy_func", mock_keyboardinterupt)
 
     with pytest.raises(SystemExit):
         launch_worker.main()

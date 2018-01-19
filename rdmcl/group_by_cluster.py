@@ -7,10 +7,10 @@ Output the description line for each record in each cluster, neatly organized as
 
 try:
     from .compare_homolog_groups import prepare_clusters
-    from . import helpers
+    from . import helpers as hlp
 except ImportError:
     from compare_homolog_groups import prepare_clusters
-    import helpers
+    import helpers as hlp
 
 from buddysuite import SeqBuddy as Sb
 from buddysuite import AlignBuddy as Alb
@@ -21,7 +21,7 @@ from collections import OrderedDict
 import os
 import argparse
 
-VERSION = helpers.VERSION
+VERSION = hlp.VERSION
 VERSION.name = "group_by_cluster"
 
 

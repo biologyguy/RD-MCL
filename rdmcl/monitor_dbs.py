@@ -12,11 +12,11 @@ from time import time, sleep
 from buddysuite.buddy_resources import DynamicPrint, TempFile, CustomHelpFormatter
 
 try:
-    import helpers
+    import helpers as hlp
 except ImportError:
-    from . import helpers
+    from . import helpers as hlp
 
-VERSION = helpers.VERSION
+VERSION = hlp.VERSION
 VERSION.name = "monitor_dbs"
 
 
@@ -42,9 +42,9 @@ class Monitor(object):
 
             split_time = time()
             try:
-                with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+                with hlp.ExclusiveConnect(self.hbdb_path) as cursor:
                     heartbeat = cursor.execute("SELECT * FROM heartbeat").fetchall()
-                with helpers.ExclusiveConnect(self.wdb_path) as cursor:
+                with hlp.ExclusiveConnect(self.wdb_path) as cursor:
                     queue = cursor.execute("SELECT hash FROM queue").fetchall()
                     processing = cursor.execute("SELECT hash FROM processing").fetchall()
                     complete = cursor.execute("SELECT hash FROM complete").fetchall()
@@ -78,7 +78,7 @@ class Monitor(object):
                 output = [str(x[0]).ljust(x[1]) for x in output]
 
                 printer.write("".join(output))
-            except helpers.sqlite3.OperationalError:
+            except hlp.sqlite3.OperationalError:
                 printer.write("Worker databases not detected")
             sleep(0.5)
         return

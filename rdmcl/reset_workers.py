@@ -9,11 +9,11 @@ import os
 import shutil
 from buddysuite import buddy_resources as br
 try:
-    from . import helpers
+    from . import helpers as hlp
 except ImportError:
-    import helpers
+    import helpers as hlp
 
-VERSION = helpers.VERSION
+VERSION = hlp.VERSION
 VERSION.name = "reset_workers"
 
 
@@ -51,7 +51,7 @@ def main():
     work_output_dir = os.path.join(in_args.workdb, ".worker_output")
 
     if os.path.isfile(work_db) and os.path.isdir(work_output_dir):
-        with helpers.ExclusiveConnect(work_db) as cursor:
+        with hlp.ExclusiveConnect(work_db) as cursor:
             root, dirs, files = next(os.walk(work_output_dir))
             for _dir in dirs:
                 shutil.rmtree(os.path.join(root, _dir))

@@ -55,11 +55,11 @@ from Bio.SubsMat import SeqMat, MatrixInfo
 # My packages
 try:
     import mcmcmc
-    import helpers
+    import helpers as hlp
     from install import setup
 except ImportError:
     from . import mcmcmc
-    from . import helpers
+    from . import helpers as hlp
     from .install import setup
 
 from buddysuite import SeqBuddy as Sb
@@ -67,8 +67,8 @@ from buddysuite import AlignBuddy as Alb
 from buddysuite import buddy_resources as br
 
 # Globals
-SCRIPT_PATH = helpers.SCRIPT_PATH
-VERSION = helpers.VERSION
+SCRIPT_PATH = hlp.SCRIPT_PATH
+VERSION = hlp.VERSION
 VERSION.name = "rdmcl"
 ALIGNMETHOD = "clustalo"
 ALIGNPARAMS = ""
@@ -76,11 +76,11 @@ LOCK = Lock()
 MULTICORE_LOCK = Lock()
 PROGRESS_LOCK = Lock()
 CPUS = br.usable_cpu_count()
-TIMER = helpers.Timer()
+TIMER = hlp.Timer()
 MIN_SIZE_TO_WORKER = 15  # (MIN_SIZE_TO_WORKER**2 - MIN_SIZE_TO_WORKER) / 2  =  105
 GAP_OPEN = -5
 GAP_EXTEND = 0
-BLOSUM62 = helpers.make_full_mat(SeqMat(MatrixInfo.blosum62))
+BLOSUM62 = hlp.make_full_mat(SeqMat(MatrixInfo.blosum62))
 MCMC_CHAINS = 3
 GELMAN_RUBIN = 1.1
 WORKER_OUT = ""
@@ -149,7 +149,7 @@ class Cluster(object):
 
         expected_num_edges = int(((ids_len**2) - ids_len) / 2)
         if len(sim_scores.index) != expected_num_edges:
-            seq_id_hash = helpers.md5_hash(str(", ".join(seq_ids)))
+            seq_id_hash = hlp.md5_hash(str(", ".join(seq_ids)))
             sim_scores_ids = sim_scores.seq1.append(sim_scores.seq2)
             sim_scores_ids = sorted(list(sim_scores_ids.unique()))
 
@@ -191,13 +191,13 @@ class Cluster(object):
                 self.collapse()
 
         self.seq_ids_str = str(", ".join(sorted(self.seq_ids)))
-        self.seq_id_hash = helpers.md5_hash(self.seq_ids_str)
+        self.seq_id_hash = hlp.md5_hash(self.seq_ids_str)
 
     def reset_seq_ids(self, seq_ids):
         # Note that this does NOT reset sim_scores. This needs to be updated manually
         seq_ids = sorted(seq_ids)
         self.seq_ids_str = str(", ".join(seq_ids))
-        self.seq_id_hash = helpers.md5_hash(self.seq_ids_str)
+        self.seq_id_hash = hlp.md5_hash(self.seq_ids_str)
         self.seq_ids = set(seq_ids)
 
     def collapse(self):
@@ -832,8 +832,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                      % (round(best_score["result"].iloc[0], 8), round(master_cluster.score(), 8)))
         return cluster_list
 
-    mcl_obj = helpers.MarkovClustering(master_cluster.sim_scores, inflation=best_score["I"].iloc[0],
-                                       edge_sim_threshold=best_score["gq"].iloc[0])
+    mcl_obj = hlp.MarkovClustering(master_cluster.sim_scores, inflation=best_score["I"].iloc[0],
+                                   edge_sim_threshold=best_score["gq"].iloc[0])
     mcl_obj.run()
     progress.update('mcl_runs', 1)
     mcl_clusters = mcl_obj.clusters
@@ -845,7 +845,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
     recursion_clusters = []
     for sub_cluster in mcl_clusters:
-        cluster_ids_hash = helpers.md5_hash(", ".join(sorted(sub_cluster)))
+        cluster_ids_hash = hlp.md5_hash(", ".join(sorted(sub_cluster)))
         if len(sub_cluster) == 1:
             sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
         else:
@@ -946,7 +946,7 @@ class HeartBeat(object):
         self.thread_type = thread_type
         self.dummy = dummy  # This allows an object with start() and end() methods that won't spin off a daemon
         if not dummy:
-            with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+            with hlp.ExclusiveConnect(self.hbdb_path) as cursor:
                 try:
                     cursor.execute('CREATE TABLE heartbeat (thread_id INTEGER PRIMARY KEY AUTOINCREMENT, '
                                    'thread_type TEXT, pulse INTEGER)')
@@ -965,7 +965,7 @@ class HeartBeat(object):
                     break
 
                 if split_time < time.time() - self.pulse_rate:
-                    with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+                    with hlp.ExclusiveConnect(self.hbdb_path) as cursor:
                         num_threads = cursor.execute("SELECT COUNT(*) FROM heartbeat").fetchone()[0]
                         activity_modifier = num_threads * 0.1
                         cursor.execute("INSERT or REPLACE INTO heartbeat (thread_id, thread_type, pulse) VALUES"
@@ -983,7 +983,7 @@ class HeartBeat(object):
         if self.running_process:
             self.end()
         self.check_file.write("Running")
-        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+        with hlp.ExclusiveConnect(self.hbdb_path) as cursor:
             cursor.execute("INSERT INTO heartbeat (thread_type, pulse) "
                            "VALUES (?, ?)", (self.thread_type, round(time.time()),))
             self.id = cursor.lastrowid
@@ -1002,7 +1002,7 @@ class HeartBeat(object):
         while self.running_process.is_alive():
             continue
         self.running_process = None
-        with helpers.ExclusiveConnect(self.hbdb_path) as cursor:
+        with hlp.ExclusiveConnect(self.hbdb_path) as cursor:
             cursor.execute("DELETE FROM heartbeat WHERE thread_id=?", (self.id,))
         self.id = None
         return
@@ -1094,7 +1094,7 @@ def retrieve_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=False):
     :return: sim_scores, Alb.AlignBuddy
     """
     seq_ids = sorted([rec.id for rec in seqbuddy.records])
-    seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
+    seq_id_hash = hlp.md5_hash(", ".join(seq_ids))
 
     if len(seqbuddy) == 1:
         sim_scores = pd.DataFrame(data=None, columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
@@ -1249,17 +1249,17 @@ class WorkerJob(object):
     def __init__(self, seqbuddy, sql_broker):
         self.seqbuddy = seqbuddy
         self.seq_ids = sorted([rec.id for rec in self.seqbuddy.records])
-        self.seq_id_hash = helpers.md5_hash(", ".join(self.seq_ids))
+        self.seq_id_hash = hlp.md5_hash(", ".join(self.seq_ids))
         # Job id can't be the same as seq_id_hash, because different alignment options may be involved
         job_id = "".join([str(x) for x in [self.seq_id_hash, GAP_OPEN, GAP_EXTEND, ALIGNMETHOD, ALIGNPARAMS, TRIMAL]])
-        self.job_id = helpers.md5_hash(job_id)
+        self.job_id = hlp.md5_hash(job_id)
         self.sql_broker = sql_broker
         self.heartbeat = HeartBeat(HEARTBEAT_DB, MASTER_PULSE)
         self.running = False
 
     def run(self):
         self.heartbeat.start()
-        with helpers.ExclusiveConnect(HEARTBEAT_DB) as cursor:
+        with hlp.ExclusiveConnect(HEARTBEAT_DB) as cursor:
             workers = cursor.execute("SELECT * FROM heartbeat "
                                      "WHERE thread_type='worker' "
                                      "AND pulse>%s" % (time.time() - MAX_WORKER_WAIT - cursor.lag)).fetchone()
@@ -1283,7 +1283,7 @@ class WorkerJob(object):
                     if not self.check_if_active():
                         break
 
-                with helpers.ExclusiveConnect(HEARTBEAT_DB) as cursor:
+                with hlp.ExclusiveConnect(HEARTBEAT_DB) as cursor:
                     active_threads = cursor.execute("SELECT COUNT(*) FROM heartbeat "
                                                     "WHERE thread_type='master'").fetchone()[0]
                 pause_time = active_threads * 0.5
@@ -1292,7 +1292,7 @@ class WorkerJob(object):
         return result
 
     def queue_job(self):
-        with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+        with hlp.ExclusiveConnect(WORKER_DB) as cursor:
             # Make sure the job hasn't already been submitted or completed)
             complete_check = cursor.execute("SELECT hash FROM complete WHERE hash=?", (self.job_id,)).fetchone()
             queue_check = cursor.execute("SELECT hash FROM queue WHERE hash=?", (self.job_id,)).fetchone()
@@ -1320,14 +1320,14 @@ class WorkerJob(object):
         sim_scores, alignment = query[0]
         sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None)
         sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
-        with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+        with hlp.ExclusiveConnect(WORKER_DB) as cursor:
             cursor.execute("DELETE FROM waiting WHERE hash=? AND master_id=?", (self.job_id,
                                                                                 self.heartbeat.id,))
         self.heartbeat.end()
         return sim_scores, Alb.AlignBuddy(alignment, in_format="fasta")
 
     def check_finished(self):
-        with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+        with hlp.ExclusiveConnect(WORKER_DB) as cursor:
             if not cursor.execute("SELECT * FROM complete WHERE hash=?", (self.job_id,)).fetchone():
                 return False
 
@@ -1346,12 +1346,12 @@ class WorkerJob(object):
 
         for del_file in [".aln", ".graph", ".seqs"]:
             os.remove(join(WORKER_OUT, "%s%s" % (self.job_id, del_file)))
-        with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+        with hlp.ExclusiveConnect(WORKER_DB) as cursor:
             cursor.execute("DELETE FROM proc_comp WHERE hash=?", (self.job_id,))
         return sim_scores, alignment
 
     def check_if_active(self):
-        with helpers.ExclusiveConnect(HEARTBEAT_DB, priority=True) as hb_cursor:
+        with hlp.ExclusiveConnect(HEARTBEAT_DB, priority=True) as hb_cursor:
             min_pulse = time.time() - MAX_WORKER_WAIT - hb_cursor.lag
             worker_heartbeat_check = hb_cursor.execute("SELECT * FROM heartbeat "
                                                        "WHERE thread_type='worker' AND pulse>%s"
@@ -1360,7 +1360,7 @@ class WorkerJob(object):
                                                        "WHERE thread_type='master' AND pulse>%s"
                                                        % min_pulse).fetchall()
 
-        with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+        with hlp.ExclusiveConnect(WORKER_DB) as cursor:
             if not worker_heartbeat_check:
                 # No workers are still around. Time to clean up and move on serially
                 cursor.execute("DELETE FROM queue WHERE hash=?", (self.job_id,))
@@ -1393,7 +1393,7 @@ class WorkerJob(object):
             master_id = comp_proc_check[1]
             if master_id not in masters:
                 # Nope... Put it back into complete and pick it up on the next loop
-                with helpers.ExclusiveConnect(WORKER_DB) as cursor:
+                with hlp.ExclusiveConnect(WORKER_DB) as cursor:
                     cursor.execute("INSERT INTO complete (hash) VALUES (?)", (self.job_id,))
                     cursor.execute("DELETE FROM proc_comp WHERE hash=?", (self.job_id,))
         elif queue_check:
@@ -1425,7 +1425,7 @@ def mcmcmc_mcl(args, params):
     exter_tmp_dir, seqbuddy, parent_cluster, taxa_sep, \
         sql_broker, psi_pred_ss2, progress, expect_num_results = params
     rand_gen = Random(r_seed)
-    mcl_obj = helpers.MarkovClustering(parent_cluster.sim_scores, inflation=inflation, edge_sim_threshold=gq)
+    mcl_obj = hlp.MarkovClustering(parent_cluster.sim_scores, inflation=inflation, edge_sim_threshold=gq)
     mcl_obj.run()
     progress.update('mcl_runs', 1)
     clusters = mcl_obj.clusters
@@ -1442,7 +1442,7 @@ def mcmcmc_mcl(args, params):
             p = Process(target=mc_create_all_by_all_scores, args=(sb_copy, [psi_pred_ss2, sql_broker]))
             p.start()
             seq_ids = sorted([rec.id for rec in sb_copy.records])
-            seq_id_hash = helpers.md5_hash(", ".join(seq_ids))
+            seq_id_hash = hlp.md5_hash(", ".join(seq_ids))
             child_list[seq_id_hash] = [p, indx, cluster_ids]
         else:
             sim_scores, alb_obj = retrieve_all_by_all_scores(sb_copy, psi_pred_ss2, sql_broker, quiet=True)
@@ -1800,11 +1800,11 @@ class Seqs2Clusters(object):
 
         out_of_cluster_output = ""
         if len(clust_null_df) > 1:
-            cluster_nulls_output += '"%s":{"mu":%s,"sigma":%s},' % (clust.name(), helpers.mean(clust_null_df.r_square),
-                                                                    helpers.std(clust_null_df.r_square))
+            cluster_nulls_output += '"%s":{"mu":%s,"sigma":%s},' % (clust.name(), hlp.mean(clust_null_df.r_square),
+                                                                    hlp.std(clust_null_df.r_square))
             log_output += "\tN: %s\n" % len(clust_null_df)
-            log_output += "\tMean: %s\n" % helpers.mean(clust_null_df.r_square)
-            log_output += "\tStd: %s\n\n" % helpers.std(clust_null_df.r_square)
+            log_output += "\tMean: %s\n" % hlp.mean(clust_null_df.r_square)
+            log_output += "\tStd: %s\n\n" % hlp.std(clust_null_df.r_square)
         else:
             log_output += "\tN: 1\n"
             log_output += "\tMean: Null\n"
@@ -1849,7 +1849,7 @@ class Seqs2Clusters(object):
             if df.empty:
                 test_mean = 0
             else:
-                test_mean = helpers.mean(df.r_square)
+                test_mean = hlp.mean(df.r_square)
 
             seq2group_dists += '"%s":%s,' % (clust.name(), test_mean)
             log_output += "%s\n" % test_mean
@@ -2038,20 +2038,20 @@ class Seqs2Clusters(object):
             global_null_df = global_null_df.loc[global_null_df.rec_id1 != global_null_df.rec_id2].reset_index(drop=True)
             log_output += "# Global null R² distribution statistics #\n"
             log_output += "\tN: %s\n" % len(global_null_df)
-            log_output += "\tMean: %s\n" % helpers.mean(global_null_df.r_square)
-            log_output += "\tStd: %s\n\n" % helpers.std(global_null_df.r_square)
+            log_output += "\tMean: %s\n" % hlp.mean(global_null_df.r_square)
+            log_output += "\tStd: %s\n\n" % hlp.std(global_null_df.r_square)
 
             out_of_cluster_df = out_of_cluster_df.reset_index(drop=True)
             log_output += "# Out of cluster R² distribution statistics #\n"
             log_output += "\tN: %s\n" % len(out_of_cluster_df)
-            log_output += "\tMean: %s\n" % helpers.mean(out_of_cluster_df.r_square)
-            log_output += "\tStd: %s\n\n" % helpers.std(out_of_cluster_df.r_square)
+            log_output += "\tMean: %s\n" % hlp.mean(out_of_cluster_df.r_square)
+            log_output += "\tStd: %s\n\n" % hlp.std(out_of_cluster_df.r_square)
 
             # Create Gaussian distribution object that is clipped off below 0 and above 1
-            null_dist = self._create_truncnorm(helpers.mean(global_null_df.r_square),
-                                               helpers.std(global_null_df.r_square))
-            out_of_cluster_dist = self._create_truncnorm(helpers.mean(out_of_cluster_df.r_square),
-                                                         helpers.std(out_of_cluster_df.r_square))
+            null_dist = self._create_truncnorm(hlp.mean(global_null_df.r_square),
+                                               hlp.std(global_null_df.r_square))
+            out_of_cluster_dist = self._create_truncnorm(hlp.mean(out_of_cluster_df.r_square),
+                                                         hlp.std(out_of_cluster_df.r_square))
 
             # Calculate how well every sequence fits with every group
             log_output += "# Group placements #\n"
@@ -2148,7 +2148,7 @@ class Seqs2Clusters(object):
                                 if df.empty:
                                     test_mean = 0
                                 else:
-                                    test_mean = helpers.mean(df.r_square)
+                                    test_mean = hlp.mean(df.r_square)
                                 seq2group_dists[si][orig_clust] = test_mean
 
                         # Update against new cluster
@@ -2162,7 +2162,7 @@ class Seqs2Clusters(object):
                             if df.empty:
                                 test_mean = 0
                             else:
-                                test_mean = helpers.mean(df.r_square)
+                                test_mean = hlp.mean(df.r_square)
                             seq2group_dists[si][group_id] = test_mean
                         breakout = False
                         break
@@ -2360,7 +2360,7 @@ class _SetupAction(argparse.Action):
 
 def full_run(in_args):
     tmp_name = "".join([choice(br.string.ascii_letters + br.string.digits) for _ in range(10)])
-    logger_obj = helpers.Logger(tmp_name)
+    logger_obj = hlp.Logger(tmp_name)
     logging.info("*************************** Recursive Dynamic Markov Clustering ****************************")
     logging.warning(str(VERSION))
     logging.info("********************************************************************************************\n")
@@ -2449,7 +2449,7 @@ Please do so now:
 
     sqlite_path = join(in_args.outdir, "sqlite_db.sqlite") if not in_args.sqlite_db \
         else os.path.abspath(in_args.sqlite_db)
-    broker = helpers.SQLiteBroker(db_file=sqlite_path, lock_wait_time=in_args.lock_wait_time)
+    broker = hlp.SQLiteBroker(db_file=sqlite_path, lock_wait_time=in_args.lock_wait_time)
     broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
                                        "graph TEXT", "cluster_score TEXT"])
     broker.start_broker()
@@ -2491,7 +2491,7 @@ Continue? y/[n] """ % len(sequences)
         heartbeat.end()
         sys.exit()
     seq_ids_str = ", ".join(sorted([rec.id for rec in sequences.records]))
-    seq_ids_hash = helpers.md5_hash(seq_ids_str)
+    seq_ids_hash = hlp.md5_hash(seq_ids_str)
 
     # Check if job has been run already
     if broker.query("SELECT (hash) FROM data_table WHERE hash=?", (seq_ids_hash,)) == seq_ids_hash:
