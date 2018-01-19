@@ -2536,6 +2536,9 @@ Continue? y/[n] """ % len(sequences)
     global CPUS
     CPUS = in_args.max_cpus
 
+    # Write a copy of input sequences
+    sequences.write(join(in_args.outdir, "input_seqs.fa"), out_format="fasta")
+
     # PSIPRED
     logging.warning("\n** PSI-Pred **")
     records_missing_ss_files = []
