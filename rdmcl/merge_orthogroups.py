@@ -10,20 +10,28 @@ Only allow groups to be placed in larger groups
 try:
     from .compare_homolog_groups import prepare_clusters, Cluster
     from . import helpers as hlp
+    from . import rdmcl
 except ImportError:
     from compare_homolog_groups import prepare_clusters, Cluster
     import helpers as hlp
+    import rdmcl
 
 from buddysuite import buddy_resources as br
+from buddysuite import SeqBuddy as Sb
 import sys
 import os
 from os.path import join
+from io import StringIO
 import argparse
 import pandas as pd
 from datetime import date
+from subprocess import Popen, PIPE
+from multiprocessing import Lock
+import scipy.stats
 
 VERSION = hlp.VERSION
 VERSION.name = "merge_orthogroups"
+LOCK = Lock()
 
 
 class Check(object):
@@ -80,7 +88,7 @@ class Check(object):
             between_group_rsquares = pd.read_csv(join(self.rdmcl_dir, "hmm", "between_group_rsquares.csv"))
         return between_group_rsquares
 
-    def check(self, group_name):
+    def check_existing_group(self, group_name):
         if group_name not in self.clusters:
             raise IndexError("Provided group name '%s' not found in named clusters: %s" %
                              (group_name, "\n".join(br.num_sorted([g for g in self.clusters]))))
@@ -111,6 +119,81 @@ class Check(object):
                                 round(orig_clust.score() + query_score, 3),
                                 round(new_clust.score(), 3)])
         self.output = sorted(self.output, key=lambda x: (x[1], -x[2]), reverse=True)
+
+    @staticmethod
+    def _mc_fwd_back_run(rec, args):
+        hmm_scores_file, hmm_path, query_file = args
+        hmm_path = join(hmm_path, "%s.hmm" % rec.id)
+
+        fwdback_output = Popen("%s %s %s" % (rdmcl.HMM_FWD_BACK, hmm_path, query_file),
+                               shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
+        fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
+                                    header=None, comment="#", index_col=False)
+        fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
+        fwd_scores_df["hmm_id"] = rec.id
+        hmm_fwd_scores = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
+        hmm_fwd_scores = hmm_fwd_scores.append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
+                                               ignore_index=True)
+        hmm_fwd_scores = hmm_fwd_scores.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
+        with LOCK:
+            with open(hmm_scores_file, "a") as ofile:
+                ofile.write(hmm_fwd_scores)
+        return
+
+    def check_new_sequence(self, rec):
+        seqs_file = join(self.rdmcl_dir, "input_seqs.fa")
+        query_file = br.TempFile()
+        query_file.write(rec.format("fasta"))
+        sequences = Sb.SeqBuddy(seqs_file)
+        hmm_path = join(self.rdmcl_dir, "hmm", "%s.hmm" % rec.id)
+
+        fwdback_output = Popen("%s %s %s" % (rdmcl.HMM_FWD_BACK, hmm_path, seqs_file),
+                               shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
+        fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
+                                    header=None, comment="#", index_col=False)
+        fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
+        fwd_scores_df["hmm_id"] = rec.id
+
+        hmm_fwd_scores = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
+        hmm_fwd_scores = hmm_fwd_scores.append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
+                                               ignore_index=True)
+
+        hmm_scores_file = br.TempFile()
+        #for seq in sequences.records:
+        #    self._mc_fwd_back_run(seq, [hmm_scores_file.path, join(self.rdmcl_dir, "hmm"), query_file.path])
+        br.run_multicore_function(sequences.records, self._mc_fwd_back_run,
+                                  [hmm_scores_file.path, join(self.rdmcl_dir, "hmm"), query_file.path], quiet=True)
+        temp_df = pd.read_csv(hmm_scores_file.path, header=None)
+
+        temp_df.colums = ["hmm_id", "rec_id", "fwd_raw"]
+        hmm_fwd_scores = hmm_fwd_scores.append(temp_df).reset_index(drop=True)
+
+        # Don't recalculate the entire r_squares matrix
+        for seq in sequences.records:
+            fwd1 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == seq.id].sort_values(by="hmm_id").fwd_raw
+            fwd2 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec.id].sort_values(by="hmm_id").fwd_raw
+            corr = scipy.stats.pearsonr(fwd1, fwd2)
+            comparison = pd.DataFrame(data=[[seq.id, rec.id, corr[0]**2]],
+                                      columns=["rec_id1", "rec_id2", "r_square"])
+            self.r_squares = self.r_squares.append(comparison, ignore_index=True)
+
+        self.output = []
+        for g, seqs in self.clusters.items():
+            compare = self.r_squares.loc[((self.r_squares["rec_id1"] == rec.id) &
+                                          (self.r_squares["rec_id2"].isin(seqs))) |
+                                         ((self.r_squares["rec_id1"].isin(seqs)) &
+                                          (self.r_squares["rec_id2"] == rec.id)) &
+                                         (self.r_squares["rec_id1"] != self.r_squares["rec_id2"])].copy()
+
+            ave, std = hlp.mean(compare.r_square), hlp.std(compare.r_square)
+            upper2 = ave + (std * 2)
+            upper2 = 1 if upper2 > 1 else upper2
+            lower2 = ave - (std * 2)
+            lower2 = 0 if lower2 < 0 else lower2
+            self.output.append([g, round(self.within_group_dist.cdf(upper2) - self.within_group_dist.cdf(lower2), 4),
+                                round(self.between_group_dist.cdf(upper2) - self.between_group_dist.cdf(lower2), 4)])
+        self.output = sorted(self.output, key=lambda x: (x[1], -x[2]), reverse=True)
+        return
 
     def merge(self, merge_group_name, force=False):
         merge_group = [l for l in self.output if l[0] == merge_group_name]
@@ -262,7 +345,7 @@ def main():
 
     check = Check(in_args.rdmcl_dir)
     try:
-        check.check(in_args.group_name)
+        check.check_existing_group(in_args.group_name)
     except IndexError as err:
         if "Provided group name" not in str(err):
             raise err
