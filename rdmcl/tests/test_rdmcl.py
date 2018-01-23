@@ -1764,6 +1764,7 @@ def test_mc_fwd_back_run(hf):
         shutil.copyfile(join(hf.resource_path, "hmms", "%s.hmm" % seq_id), join(hmm_dir, "%s.hmm" % seq_id))
     
     seq2clust_obj = rdmcl.Seqs2Clusters([], 3, parent_sb, tmp_dir.path)
+    parent_sb.write(join(seq2clust_obj.tmp_dir.path, "seqs.fa"))
 
     hmm_scores_file = br.TempFile()
     seq2clust_obj._mc_fwd_back_run(parent_sb.records[0], [hmm_scores_file.path])

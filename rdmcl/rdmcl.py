@@ -1876,10 +1876,12 @@ class Seqs2Clusters(object):
         hmm_scores_file = args[0]
         hmm_path = join(self.outdir, "hmm", "%s.hmm" % rec.id)
 
-        fwdback_output = Popen("%s %s %s" % (HMM_FWD_BACK, hmm_path, self.tmp_dir.subfiles[0]),
+        fwdback_output = Popen("%s %s %s" % (HMM_FWD_BACK, hmm_path, join(self.tmp_dir.path, self.tmp_dir.subfiles[0])),
                                shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
+
         fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
                                     header=None, comment="#", index_col=False)
+
         fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
         fwd_scores_df["hmm_id"] = rec.id
 
@@ -1906,7 +1908,7 @@ class Seqs2Clusters(object):
     def create_hmm_fwd_score_df(self):
         # Create HMM forward-score dataframe from initial input --> p(seq|hmm)
         self.create_hmms_for_every_rec()
-        self.seqbuddy.write(self.tmp_dir.subfiles[0], out_format="fasta")
+        self.seqbuddy.write(join(self.tmp_dir.path, self.tmp_dir.subfiles[0]), out_format="fasta")
         hmm_scores_file = br.TempFile()
         br.run_multicore_function(self.seqbuddy.records, self._mc_fwd_back_run, [hmm_scores_file.path],
                                   max_processes=CPUS, quiet=True)
