@@ -94,12 +94,20 @@ def test_start_worker_fetch_queue(hf, capsys, monkeypatch):
 
     monkeypatch.setattr(launch_worker.Worker, "process_final_results", kill)
 
+    hb_con = sqlite3.connect(os.path.join(temp_dir.path, "heartbeat_db.sqlite"))
+    hb_cursor = hb_con.cursor()
+    hb_cursor.execute("INSERT INTO "
+                      "heartbeat (thread_type, pulse) "
+                      "VALUES ('master', ?)", (round(time.time()) + 5,))
+    master_id = hb_cursor.lastrowid
+    hb_con.commit()
+
     worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=1)
     work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
     work_cursor = work_con.cursor()
     work_cursor.execute("INSERT INTO "
                         "waiting (hash, master_id) "
-                        "VALUES ('foo', 2)")
+                        "VALUES ('foo', ?)", (master_id,))
     work_cursor.execute("INSERT INTO "
                         "queue (hash, psi_pred_dir, align_m, align_p, trimal, gap_open, gap_extend) "
                         "VALUES ('foo', ?, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
@@ -123,6 +131,7 @@ def test_start_worker_fetch_queue(hf, capsys, monkeypatch):
     assert "Preparing all-by-all data" in out
     assert "Running all-by-all data (6 comparisons)" in out
     assert "Processing final results" in out
+    hb_con.close()
     work_con.close()
 
 
@@ -161,13 +170,22 @@ def test_start_worker_missing_ss2(hf, monkeypatch, capsys):
     temp_dir = br.TempDir()
     temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
     temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
+
+    hb_con = sqlite3.connect(os.path.join(temp_dir.path, "heartbeat_db.sqlite"))
+    hb_cursor = hb_con.cursor()
+    hb_cursor.execute("INSERT INTO "
+                      "heartbeat (thread_type, pulse) "
+                      "VALUES ('master', ?)", (round(time.time()) + 5,))
+    master_id = hb_cursor.lastrowid
+    hb_con.commit()
+
     worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=15)
 
     work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
     work_cursor = work_con.cursor()
     work_cursor.execute("INSERT INTO "
                         "waiting (hash, master_id) "
-                        "VALUES ('foo', 2)")
+                        "VALUES ('foo', ?)", (master_id,))
 
     # This first one will raise a FileNotFoundError and will `continue` because it's a subjob
     work_cursor.execute("INSERT INTO "
@@ -191,7 +209,8 @@ def test_start_worker_missing_ss2(hf, monkeypatch, capsys):
     with pytest.raises(SystemExit):
         worker.start()
     out, err = capsys.readouterr()
-    assert "Terminating Worker_2 because of something wrong with primary cluster foo" in out
+    assert "Terminating Worker_3 because of something wrong with primary cluster foo" in out
+    hb_con.close()
     work_con.close()
 
 
@@ -199,6 +218,12 @@ def test_start_worker_deleted_check(hf, capsys, monkeypatch):
     temp_dir = br.TempDir()
     temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
     temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
+    hb_con = sqlite3.connect(os.path.join(temp_dir.path, "heartbeat_db.sqlite"))
+    hb_cursor = hb_con.cursor()
+    hb_cursor.execute("INSERT INTO "
+                      "heartbeat (thread_type, pulse) "
+                      "VALUES ('master', ?)", (round(time.time()) + 5,))
+    hb_con.commit()
     worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=1)
     monkeypatch.setattr(helpers, "dummy_func", lambda *_: os.remove(worker.worker_file))
     monkeypatch.setattr(launch_worker.Worker, "check_masters", lambda *_, **__: True)
@@ -207,21 +232,31 @@ def test_start_worker_deleted_check(hf, capsys, monkeypatch):
         worker.start()
 
     out, err = capsys.readouterr()
-    assert "Terminating Worker_2 because of deleted check file" in out, print(out)
+    assert "Terminating Worker_3 because of deleted check file" in out, print(out)
     assert not os.path.isfile(worker.data_file)
+    hb_con.close()
 
 
 def test_start_worker_deal_with_subjobs(hf, capsys, monkeypatch):
     temp_dir = br.TempDir()
     temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
     temp_dir.copy_to("%sheartbeat_db.sqlite" % hf.resource_path)
+
+    hb_con = sqlite3.connect(os.path.join(temp_dir.path, "heartbeat_db.sqlite"))
+    hb_cursor = hb_con.cursor()
+    hb_cursor.execute("INSERT INTO "
+                      "heartbeat (thread_type, pulse) "
+                      "VALUES ('master', ?)", (round(time.time()) + 5,))
+    master_id = hb_cursor.lastrowid
+    hb_con.commit()
+
     worker = launch_worker.Worker(temp_dir.path, heartrate=1, max_wait=5, cpus=3, job_size_coff=2)
 
     work_con = sqlite3.connect(os.path.join(temp_dir.path, "work_db.sqlite"))
     work_cursor = work_con.cursor()
     work_cursor.execute("INSERT INTO "
                         "waiting (hash, master_id) "
-                        "VALUES ('foo', 2)")
+                        "VALUES ('foo', ?)", (master_id,))
     work_cursor.execute("INSERT INTO "
                         "queue (hash, psi_pred_dir, align_m, align_p, trimal, gap_open, gap_extend) "
                         "VALUES ('foo', ?, 'clustalo', '', 'gappyout 50 90 clean', 0, 0)",
@@ -253,7 +288,7 @@ def test_start_worker_deal_with_subjobs(hf, capsys, monkeypatch):
         worker.start()
 
     out, err = capsys.readouterr()
-    assert "Terminating Worker_2 because of unit test kill" in out, print(out)
+    assert "Terminating Worker_3 because of unit test kill" in out, print(out)
 
     # A second run is pulling a subjob off the queue (first one fails because no MSA available)
     work_cursor.execute("INSERT INTO "
@@ -270,7 +305,8 @@ def test_start_worker_deal_with_subjobs(hf, capsys, monkeypatch):
         worker.start()
 
     out, err = capsys.readouterr()
-    assert "Terminating Worker_3 because of unit test kill" in out, print(out)
+    assert "Terminating Worker_4 because of unit test kill" in out, print(out)
+    hb_con.close()
     work_con.close()
 
 
