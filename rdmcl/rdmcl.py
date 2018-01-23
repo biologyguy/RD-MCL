@@ -1440,6 +1440,8 @@ def mcmcmc_mcl(args, params):
         # Queue jobs if appropriate
         if WORKER_DB and os.path.isfile(WORKER_DB) and len(cluster_ids) >= MIN_SIZE_TO_WORKER:
             p = Process(target=mc_create_all_by_all_scores, args=(sb_copy, [psi_pred_ss2, sql_broker]))
+            # Need to slow the start down a little, otherwise it can run into concurrency issues
+            time.sleep(0.1)
             p.start()
             seq_ids = sorted([rec.id for rec in sb_copy.records])
             seq_id_hash = hlp.md5_hash(", ".join(seq_ids))
