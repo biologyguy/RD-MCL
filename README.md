@@ -10,7 +10,7 @@
  speciation'[¹](https://github.com/biologyguy/RD-MCL#references), which is now a concept broadly used as a predictor of 
  shared gene function among species[²⁻³](https://github.com/biologyguy/RD-MCL#references). From a systematics 
  perspective, orthology also represents a natural schema for classifying/naming genes coherently. As we move into the 
- foreseeable future, when the genomes of all species on the planet have been sequences, it will be important to catalog 
+ foreseeable future, when the genomes of all species on the planet have been sequenced, it will be important to catalog 
  the evolutionary history of all genes and label them in a rational way. Considerable effort has been made to 
  programmatically identify orthologs, leading to excellent software solutions and several large public databases for 
  genome-scale predictions. What is currently missing, however, is a convenient method for fine-grained analysis of 
