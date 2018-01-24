@@ -38,7 +38,7 @@ from io import StringIO
 from subprocess import Popen, PIPE
 from multiprocessing import Lock, Process
 from random import choice, Random, randint, random
-from math import ceil, log2
+from math import log2
 from collections import OrderedDict
 from copy import deepcopy, copy
 # from hashlib import md5
@@ -1224,10 +1224,7 @@ def prepare_all_by_all(seqbuddy, psipred_dfs, cpus):
                 data[indx] = (rec1, rec2, psipred_dfs[rec1], psipred_dfs[rec2])
                 indx += 1
 
-        data_len = len(data)
-        n = int(ceil(data_len / cpus))
-        data = [data[i:i + n] for i in range(0, data_len, n)]
-        return data_len, data
+        return len(data), hlp.chunk_list(data, cpus)
 
 
 def set_final_sim_scores(sim_scores):

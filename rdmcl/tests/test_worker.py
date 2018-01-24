@@ -622,6 +622,7 @@ Bch-PanxαA Bch-PanxαE
 
     with open(os.path.join(subjob_dir, "3_of_3.txt"), "r") as ifile:
         assert ifile.read() == """\
+Bch-PanxαC Bch-PanxαD
 Bch-PanxαC Bch-PanxαE
 Bch-PanxαD Bch-PanxαE
 """
