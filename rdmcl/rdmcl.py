@@ -1916,6 +1916,7 @@ class Seqs2Clusters(object):
     def create_fwd_score_rsquared_matrix(self):
         # Calculate all-by-all matrix of correlation coefficients on fwd scores among all sequences
         hmm_fwd_scores = self.create_hmm_fwd_score_df()
+        hmm_fwd_scores.to_csv(join(self.outdir, "hmm", "hmm_fwd_scores.csv"), index=False)
         rsquare_vals_df = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
         sub_recs = list(self.seqbuddy.records[1:])
         for rec1 in self.seqbuddy.records:
