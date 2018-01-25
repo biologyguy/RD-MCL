@@ -1816,10 +1816,14 @@ def test_create_hmm_fwd_score_df(hf, monkeypatch):
 
 
 def test_create_fwd_score_rsquared_matrix(hf, monkeypatch):
+    # Note that this calls _mc_rsquare_vals(), so the two are bundled in one test
     parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
     parent_sb.records = [rec for rec in parent_sb.records if rec.id in
                          ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE']]
-    seq2clust_obj = rdmcl.Seqs2Clusters([], 3, parent_sb, "foo.path")
+    tmp_dir = br.TempDir()
+    tmp_dir.subdir("hmm")
+
+    seq2clust_obj = rdmcl.Seqs2Clusters([], 3, parent_sb, tmp_dir.path)
     hmm_fwd_scores = pd.read_csv(join(hf.resource_path, "hmms", "fwd_df.csv"), index_col=0)
 
     monkeypatch.setattr(rdmcl.Seqs2Clusters, "_separate_large_small", lambda *_: True)
@@ -1827,18 +1831,18 @@ def test_create_fwd_score_rsquared_matrix(hf, monkeypatch):
                         lambda *_: hmm_fwd_scores)
 
     rsquare_vals_df = seq2clust_obj.create_fwd_score_rsquared_matrix()
-    # rsquare_vals_df.to_csv("tests/unit_test_resources/hmms/fwd_r2.csv")
+
     assert str(rsquare_vals_df) == """\
       rec_id1     rec_id2        r_square
-0  BOL-PanxαB  Bab-PanxαA  0.016894041431
-1  BOL-PanxαB  Bch-PanxαA  0.087311057754
-2  BOL-PanxαB  Bfo-PanxαE  0.274041115357
-3  BOL-PanxαB  BOL-PanxαB  1.000000000000
-4  Bab-PanxαA  Bch-PanxαA  0.497451379268
-5  Bab-PanxαA  Bfo-PanxαE  0.453877689738
-6  Bab-PanxαA  Bab-PanxαA  1.000000000000
-7  Bch-PanxαA  Bfo-PanxαE  0.390838714109
-8  Bch-PanxαA  Bch-PanxαA  1.000000000000
+0  BOL-PanxαB  BOL-PanxαB  1.000000000000
+1  BOL-PanxαB  Bab-PanxαA  0.016894041431
+2  BOL-PanxαB  Bch-PanxαA  0.087311057754
+3  BOL-PanxαB  Bfo-PanxαE  0.274041115357
+4  Bab-PanxαA  Bab-PanxαA  1.000000000000
+5  Bab-PanxαA  Bch-PanxαA  0.497451379268
+6  Bab-PanxαA  Bfo-PanxαE  0.453877689738
+7  Bch-PanxαA  Bch-PanxαA  1.000000000000
+8  Bch-PanxαA  Bfo-PanxαE  0.390838714109
 9  Bfo-PanxαE  Bfo-PanxαE  1.000000000000""", print(rsquare_vals_df)
 
 

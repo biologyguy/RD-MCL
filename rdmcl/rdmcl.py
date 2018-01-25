@@ -1913,23 +1913,42 @@ class Seqs2Clusters(object):
         hmm_fwd_scores.columns = ["hmm_id", "rec_id", "fwd_raw"]
         return hmm_fwd_scores
 
+    @staticmethod
+    def _mc_rsquare_vals(recs, args):
+        rec1, sub_recs = recs
+        hmm_fwd_scores, tmp_rsquares_file = args
+        rsquare_vals_df = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
+        for rec2 in sub_recs:
+            fwd1 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec1.id].sort_values(by="hmm_id").fwd_raw
+            fwd2 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec2.id].sort_values(by="hmm_id").fwd_raw
+            corr = scipy.stats.pearsonr(fwd1, fwd2)
+            comparison = pd.DataFrame(data=[[rec1.id, rec2.id, corr[0]**2]],
+                                      columns=["rec_id1", "rec_id2", "r_square"])
+            rsquare_vals_df = rsquare_vals_df.append(comparison, ignore_index=True)
+        rsquare_vals_df = rsquare_vals_df.append(pd.DataFrame(data=[[rec1.id, rec1.id, 1.0]],
+                                                 columns=["rec_id1", "rec_id2", "r_square"]), ignore_index=True)
+
+        rsquare_vals_df = rsquare_vals_df.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
+        with LOCK:
+            with open(tmp_rsquares_file, "a") as ofile:
+                ofile.write(rsquare_vals_df)
+
     def create_fwd_score_rsquared_matrix(self):
         # Calculate all-by-all matrix of correlation coefficients on fwd scores among all sequences
         hmm_fwd_scores = self.create_hmm_fwd_score_df()
         hmm_fwd_scores.to_csv(join(self.outdir, "hmm", "hmm_fwd_scores.csv"), index=False)
-        rsquare_vals_df = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
         sub_recs = list(self.seqbuddy.records[1:])
-        for rec1 in self.seqbuddy.records:
-            for rec2 in sub_recs:
-                fwd1 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec1.id].sort_values(by="hmm_id").fwd_raw
-                fwd2 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec2.id].sort_values(by="hmm_id").fwd_raw
-                corr = scipy.stats.pearsonr(fwd1, fwd2)
-                comparison = pd.DataFrame(data=[[rec1.id, rec2.id, corr[0]**2]],
-                                          columns=["rec_id1", "rec_id2", "r_square"])
-                rsquare_vals_df = rsquare_vals_df.append(comparison, ignore_index=True)
-            rsquare_vals_df = rsquare_vals_df.append(pd.DataFrame(data=[[rec1.id, rec1.id, 1.0]],
-                                                     columns=["rec_id1", "rec_id2", "r_square"]), ignore_index=True)
+        multicore_data = [None for _ in range(len(self.seqbuddy))]
+        tmp_rsquares_file = br.TempFile()
+        for indx, rec1 in enumerate(self.seqbuddy.records):
+            multicore_data[indx] = (rec1, sub_recs)
             sub_recs = sub_recs[1:]
+        br.run_multicore_function(multicore_data, self._mc_rsquare_vals, [hmm_fwd_scores, tmp_rsquares_file.path],
+                                  max_processes=CPUS, quiet=True)
+
+        rsquare_vals_df = pd.read_csv(tmp_rsquares_file.path, header=None)
+        rsquare_vals_df.columns = ["rec_id1", "rec_id2", "r_square"]
+        rsquare_vals_df = rsquare_vals_df.sort_values(by=["rec_id1", "rec_id2"]).reset_index(drop=True)
         return rsquare_vals_df
 
     @staticmethod
