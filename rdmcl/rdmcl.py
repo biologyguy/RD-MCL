@@ -199,6 +199,11 @@ class Cluster(object):
         self.seq_ids_str = str(", ".join(seq_ids))
         self.seq_id_hash = hlp.md5_hash(self.seq_ids_str)
         self.seq_ids = set(seq_ids)
+        self.taxa = OrderedDict()
+        for next_seq_id in self.seq_ids:
+            taxa = next_seq_id.split(self.taxa_sep)[0]
+            self.taxa.setdefault(taxa, [])
+            self.taxa[taxa].append(next_seq_id)
 
     def collapse(self):
         breakout = False
@@ -2760,14 +2765,18 @@ Continue? y/[n] """ % len(sequences)
 
     for clust in final_clusters:
         clust.parent = uncollapsed_group_0
-        if clust.collapsed_genes:
+        collapsed = False
+        for seq_id in clust.seq_ids:
+            if seq_id in group_0_cluster.collapsed_genes:
+                clust.reset_seq_ids(group_0_cluster.collapsed_genes[seq_id] + list(clust.seq_ids))
+                with open(join(in_args.outdir, "paralog_cliques"), "a") as outfile:
+                    if not collapsed:
+                        outfile.write("# %s\n" % clust.name())
+                        collapsed = True
+                    outfile.write('{"%s": %s}\n' % (seq_id, group_0_cluster.collapsed_genes[seq_id]))
+        if collapsed:
             with open(join(in_args.outdir, "paralog_cliques"), "a") as outfile:
-                outfile.write("# %s\n" % clust.name())
-                json.dump(clust.collapsed_genes, outfile)
-                outfile.write("\n\n")
-            for gene_id, paralog_list in clust.collapsed_genes.items():
-                clust.reset_seq_ids(paralog_list + list(clust.seq_ids))
-                clust.taxa[gene_id.split(in_args.taxa_sep)[0]].append(gene_id)
+                outfile.write("\n")
         clust.score(force=True)
 
     logging.warning("Preparing final_clusters.txt")

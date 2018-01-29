@@ -136,10 +136,12 @@ def test_cluster_instantiate_child(hf):
 
 def test_cluster_reset_seq_ids(hf):
     cluster = rdmcl.Cluster(*hf.base_cluster_args())
+    assert cluster.taxa["BOL"] == ['BOL-PanxαA', 'BOL-PanxαB', 'BOL-PanxαC', 'BOL-PanxαD', 'BOL-PanxαE', 'BOL-PanxαF',
+                                   'BOL-PanxαG', 'BOL-PanxαH'], print(cluster.taxa["BOL"])
     cluster.reset_seq_ids(['Dgl-PanxαE', 'Bfo-PanxαB', 'Tin-PanxαC', 'BOL-PanxαA', 'Edu-PanxαA',
                            'Bch-PanxαC', 'Vpa-PanxαB', 'Hru-PanxαA', 'Lcr-PanxαH', 'Hca-PanxαB',
                            'Oma-PanxαC', 'Bab-PanxαB', 'Mle-Panxα10A'])
-
+    assert cluster.taxa["BOL"] == ["BOL-PanxαA"], print(cluster.taxa["BOL"])
     assert sorted(cluster.seq_ids) == ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE',
                                        'Edu-PanxαA', 'Hca-PanxαB', 'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A',
                                        'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
