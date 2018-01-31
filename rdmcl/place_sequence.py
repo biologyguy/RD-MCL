@@ -91,7 +91,7 @@ def argparse_init():
 
 
 def main():
-    print("%sPlacement of sequence in RD-MCL clusters%s\n" % (hlp.BOLD, hlp.END))
+    print("%sPlacement of sequence(s) in RD-MCL clusters%s\n" % (hlp.BOLD, hlp.END))
     in_args = argparse_init()
     rdmcl_dir = os.path.abspath(in_args.rdmcl_dir)
 
@@ -99,7 +99,8 @@ def main():
         sys.stderr.write("Error: The provided RD-MCL output directory does not exist.\n")
         sys.exit()
 
-    check_files = ["final_clusters.txt", join("hmm", "rsquares_matrix.csv"), join("hmm", "hmm_fwd_scores.csv")]
+    check_files = ["final_clusters.txt", join("hmm", "rsquares_matrix.csv"),
+                   join("hmm", "hmm_fwd_scores.csv"), "input_seqs.fa"]
     for check_file in check_files:
         if not os.path.isfile(join(rdmcl_dir, check_file)):
             sys.stderr.write("Error: The provided RD-MCL output directory does not "
