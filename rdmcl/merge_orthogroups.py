@@ -42,14 +42,20 @@ class Check(object):
         self.clusters = prepare_clusters(join(self.rdmcl_dir, "final_clusters.txt"), hierarchy=True)
         self.master_clust = Cluster([seq for group, ids in self.clusters.items() for seq in ids])
         self.r_squares = pd.read_csv(join(self.rdmcl_dir, "hmm", "rsquares_matrix.csv"))
-        self.within_group_rsquares = self._prepare_within_group_df()
-        self.within_group_dist = hlp.create_truncnorm(hlp.mean(self.within_group_rsquares.r_square),
-                                                      hlp.std(self.within_group_rsquares.r_square))
-        self.between_group_rsquares = self._prepare_between_group_df()
-        self.between_group_dist = hlp.create_truncnorm(hlp.mean(self.between_group_rsquares.r_square),
-                                                       hlp.std(self.between_group_rsquares.r_square))
+        self.fwd_scores = pd.read_csv(join(self.rdmcl_dir, "hmm", "hmm_fwd_scores.csv"))
+        self.within_group_r2_df = self._prepare_within_group_r2_df()
+        self.within_group_r2_dist = hlp.create_truncnorm(hlp.mean(self.within_group_r2_df.r_square),
+                                                         hlp.std(self.within_group_r2_df.r_square))
+        self.within_group_fwd_df = self._prepare_within_group_fwd_df()
+        self.within_group_fwd_dist = scipy.stats.gaussian_kde(self.within_group_fwd_df.fwd_raw, bw_method='silverman')
 
-    def _prepare_within_group_df(self, force=False):
+        self.btw_group_r2_df = self._prepare_between_group_r2_df()
+        self.btw_group_r2_dist = hlp.create_truncnorm(hlp.mean(self.btw_group_r2_df.r_square),
+                                                      hlp.std(self.btw_group_r2_df.r_square))
+        self.btw_group_fwd_df = self._prepare_between_group_fwd_df()
+        self.btw_group_fwd_dist = scipy.stats.gaussian_kde(self.btw_group_fwd_df.fwd_raw, bw_method='silverman')
+
+    def _prepare_within_group_r2_df(self, force=False):
         if not os.path.isfile(join(self.rdmcl_dir, "hmm", "within_group_rsquares.csv")) or force:
             sys.stderr.write("Preparing hmm/within_group_rsquares.csv...\n")
             within_group_rsquares = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
@@ -65,7 +71,22 @@ class Check(object):
             within_group_rsquares = pd.read_csv(join(self.rdmcl_dir, "hmm", "within_group_rsquares.csv"))
         return within_group_rsquares
 
-    def _prepare_between_group_df(self, force=False):
+    def _prepare_within_group_fwd_df(self, force=False):
+        if not os.path.isfile(join(self.rdmcl_dir, "hmm", "within_group_fwd.csv")) or force:
+            sys.stderr.write("Preparing hmm/within_group_fwd.csv...\n")
+            within_group_fwd = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
+            for g, seqs in self.clusters.items():
+                if len(seqs) < 2:
+                    continue
+                clust_fwd = self.fwd_scores.loc[(self.fwd_scores["rec_id"].isin(seqs)) &
+                                                (self.fwd_scores["hmm_id"].isin(seqs))].copy()
+                within_group_fwd = within_group_fwd.append(clust_fwd, ignore_index=True)
+            within_group_fwd.to_csv(join(self.rdmcl_dir, "hmm", "within_group_fwd.csv"))
+        else:
+            within_group_fwd = pd.read_csv(join(self.rdmcl_dir, "hmm", "within_group_fwd.csv"))
+        return within_group_fwd
+
+    def _prepare_between_group_r2_df(self, force=False):
         if not os.path.isfile(join(self.rdmcl_dir, "hmm", "between_group_rsquares.csv")) or force:
             sys.stderr.write("Preparing hmm/between_group_rsquares.csv...\n")
             between_group_rsquares = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
@@ -87,6 +108,30 @@ class Check(object):
         else:
             between_group_rsquares = pd.read_csv(join(self.rdmcl_dir, "hmm", "between_group_rsquares.csv"))
         return between_group_rsquares
+
+    def _prepare_between_group_fwd_df(self, force=False):
+        file_path = join(self.rdmcl_dir, "hmm", "between_group_fwd.csv")
+        if not os.path.isfile(file_path) or force:
+            sys.stderr.write("Preparing hmm/between_group_fwd.csv...\n")
+            between_group_fwd = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
+            i = 0
+            for g1, seqs1 in self.clusters.items():
+                i += 1
+                if len(seqs1) < 2:
+                    continue
+                for g2, seqs2 in list(self.clusters.items())[i:]:
+                    if len(seqs2) < 2:
+                        continue
+                    clust_fwd = self.fwd_scores.loc[((self.fwd_scores["hmm_id"].isin(seqs1)) &
+                                                     (self.fwd_scores["rec_id"].isin(seqs2))) |
+                                                    ((self.fwd_scores["hmm_id"].isin(seqs2)) &
+                                                     (self.fwd_scores["rec_id"].isin(seqs1))) &
+                                                    (self.fwd_scores["hmm_id"] != self.fwd_scores["rec_id"])].copy()
+                    between_group_fwd = between_group_fwd.append(clust_fwd, ignore_index=True)
+            between_group_fwd.to_csv(file_path)
+        else:
+            between_group_fwd = pd.read_csv(file_path)
+        return between_group_fwd
 
     def check_existing_group(self, group_name):
         if group_name not in self.clusters:
@@ -114,8 +159,8 @@ class Check(object):
             orig_clust = Cluster(self.clusters[g], parent=self.master_clust)
             new_clust = Cluster(self.clusters[g] + query, parent=self.master_clust)
             self.output.append([g,
-                                round(self.within_group_dist.cdf(upper2) - self.within_group_dist.cdf(lower2), 4),
-                                round(self.between_group_dist.cdf(upper2) - self.between_group_dist.cdf(lower2), 4),
+                                round(self.within_group_r2_dist.cdf(upper2) - self.within_group_r2_dist.cdf(lower2), 4),
+                                round(self.btw_group_r2_dist.cdf(upper2) - self.btw_group_r2_dist.cdf(lower2), 4),
                                 round(orig_clust.score() + query_score, 3),
                                 round(new_clust.score(), 3)])
         self.output = sorted(self.output, key=lambda x: (x[1], -x[2]), reverse=True)
@@ -161,8 +206,9 @@ class Check(object):
         hmm_fwd_scores = hmm_fwd_scores.append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
                                                ignore_index=True)
         hmm_scores_file = br.TempFile()
-        br.run_multicore_function(hlp.chunk_list(sequences.records + [rec], br.usable_cpu_count()), self._mc_fwd_back_run,
-                                  [hmm_scores_file.path, join(self.rdmcl_dir, "hmm"), query_file.path], quiet=True)
+        seq_chuncks = hlp.chunk_list(sequences.records + [rec], br.usable_cpu_count())
+        params = [hmm_scores_file.path, join(self.rdmcl_dir, "hmm"), query_file.path]
+        br.run_multicore_function(seq_chuncks, self._mc_fwd_back_run, params, quiet=True)
 
         temp_df = pd.read_csv(hmm_scores_file.path, header=None)
         temp_df.columns = ["hmm_id", "rec_id", "fwd_raw"]
@@ -179,6 +225,7 @@ class Check(object):
 
         self.output = []
         for g, seqs in self.clusters.items():
+            # Calculate R² 95% conf interval first
             compare = self.r_squares.loc[((self.r_squares["rec_id1"] == rec.id) &
                                           (self.r_squares["rec_id2"].isin(seqs))) |
                                          ((self.r_squares["rec_id1"].isin(seqs)) &
@@ -190,8 +237,17 @@ class Check(object):
             upper2 = 1.0 if upper2 > 1 else upper2
             lower2 = ave - (std * 2)
             lower2 = 0.0 if lower2 < 0 else lower2
-            self.output.append([g, round(lower2, 4), round(upper2, 4)])
-        self.output = sorted(self.output, key=lambda x: (x[1], x[2]), reverse=True)
+            self.output.append([g, len(seqs), round(lower2, 4), round(upper2, 4)])
+
+            # Then calculate the Fwd score 95% confidence interval
+            compare = hmm_fwd_scores.loc[(hmm_fwd_scores["rec_id"] == rec.id) &
+                                         (hmm_fwd_scores["hmm_id"].isin(seqs))].copy()
+            ave, std = hlp.mean(compare.fwd_raw), hlp.std(compare.fwd_raw)
+            upper2 = ave + (std * 2)
+            lower2 = ave - (std * 2)
+            self.output[-1] += [round(lower2, 2), round(upper2, 2)]
+
+        self.output = sorted(self.output, key=lambda x: (x[4], x[5]), reverse=True)
         return
 
     def merge(self, merge_group_name, force=False):
@@ -260,8 +316,8 @@ class Check(object):
                 ofile.write("".join(final_lines))
 
             # 4) Update within_group_df and between_group_df files
-            self._prepare_within_group_df(force=True)
-            self._prepare_between_group_df(force=True)
+            self._prepare_within_group_r2_df(force=True)
+            self._prepare_between_group_r2_df(force=True)
 
             # 5) Delete group HMM
             if os.path.isfile(join(self.rdmcl_dir, "hmm", self.group_name)):

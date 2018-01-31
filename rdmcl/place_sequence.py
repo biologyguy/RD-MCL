@@ -22,9 +22,10 @@ import os
 from os.path import join
 import pandas as pd
 from subprocess import Popen, PIPE
-from multiprocessing import Lock, Process
+from multiprocessing import Lock
 from io import StringIO
 import argparse
+import numpy as np
 
 VERSION = hlp.VERSION
 VERSION.name = "merge_orthogroups"
@@ -89,6 +90,7 @@ def argparse_init():
 
 
 def main():
+    print("%sPlacement of sequence in RD-MCL clusters%s\n" % (hlp.BOLD, hlp.END))
     in_args = argparse_init()
     rdmcl_dir = os.path.abspath(in_args.rdmcl_dir)
 
@@ -119,16 +121,46 @@ def main():
             with open(join(hmm_dir, "%s.hmm" % rec.id), "w") as _ofile:
                 _ofile.write(align.alignments[0].hmm)
 
+    upper_r2_btw_groups = check.btw_group_r2_dist.mean() + (check.btw_group_r2_dist.std() * 2)
+    upper_r2_btw_groups = 1. if upper_r2_btw_groups > 1 else upper_r2_btw_groups
+    lower_r2_btw_groups = check.btw_group_r2_dist.mean() - (check.btw_group_r2_dist.std() * 2)
+    lower_r2_btw_groups = 0. if lower_r2_btw_groups < 0. else lower_r2_btw_groups
+    print("R² between clusters: {0:0<5} - {1:0<5}".format(round(lower_r2_btw_groups, 3),
+                                                          round(upper_r2_btw_groups, 3)))
+
+    upper_r2_win_groups = check.within_group_r2_dist.mean() + (check.within_group_r2_dist.std() * 2)
+    upper_r2_win_groups = 1. if upper_r2_win_groups > 1 else upper_r2_win_groups
+    lower_r2_win_groups = check.within_group_r2_dist.mean() - (check.within_group_r2_dist.std() * 2)
+    lower_r2_win_groups = 0. if lower_r2_win_groups < 0. else lower_r2_win_groups
+    print("R² within clusters: {0:0<5} - {1:0<5}\n".format(round(lower_r2_win_groups, 3),
+                                                           round(upper_r2_win_groups, 3)))
+
+    resample = check.btw_group_fwd_dist.resample(10000)[0]
+    clique95 = [np.percentile(resample, 2.5), np.percentile(resample, 97.5)]
+
+    print("FwdScore between clusters: {0:0<5} - {1:0<5}".format(round(clique95[0], 3),
+                                                                round(clique95[1], 3)))
+
+    resample = check.within_group_fwd_dist.resample(10000)[0]
+    clique95 = [np.percentile(resample, 2.5), np.percentile(resample, 97.5)]
+
+    print("FwdScore within clusters: {0:0<5} - {1:0<5}\n".format(round(clique95[0], 3),
+                                                                 round(clique95[1], 3)))
+
     for rec in seqbuddy.records:
         check.check_new_sequence(rec)
 
         out_str = "%sTesting %s%s\n" % (hlp.BOLD, rec.id, hlp.END)
         longest_group_name = len(sorted([g[0] for g in check.output], key=lambda x: len(x), reverse=True)[0]) + 2
 
-        out_str += "{2}{0: <{1}}R² 95%-CI{3: <15}\n".format("Groups", longest_group_name, hlp.UNDERLINE, hlp.END)
+        out_str += "{4}{0: <{1}}Size  {2: <17}{3: <17}{5}\n".format("Group", longest_group_name, "R² 95%-CI",
+                                                                    "Forward 95%-CI", hlp.UNDERLINE, hlp.END)
 
+        longest_fwd_score = len(str(check.output[0][4]))
         for output in check.output:
-            out_str += "{0: <{3}}{1:0<6} - {2:0<6}\n".format(*output, longest_group_name)
+            out_str += "{0: <{6}}{1: <6}{2:0<6} - {3:0<6}  {4: <{7}} - {5: <7}\n".format(*output,
+                                                                                         longest_group_name,
+                                                                                         longest_fwd_score)
 
         print(out_str, "\n")
 
@@ -138,7 +170,7 @@ def main():
         sys.exit()
 
     if in_args.merge:
-        #check.merge(in_args.merge, in_args.force)
+        # check.merge(in_args.merge, in_args.force)
         pass
 
 
