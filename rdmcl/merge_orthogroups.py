@@ -166,26 +166,46 @@ class Check(object):
         self.output = sorted(self.output, key=lambda x: (x[1], -x[2]), reverse=True)
 
     @staticmethod
-    def _mc_fwd_back_run(recs, args):
-        hmm_scores_file, hmm_path, query_file = args
-        hmm_fwd_scores = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
-        for rec in recs:
-            next_hmm_path = join(hmm_path, "%s.hmm" % rec.id)
+    def _mc_fwd_back_old_hmms(seq_chunk, args):
+        try:
+            hmm_scores_file, hmm_dir_path, query_file = args
+            hmm_fwd_scores = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
+            for seq in seq_chunk:
+                next_hmm_path = join(hmm_dir_path, "%s.hmm" % seq.id)
 
-            fwdback_output = Popen("%s %s %s" % (rdmcl.HMM_FWD_BACK, next_hmm_path, query_file),
+                fwdback_output = Popen("%s %s %s" % (rdmcl.HMM_FWD_BACK, next_hmm_path, query_file),
+                                       shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
+                fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
+                                            header=None, comment="#", index_col=False)
+                fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
+                fwd_scores_df["hmm_id"] = seq.id
+
+                hmm_fwd_scores = hmm_fwd_scores.append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
+                                                       ignore_index=True)
+
+            hmm_fwd_scores = hmm_fwd_scores.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
+            with LOCK:
+                with open(hmm_scores_file, "a") as ofile:
+                    ofile.write(hmm_fwd_scores)
+        except KeyboardInterrupt:
+            pass
+        return
+
+    @staticmethod
+    def _mc_run_fwd_back_new_hmm(seq_chunk, args):
+        try:
+            rec, out_dir, hmm_path = args
+            seqbuddy = Sb.SeqBuddy(seq_chunk)
+            id_hash = hlp.md5_hash("".join(sorted([seq.id for seq in seqbuddy.records])))
+            seqs_file = join(out_dir, "%s.fa" % id_hash)
+            seqbuddy.write(seqs_file, out_format="fasta")
+            fwdback_output = Popen("%s %s %s" % (rdmcl.HMM_FWD_BACK, hmm_path, seqs_file),
                                    shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
-            fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
-                                        header=None, comment="#", index_col=False)
-            fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
-            fwd_scores_df["hmm_id"] = rec.id
-
-            hmm_fwd_scores = hmm_fwd_scores.append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
-                                                   ignore_index=True)
-
-        hmm_fwd_scores = hmm_fwd_scores.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
-        with LOCK:
-            with open(hmm_scores_file, "a") as ofile:
-                ofile.write(hmm_fwd_scores)
+            with LOCK:
+                with open(join(out_dir, "outfile.csv"), "a") as ofile:
+                    ofile.write(fwdback_output)
+        except KeyboardInterrupt:
+            pass
         return
 
     @staticmethod
@@ -242,23 +262,6 @@ class Check(object):
             pass
         return
 
-    @staticmethod
-    def _mc_run_fwd_back(seq_chunk, args):
-        try:
-            rec, out_dir, hmm_path = args
-            seqbuddy = Sb.SeqBuddy(seq_chunk)
-            id_hash = hlp.md5_hash("".join(sorted([seq.id for seq in seqbuddy.records])))
-            seqs_file = join(out_dir, "%s.fa" % id_hash)
-            seqbuddy.write(seqs_file, out_format="fasta")
-            fwdback_output = Popen("%s %s %s" % (rdmcl.HMM_FWD_BACK, hmm_path, seqs_file),
-                                   shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
-            with LOCK:
-                with open(join(out_dir, "outfile.csv"), "a") as ofile:
-                    ofile.write(fwdback_output)
-        except KeyboardInterrupt:
-            pass
-        return
-
     def check_new_sequence(self, rec, minimum=1):
         seqs_file = join(self.rdmcl_dir, "input_seqs.fa")
         query_file = br.TempFile()
@@ -267,29 +270,28 @@ class Check(object):
         seq_chuncks = hlp.chunk_list(sequences.records, br.usable_cpu_count())
         out_dir = br.TempDir()
         hmm_path = join(self.rdmcl_dir, "hmm", "%s.hmm" % rec.id)
-        br.run_multicore_function(seq_chuncks, self._mc_run_fwd_back, [rec, out_dir.path, hmm_path], quiet=True)
+        br.run_multicore_function(seq_chuncks, self._mc_run_fwd_back_new_hmm, [rec, out_dir.path, hmm_path], quiet=True)
 
         fwd_scores_df = pd.read_csv(join(out_dir.path, "outfile.csv"), delim_whitespace=True,
                                     header=None, comment="#", index_col=False)
         fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
         fwd_scores_df["hmm_id"] = rec.id
 
-        hmm_fwd_scores = self.fwd_scores.copy()
-        hmm_fwd_scores = hmm_fwd_scores.append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
-                                               ignore_index=True)
+        fwd_scores_df = self.fwd_scores.copy().append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
+                                                      ignore_index=True)
         hmm_scores_file = br.TempFile()
         params = [hmm_scores_file.path, join(self.rdmcl_dir, "hmm"), query_file.path]
         seq_chuncks[-1].append(rec)
-        br.run_multicore_function(seq_chuncks, self._mc_fwd_back_run, params, quiet=True)
+        br.run_multicore_function(seq_chuncks, self._mc_fwd_back_old_hmms, params, quiet=True)
 
         temp_df = pd.read_csv(hmm_scores_file.path, header=None)
 
         temp_df.columns = ["hmm_id", "rec_id", "fwd_raw"]
-        hmm_fwd_scores = hmm_fwd_scores.append(temp_df).reset_index(drop=True)
+        fwd_scores_df = fwd_scores_df.append(temp_df).reset_index(drop=True)
 
         # Don't recalculate the entire r_squares matrix
         output_file = br.TempFile()
-        br.run_multicore_function(seq_chuncks, self._mc_r_squares, [rec, hmm_fwd_scores, output_file.path], quiet=True)
+        br.run_multicore_function(seq_chuncks, self._mc_r_squares, [rec, fwd_scores_df, output_file.path], quiet=True)
         comparison = pd.read_csv(output_file.path, header=None)
         comparison.columns = ["rec_id1", "rec_id2", "r_square"]
         self.r_squares = self.r_squares.append(comparison, ignore_index=True)
@@ -297,7 +299,7 @@ class Check(object):
         self.output = []
         clusters = [(g, seqs) for g, seqs in self.clusters.items() if len(seqs) >= minimum]
         output_file.clear()
-        br.run_multicore_function(clusters, self._mc_conf_inters, [rec, hmm_fwd_scores, output_file.path], quiet=True)
+        br.run_multicore_function(clusters, self._mc_conf_inters, [rec, fwd_scores_df, output_file.path], quiet=True)
 
         self.output = output_file.read().strip().split("\n")
         self.output = [line.strip().split(",") for line in self.output]
