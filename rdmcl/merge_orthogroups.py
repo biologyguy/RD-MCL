@@ -121,19 +121,22 @@ class Check(object):
         self.output = sorted(self.output, key=lambda x: (x[1], -x[2]), reverse=True)
 
     @staticmethod
-    def _mc_fwd_back_run(rec, args):
+    def _mc_fwd_back_run(recs, args):
         hmm_scores_file, hmm_path, query_file = args
-        hmm_path = join(hmm_path, "%s.hmm" % rec.id)
-
-        fwdback_output = Popen("%s %s %s" % (rdmcl.HMM_FWD_BACK, hmm_path, query_file),
-                               shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
-        fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
-                                    header=None, comment="#", index_col=False)
-        fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
-        fwd_scores_df["hmm_id"] = rec.id
         hmm_fwd_scores = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
-        hmm_fwd_scores = hmm_fwd_scores.append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
-                                               ignore_index=True)
+        for rec in recs:
+            next_hmm_path = join(hmm_path, "%s.hmm" % rec.id)
+
+            fwdback_output = Popen("%s %s %s" % (rdmcl.HMM_FWD_BACK, next_hmm_path, query_file),
+                                   shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
+            fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
+                                        header=None, comment="#", index_col=False)
+            fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
+            fwd_scores_df["hmm_id"] = rec.id
+
+            hmm_fwd_scores = hmm_fwd_scores.append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
+                                                   ignore_index=True)
+
         hmm_fwd_scores = hmm_fwd_scores.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
         with LOCK:
             with open(hmm_scores_file, "a") as ofile:
@@ -154,25 +157,22 @@ class Check(object):
         fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
         fwd_scores_df["hmm_id"] = rec.id
 
-        hmm_fwd_scores = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
+        hmm_fwd_scores = pd.read_csv(join(self.rdmcl_dir, "hmm", "hmm_fwd_scores.csv"), index_col=False)
         hmm_fwd_scores = hmm_fwd_scores.append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
                                                ignore_index=True)
-
         hmm_scores_file = br.TempFile()
-        #for seq in sequences.records:
-        #    self._mc_fwd_back_run(seq, [hmm_scores_file.path, join(self.rdmcl_dir, "hmm"), query_file.path])
-        br.run_multicore_function(sequences.records, self._mc_fwd_back_run,
+        br.run_multicore_function(hlp.chunk_list(sequences.records + [rec], br.usable_cpu_count()), self._mc_fwd_back_run,
                                   [hmm_scores_file.path, join(self.rdmcl_dir, "hmm"), query_file.path], quiet=True)
-        temp_df = pd.read_csv(hmm_scores_file.path, header=None)
 
-        temp_df.colums = ["hmm_id", "rec_id", "fwd_raw"]
+        temp_df = pd.read_csv(hmm_scores_file.path, header=None)
+        temp_df.columns = ["hmm_id", "rec_id", "fwd_raw"]
         hmm_fwd_scores = hmm_fwd_scores.append(temp_df).reset_index(drop=True)
 
         # Don't recalculate the entire r_squares matrix
         for seq in sequences.records:
-            fwd1 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == seq.id].sort_values(by="hmm_id").fwd_raw
-            fwd2 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec.id].sort_values(by="hmm_id").fwd_raw
-            corr = scipy.stats.pearsonr(fwd1, fwd2)
+            fwd1 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == seq.id].sort_values(by="hmm_id")
+            fwd2 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec.id].sort_values(by="hmm_id")
+            corr = scipy.stats.pearsonr(fwd1.fwd_raw, fwd2.fwd_raw)
             comparison = pd.DataFrame(data=[[seq.id, rec.id, corr[0]**2]],
                                       columns=["rec_id1", "rec_id2", "r_square"])
             self.r_squares = self.r_squares.append(comparison, ignore_index=True)
@@ -187,12 +187,11 @@ class Check(object):
 
             ave, std = hlp.mean(compare.r_square), hlp.std(compare.r_square)
             upper2 = ave + (std * 2)
-            upper2 = 1 if upper2 > 1 else upper2
+            upper2 = 1.0 if upper2 > 1 else upper2
             lower2 = ave - (std * 2)
-            lower2 = 0 if lower2 < 0 else lower2
-            self.output.append([g, round(self.within_group_dist.cdf(upper2) - self.within_group_dist.cdf(lower2), 4),
-                                round(self.between_group_dist.cdf(upper2) - self.between_group_dist.cdf(lower2), 4)])
-        self.output = sorted(self.output, key=lambda x: (x[1], -x[2]), reverse=True)
+            lower2 = 0.0 if lower2 < 0 else lower2
+            self.output.append([g, round(lower2, 4), round(upper2, 4)])
+        self.output = sorted(self.output, key=lambda x: (x[1], x[2]), reverse=True)
         return
 
     def merge(self, merge_group_name, force=False):

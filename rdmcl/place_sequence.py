@@ -96,15 +96,12 @@ def main():
         sys.stderr.write("Error: The provided RD-MCL output directory does not exist.\n")
         sys.exit()
 
-    if not os.path.isfile(join(rdmcl_dir, "final_clusters.txt")):
-        sys.stderr.write("Error: The provided RD-MCL output directory does not "
-                         "contain the necessary file 'final_clusters.txt'.\n")
-        sys.exit()
-
-    if not os.path.isfile(join(rdmcl_dir, "hmm", "rsquares_matrix.csv")):
-        sys.stderr.write("Error: The provided RD-MCL output directory does not "
-                         "contain the necessary file 'hmm/rsquares_matrix.csv'.\n")
-        sys.exit()
+    check_files = ["final_clusters.txt", join("hmm", "rsquares_matrix.csv"), join("hmm", "hmm_fwd_scores.csv")]
+    for check_file in check_files:
+        if not os.path.isfile(join(rdmcl_dir, check_file)):
+            sys.stderr.write("Error: The provided RD-MCL output directory does not "
+                             "contain the necessary file '%s'.\n" % check_file)
+            sys.exit()
 
     check = Check(in_args.rdmcl_dir)
     for seq_id in [seq for g_name, clust in check.clusters.items() for seq in clust]:
@@ -124,7 +121,16 @@ def main():
 
     for rec in seqbuddy.records:
         check.check_new_sequence(rec)
-        print(check.output)
+
+        out_str = "%sTesting %s%s\n" % (hlp.BOLD, rec.id, hlp.END)
+        longest_group_name = len(sorted([g[0] for g in check.output], key=lambda x: len(x), reverse=True)[0]) + 2
+
+        out_str += "{2}{0: <{1}}R² 95%-CI{3: <15}\n".format("Groups", longest_group_name, hlp.UNDERLINE, hlp.END)
+
+        for output in check.output:
+            out_str += "{0: <{3}}{1:0<6} - {2:0<6}\n".format(*output, longest_group_name)
+
+        print(out_str, "\n")
 
     if len(seqbuddy) > 1 and in_args.merge:
         sys.stderr.write("Error: --merge flag provided by multiple query seqeunces present. Can only place one "
@@ -135,5 +141,9 @@ def main():
         #check.merge(in_args.merge, in_args.force)
         pass
 
+
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        br._stderr("\n")
