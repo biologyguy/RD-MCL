@@ -188,7 +188,7 @@ class Check(object):
                 ofile.write(hmm_fwd_scores)
         return
 
-    def check_new_sequence(self, rec):
+    def check_new_sequence(self, rec, minimum=1):
         seqs_file = join(self.rdmcl_dir, "input_seqs.fa")
         query_file = br.TempFile()
         query_file.write(rec.format("fasta"))
@@ -225,6 +225,8 @@ class Check(object):
 
         self.output = []
         for g, seqs in self.clusters.items():
+            if len(seqs) < minimum:
+                continue
             # Calculate R² 95% conf interval first
             compare = self.r_squares.loc[((self.r_squares["rec_id1"] == rec.id) &
                                           (self.r_squares["rec_id2"].isin(seqs))) |

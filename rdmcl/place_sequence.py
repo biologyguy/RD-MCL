@@ -76,7 +76,8 @@ def argparse_init():
 
     # Optional commands
     parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
-    parser_flags.add_argument("--merge", "-m", action="store", metavar="", help="Name of group to add to")
+    parser_flags.add_argument("--min", "-min", action="store", metavar="", type=int, default=5,
+                              help="Only test groups of min size")
     parser_flags.add_argument("--force", "-f", action="store_true",
                               help="Automatically answer 'yes' to any warning messages. Use caution!")
 
@@ -148,7 +149,7 @@ def main():
                                                                  round(clique95[1], 3)))
 
     for rec in seqbuddy.records:
-        check.check_new_sequence(rec)
+        check.check_new_sequence(rec, in_args.min)
 
         out_str = "%sTesting %s%s\n" % (hlp.BOLD, rec.id, hlp.END)
         longest_group_name = len(sorted([g[0] for g in check.output], key=lambda x: len(x), reverse=True)[0]) + 2
@@ -161,17 +162,7 @@ def main():
             out_str += "{0: <{6}}{1: <6}{2:0<6} - {3:0<6}  {4: <{7}} - {5: <7}\n".format(*output,
                                                                                          longest_group_name,
                                                                                          longest_fwd_score)
-
         print(out_str, "\n")
-
-    if len(seqbuddy) > 1 and in_args.merge:
-        sys.stderr.write("Error: --merge flag provided by multiple query seqeunces present. Can only place one "
-                         "sequence at a time.")
-        sys.exit()
-
-    if in_args.merge:
-        # check.merge(in_args.merge, in_args.force)
-        pass
 
 
 if __name__ == '__main__':
