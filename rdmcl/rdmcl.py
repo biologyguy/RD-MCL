@@ -2007,6 +2007,11 @@ class Seqs2Clusters(object):
             rsquare_vals_df = self.create_fwd_score_rsquared_matrix()
             rsquare_vals_df.to_csv(rsquares_df_path, index=False)
 
+        hmm_fwd_scores_path = join(self.outdir, "hmm", "hmm_fwd_scores.csv")
+        if not os.path.isfile(hmm_fwd_scores_path):
+            hmm_fwd_scores = self.create_hmm_fwd_score_df()
+            hmm_fwd_scores.to_csv(hmm_fwd_scores_path, index=False)
+
         valve = br.SafetyValve(round(len(self.clusters[0].get_base_cluster().seq_ids) * 1.2))
         placed = []
 
