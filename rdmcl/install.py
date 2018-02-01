@@ -91,7 +91,7 @@ def setup():
         if not shutil.which("psipred") and not os.path.isfile(os.path.join(SCRIPT_PATH, "psipred", "bin", "psipred")):
             sys.stdout.write("\033[91mRD-MCL depends on PSIPRED, and it is not installed correctly.\033[39m\n"
                              "Please see instructions at"
-                             " github.com/biologyguy/RD-MCL/wiki/Installation-Guide#psipred\n\n")
+                             " github.com/biologyguy/RD-MCL/wiki/Installation-Guide\n\n")
             return
         else:
             sys.stdout.write("\033[92mPSIPRED binary installed\033[39m\n\n")
@@ -154,7 +154,7 @@ def setup():
             Popen("tar -xzf hmmer-3.1b2.tar.gz", shell=True).wait()
             if not os.path.isdir("hmmer-3.1b2"):
                 sys.stdout.write("\033[91mFailed to download HMMER3.\033[39m\nPlease see instructions at"
-                                 " github.com/biologyguy/RD-MCL/wiki/Installation-Guide#hmmer3\n\n")
+                                 " github.com/biologyguy/RD-MCL/wiki/Installation-Guide\n\n")
                 return
             os.chdir("hmmer-3.1b2")
 
@@ -170,21 +170,30 @@ def setup():
             Popen("make generic_fwdback_example", shell=True).wait()
 
             os.makedirs(os.path.join(SCRIPT_PATH, "hmmer"), exist_ok=True)
-            if "hmm_fwd_back" in not_installed:
-                shutil.move("generic_fwdback_example", os.path.join(SCRIPT_PATH, "hmmer", "hmm_fwd_back"))
-            if "hmmbuild" in not_installed:
-                shutil.move("hmmbuild", os.path.join(SCRIPT_PATH, "hmmer", "hmmbuild"))
+            try:
+                if "hmm_fwd_back" in not_installed:
+                    shutil.move("generic_fwdback_example", os.path.join(SCRIPT_PATH, "hmmer", "hmm_fwd_back"))
+                if "hmmbuild" in not_installed:
+                    shutil.move("hmmbuild", os.path.join(SCRIPT_PATH, "hmmer", "hmmbuild"))
+            except FileNotFoundError:
+                sys.stdout.write("\033[91mThere was a problem building the dependency HMMER3.\033[39m\n Please see"
+                                 " instructions at github.com/biologyguy/RD-MCL/wiki/Installation-Guide.\n\n"
+                                 "If the problem persists, please create an issue at"
+                                 " https://github.com/biologyguy/RD-MCL/issues\n\n")
+                return
             os.chdir(cwd)
 
         else:
             sys.stdout.write("\033[91mRD-MCL depends on HMMER3.\033[39m\nPlease see instructions at"
-                             " github.com/biologyguy/RD-MCL/wiki/Installation-Guide#hmmer3\n\n")
+                             " github.com/biologyguy/RD-MCL/wiki/Installation-Guide\n\n")
             return
 
         for program in ["hmmbuild", "hmm_fwd_back"]:
             if not shutil.which(program) and not os.path.isfile(os.path.join(SCRIPT_PATH, "hmmer", program)):
                 sys.stdout.write("\033[91mFailed to install HMMER3 programs.\033[39m\nPlease see instructions at"
-                                 " github.com/biologyguy/RD-MCL/wiki/Installation-Guide#hmmer3\n\n")
+                                 " github.com/biologyguy/RD-MCL/wiki/Installation-Guide\n\n"
+                                 "If the problem persists, please create an issue at"
+                                 " https://github.com/biologyguy/RD-MCL/issues\n\n")
                 return
         else:
             sys.stdout.write("\033[92mHMMER3 binaries installed\033[39m\n\n")
