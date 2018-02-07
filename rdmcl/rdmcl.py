@@ -2116,8 +2116,8 @@ class Seqs2Clusters(object):
                 log_output.write("\t%s\t%s\t%s\n" % (seq_id, group_id, val))
                 log_output.write("\tOut of Clust = %s\n" % out_of_cluster_dist.pdf(val))
                 log_output.write("\tGlobal null = %s\n " % null_dist.pdf(val))
-                log_output.write("\tCluster null = NONE\n" if group_id not in cluster_nulls \
-                                  else "\tCluster null = %s\n" % cluster_nulls[group_id].pdf(val))
+                log_output.write("\tCluster null = NONE\n" if group_id not in cluster_nulls
+                                 else "\tCluster null = %s\n" % cluster_nulls[group_id].pdf(val))
 
                 # If the 'highest' cluster is not the original cluster and is at least 90% smaller than the original
                 # cluster, then check the original cluster first
@@ -2305,9 +2305,9 @@ def argparse_init():
     # Optional commands
     parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
 
-    outdir = join(os.getcwd(), "rdmcl-%s" % time.strftime("%d-%m-%Y"))
-    parser_flags.add_argument("-o", "--outdir", action="store", nargs="?", default=outdir, metavar="path",
-                              help="Where should results be written? (default=%s)" % outdir)
+    parser_flags.add_argument("-o", "--outdir", action="store", nargs="?", metavar="path",
+                              help="Where should results be written? (default=rdmcl-%s-UID)" %
+                                   time.strftime("%d-%m-%Y"))
     parser_flags.add_argument("-rs", "--r_seed", type=int, metavar="",
                               help="Specify a random seed for repeating a specific run")
     parser_flags.add_argument("-sql", "--sqlite_db", action="store", metavar="",
@@ -2368,6 +2368,10 @@ def argparse_init():
     misc.add_argument("-setup", action="setup", dest=argparse.SUPPRESS, default=argparse.SUPPRESS)
 
     in_args = parser.parse_args()
+    if not in_args.outdir:
+        with open(in_args.sequences, "r") as ifile:
+            uid = hlp.md5_hash(ifile.read() + str(in_args))[:6]
+        in_args.outdir = join(os.getcwd(), "rdmcl-%s-%s" % (time.strftime("%d-%m-%Y"), uid))
     return in_args
 
 
