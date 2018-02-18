@@ -42,14 +42,20 @@ class Check(object):
         self.clusters = hlp.prepare_clusters(join(self.rdmcl_dir, "final_clusters.txt"), hierarchy=True)
         self.master_clust = Cluster([seq for group, ids in self.clusters.items() for seq in ids])
         self.r_squares = pd.read_csv(join(self.rdmcl_dir, "hmm", "rsquares_matrix.csv"))
-        self.within_group_rsquares = self._prepare_within_group_df()
-        self.within_group_dist = hlp.create_truncnorm(hlp.mean(self.within_group_rsquares.r_square),
-                                                      hlp.std(self.within_group_rsquares.r_square))
-        self.between_group_rsquares = self._prepare_between_group_df()
-        self.between_group_dist = hlp.create_truncnorm(hlp.mean(self.between_group_rsquares.r_square),
-                                                       hlp.std(self.between_group_rsquares.r_square))
+        self.fwd_scores = pd.read_csv(join(self.rdmcl_dir, "hmm", "hmm_fwd_scores.csv"))
+        self.within_group_r2_df = self._prepare_within_group_r2_df()
+        self.within_group_r2_dist = hlp.create_truncnorm(hlp.mean(self.within_group_r2_df.r_square),
+                                                         hlp.std(self.within_group_r2_df.r_square))
+        self.within_group_fwd_df = self._prepare_within_group_fwd_df()
+        self.within_group_fwd_dist = scipy.stats.gaussian_kde(self.within_group_fwd_df.fwd_raw, bw_method='silverman')
 
-    def _prepare_within_group_df(self, force=False):
+        self.btw_group_r2_df = self._prepare_between_group_r2_df()
+        self.btw_group_r2_dist = hlp.create_truncnorm(hlp.mean(self.btw_group_r2_df.r_square),
+                                                      hlp.std(self.btw_group_r2_df.r_square))
+        self.btw_group_fwd_df = self._prepare_between_group_fwd_df()
+        self.btw_group_fwd_dist = scipy.stats.gaussian_kde(self.btw_group_fwd_df.fwd_raw, bw_method='silverman')
+
+    def _prepare_within_group_r2_df(self, force=False):
         if not os.path.isfile(join(self.rdmcl_dir, "hmm", "within_group_rsquares.csv")) or force:
             sys.stderr.write("Preparing hmm/within_group_rsquares.csv...\n")
             within_group_rsquares = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
@@ -65,7 +71,22 @@ class Check(object):
             within_group_rsquares = pd.read_csv(join(self.rdmcl_dir, "hmm", "within_group_rsquares.csv"))
         return within_group_rsquares
 
-    def _prepare_between_group_df(self, force=False):
+    def _prepare_within_group_fwd_df(self, force=False):
+        if not os.path.isfile(join(self.rdmcl_dir, "hmm", "within_group_fwd.csv")) or force:
+            sys.stderr.write("Preparing hmm/within_group_fwd.csv...\n")
+            within_group_fwd = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
+            for g, seqs in self.clusters.items():
+                if len(seqs) < 2:
+                    continue
+                clust_fwd = self.fwd_scores.loc[(self.fwd_scores["rec_id"].isin(seqs)) &
+                                                (self.fwd_scores["hmm_id"].isin(seqs))].copy()
+                within_group_fwd = within_group_fwd.append(clust_fwd, ignore_index=True)
+            within_group_fwd.to_csv(join(self.rdmcl_dir, "hmm", "within_group_fwd.csv"))
+        else:
+            within_group_fwd = pd.read_csv(join(self.rdmcl_dir, "hmm", "within_group_fwd.csv"))
+        return within_group_fwd
+
+    def _prepare_between_group_r2_df(self, force=False):
         if not os.path.isfile(join(self.rdmcl_dir, "hmm", "between_group_rsquares.csv")) or force:
             sys.stderr.write("Preparing hmm/between_group_rsquares.csv...\n")
             between_group_rsquares = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
@@ -87,6 +108,30 @@ class Check(object):
         else:
             between_group_rsquares = pd.read_csv(join(self.rdmcl_dir, "hmm", "between_group_rsquares.csv"))
         return between_group_rsquares
+
+    def _prepare_between_group_fwd_df(self, force=False):
+        file_path = join(self.rdmcl_dir, "hmm", "between_group_fwd.csv")
+        if not os.path.isfile(file_path) or force:
+            sys.stderr.write("Preparing hmm/between_group_fwd.csv...\n")
+            between_group_fwd = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
+            i = 0
+            for g1, seqs1 in self.clusters.items():
+                i += 1
+                if len(seqs1) < 2:
+                    continue
+                for g2, seqs2 in list(self.clusters.items())[i:]:
+                    if len(seqs2) < 2:
+                        continue
+                    clust_fwd = self.fwd_scores.loc[((self.fwd_scores["hmm_id"].isin(seqs1)) &
+                                                     (self.fwd_scores["rec_id"].isin(seqs2))) |
+                                                    ((self.fwd_scores["hmm_id"].isin(seqs2)) &
+                                                     (self.fwd_scores["rec_id"].isin(seqs1))) &
+                                                    (self.fwd_scores["hmm_id"] != self.fwd_scores["rec_id"])].copy()
+                    between_group_fwd = between_group_fwd.append(clust_fwd, ignore_index=True)
+            between_group_fwd.to_csv(file_path)
+        else:
+            between_group_fwd = pd.read_csv(file_path)
+        return between_group_fwd
 
     def check_existing_group(self, group_name):
         if group_name not in self.clusters:
@@ -114,71 +159,81 @@ class Check(object):
             orig_clust = Cluster(self.clusters[g], parent=self.master_clust)
             new_clust = Cluster(self.clusters[g] + query, parent=self.master_clust)
             self.output.append([g,
-                                round(self.within_group_dist.cdf(upper2) - self.within_group_dist.cdf(lower2), 4),
-                                round(self.between_group_dist.cdf(upper2) - self.between_group_dist.cdf(lower2), 4),
+                                round(self.within_group_r2_dist.cdf(upper2) - self.within_group_r2_dist.cdf(lower2), 4),
+                                round(self.btw_group_r2_dist.cdf(upper2) - self.btw_group_r2_dist.cdf(lower2), 4),
                                 round(orig_clust.score() + query_score, 3),
                                 round(new_clust.score(), 3)])
         self.output = sorted(self.output, key=lambda x: (x[1], -x[2]), reverse=True)
 
     @staticmethod
-    def _mc_fwd_back_run(rec, args):
-        hmm_scores_file, hmm_path, query_file = args
-        hmm_path = join(hmm_path, "%s.hmm" % rec.id)
+    def _mc_fwd_back_old_hmms(seq_chunk, args):
+        try:
+            hmm_scores_file, hmm_dir_path, query_file = args
+            hmm_fwd_scores = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
+            for seq in seq_chunk:
+                next_hmm_path = join(hmm_dir_path, "%s.hmm" % seq.id)
 
-        fwdback_output = Popen("%s %s %s" % (rdmcl.HMM_FWD_BACK, hmm_path, query_file),
-                               shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
-        fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
-                                    header=None, comment="#", index_col=False)
-        fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
-        fwd_scores_df["hmm_id"] = rec.id
-        hmm_fwd_scores = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
-        hmm_fwd_scores = hmm_fwd_scores.append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
-                                               ignore_index=True)
-        hmm_fwd_scores = hmm_fwd_scores.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
-        with LOCK:
-            with open(hmm_scores_file, "a") as ofile:
-                ofile.write(hmm_fwd_scores)
+                fwdback_output = Popen("%s %s %s" % (rdmcl.HMM_FWD_BACK, next_hmm_path, query_file),
+                                       shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
+                fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
+                                            header=None, comment="#", index_col=False)
+                fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
+                fwd_scores_df["hmm_id"] = seq.id
+
+                hmm_fwd_scores = hmm_fwd_scores.append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
+                                                       ignore_index=True)
+
+            hmm_fwd_scores = hmm_fwd_scores.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
+            with LOCK:
+                with open(hmm_scores_file, "a") as ofile:
+                    ofile.write(hmm_fwd_scores)
+        except KeyboardInterrupt:
+            pass
         return
 
-    def check_new_sequence(self, rec):
-        seqs_file = join(self.rdmcl_dir, "input_seqs.fa")
-        query_file = br.TempFile()
-        query_file.write(rec.format("fasta"))
-        sequences = Sb.SeqBuddy(seqs_file)
-        hmm_path = join(self.rdmcl_dir, "hmm", "%s.hmm" % rec.id)
+    @staticmethod
+    def _mc_run_fwd_back_new_hmm(seq_chunk, args):
+        try:
+            rec, out_dir, hmm_path = args
+            seqbuddy = Sb.SeqBuddy(seq_chunk)
+            id_hash = hlp.md5_hash("".join(sorted([seq.id for seq in seqbuddy.records])))
+            seqs_file = join(out_dir, "%s.fa" % id_hash)
+            seqbuddy.write(seqs_file, out_format="fasta")
+            fwdback_output = Popen("%s %s %s" % (rdmcl.HMM_FWD_BACK, hmm_path, seqs_file),
+                                   shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
+            with LOCK:
+                with open(join(out_dir, "outfile.csv"), "a") as ofile:
+                    ofile.write(fwdback_output)
+        except KeyboardInterrupt:
+            pass
+        return
 
-        fwdback_output = Popen("%s %s %s" % (rdmcl.HMM_FWD_BACK, hmm_path, seqs_file),
-                               shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
-        fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
-                                    header=None, comment="#", index_col=False)
-        fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
-        fwd_scores_df["hmm_id"] = rec.id
+    @staticmethod
+    def _mc_r_squares(seq_chunks, args):
+        try:
+            rec, hmm_fwd_scores, output_path = args
+            comparisons = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
 
-        hmm_fwd_scores = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
-        hmm_fwd_scores = hmm_fwd_scores.append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
-                                               ignore_index=True)
+            for seq in seq_chunks:
+                fwd1 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == seq.id].sort_values(by="hmm_id")
+                fwd2 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec.id].sort_values(by="hmm_id")
+                corr = scipy.stats.pearsonr(fwd1.fwd_raw, fwd2.fwd_raw)
+                comparisons = comparisons.append(pd.DataFrame(data=[[seq.id, rec.id, corr[0]**2]],
+                                                 columns=["rec_id1", "rec_id2", "r_square"]), ignore_index=True)
+            comparisons = comparisons.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
+            with LOCK:
+                with open(output_path, "a") as ofile:
+                    ofile.write(comparisons)
+        except KeyboardInterrupt:
+            pass
+        return
 
-        hmm_scores_file = br.TempFile()
-        #for seq in sequences.records:
-        #    self._mc_fwd_back_run(seq, [hmm_scores_file.path, join(self.rdmcl_dir, "hmm"), query_file.path])
-        br.run_multicore_function(sequences.records, self._mc_fwd_back_run,
-                                  [hmm_scores_file.path, join(self.rdmcl_dir, "hmm"), query_file.path], quiet=True)
-        temp_df = pd.read_csv(hmm_scores_file.path, header=None)
+    def _mc_conf_inters(self, clust, args):
+        try:
+            g, seqs = clust
+            rec, hmm_fwd_scores, output_file = args
 
-        temp_df.colums = ["hmm_id", "rec_id", "fwd_raw"]
-        hmm_fwd_scores = hmm_fwd_scores.append(temp_df).reset_index(drop=True)
-
-        # Don't recalculate the entire r_squares matrix
-        for seq in sequences.records:
-            fwd1 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == seq.id].sort_values(by="hmm_id").fwd_raw
-            fwd2 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec.id].sort_values(by="hmm_id").fwd_raw
-            corr = scipy.stats.pearsonr(fwd1, fwd2)
-            comparison = pd.DataFrame(data=[[seq.id, rec.id, corr[0]**2]],
-                                      columns=["rec_id1", "rec_id2", "r_square"])
-            self.r_squares = self.r_squares.append(comparison, ignore_index=True)
-
-        self.output = []
-        for g, seqs in self.clusters.items():
+            # Calculate R² 95% conf interval first
             compare = self.r_squares.loc[((self.r_squares["rec_id1"] == rec.id) &
                                           (self.r_squares["rec_id2"].isin(seqs))) |
                                          ((self.r_squares["rec_id1"].isin(seqs)) &
@@ -187,12 +242,68 @@ class Check(object):
 
             ave, std = hlp.mean(compare.r_square), hlp.std(compare.r_square)
             upper2 = ave + (std * 2)
-            upper2 = 1 if upper2 > 1 else upper2
+            upper2 = 1.0 if upper2 > 1 else upper2
             lower2 = ave - (std * 2)
-            lower2 = 0 if lower2 < 0 else lower2
-            self.output.append([g, round(self.within_group_dist.cdf(upper2) - self.within_group_dist.cdf(lower2), 4),
-                                round(self.between_group_dist.cdf(upper2) - self.between_group_dist.cdf(lower2), 4)])
-        self.output = sorted(self.output, key=lambda x: (x[1], -x[2]), reverse=True)
+            lower2 = 0.0 if lower2 < 0 else lower2
+            output = [g, len(seqs), round(lower2, 4), round(upper2, 4)]
+
+            # Then calculate the Fwd score 95% confidence interval
+            compare = hmm_fwd_scores.loc[(hmm_fwd_scores["rec_id"] == rec.id) &
+                                         (hmm_fwd_scores["hmm_id"].isin(seqs))].copy()
+            ave, std = hlp.mean(compare.fwd_raw), hlp.std(compare.fwd_raw)
+            upper2 = ave + (std * 2)
+            lower2 = ave - (std * 2)
+            output += [round(lower2, 2), round(upper2, 2)]
+            output = [str(i) for i in output]
+            with LOCK:
+                with open(output_file, "a") as ofile:
+                    ofile.write("%s\n" % ",".join(output))
+        except KeyboardInterrupt:
+            pass
+        return
+
+    def check_new_sequence(self, rec, minimum=1):
+        seqs_file = join(self.rdmcl_dir, "input_seqs.fa")
+        query_file = br.TempFile()
+        query_file.write(rec.format("fasta"))
+        sequences = Sb.SeqBuddy(seqs_file)
+        seq_chuncks = hlp.chunk_list(sequences.records, br.usable_cpu_count())
+        out_dir = br.TempDir()
+        hmm_path = join(self.rdmcl_dir, "hmm", "%s.hmm" % rec.id)
+        br.run_multicore_function(seq_chuncks, self._mc_run_fwd_back_new_hmm, [rec, out_dir.path, hmm_path], quiet=True)
+
+        fwd_scores_df = pd.read_csv(join(out_dir.path, "outfile.csv"), delim_whitespace=True,
+                                    header=None, comment="#", index_col=False)
+        fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
+        fwd_scores_df["hmm_id"] = rec.id
+
+        fwd_scores_df = self.fwd_scores.copy().append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
+                                                      ignore_index=True)
+        hmm_scores_file = br.TempFile()
+        params = [hmm_scores_file.path, join(self.rdmcl_dir, "hmm"), query_file.path]
+        seq_chuncks[-1].append(rec)
+        br.run_multicore_function(seq_chuncks, self._mc_fwd_back_old_hmms, params, quiet=True)
+
+        temp_df = pd.read_csv(hmm_scores_file.path, header=None)
+
+        temp_df.columns = ["hmm_id", "rec_id", "fwd_raw"]
+        fwd_scores_df = fwd_scores_df.append(temp_df).reset_index(drop=True)
+
+        # Don't recalculate the entire r_squares matrix
+        output_file = br.TempFile()
+        br.run_multicore_function(seq_chuncks, self._mc_r_squares, [rec, fwd_scores_df, output_file.path], quiet=True)
+        comparison = pd.read_csv(output_file.path, header=None)
+        comparison.columns = ["rec_id1", "rec_id2", "r_square"]
+        self.r_squares = self.r_squares.append(comparison, ignore_index=True)
+
+        self.output = []
+        clusters = [(g, seqs) for g, seqs in self.clusters.items() if len(seqs) >= minimum]
+        output_file.clear()
+        br.run_multicore_function(clusters, self._mc_conf_inters, [rec, fwd_scores_df, output_file.path], quiet=True)
+
+        self.output = output_file.read().strip().split("\n")
+        self.output = [line.strip().split(",") for line in self.output]
+        self.output = sorted(self.output, key=lambda x: (float(x[4]), float(x[5])), reverse=True)
         return
 
     def merge(self, merge_group_name, force=False):
@@ -261,8 +372,8 @@ class Check(object):
                 ofile.write("".join(final_lines))
 
             # 4) Update within_group_df and between_group_df files
-            self._prepare_within_group_df(force=True)
-            self._prepare_between_group_df(force=True)
+            self._prepare_within_group_r2_df(force=True)
+            self._prepare_between_group_r2_df(force=True)
 
             # 5) Delete group HMM
             if os.path.isfile(join(self.rdmcl_dir, "hmm", self.group_name)):

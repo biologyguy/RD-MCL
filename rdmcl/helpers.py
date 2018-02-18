@@ -8,7 +8,7 @@ import re
 import pandas as pd
 import numpy as np
 from scipy import stats
-from math import log, sqrt
+from math import log, sqrt, ceil
 from time import time, sleep
 from copy import copy
 from hashlib import md5
@@ -328,6 +328,26 @@ def prepare_clusters(ifile,  hierarchy=False):
             line = line.split()
             output[indx] = line
     return output
+
+
+def chunk_list(l, num_chunks):
+    """
+    Break up a list into a list of lists
+    :param l: Input list
+    :param num_chunks: How many lists should the list be chunked into
+    :return:
+    """
+    num_chunks = int(num_chunks)
+    if num_chunks < 1 or not l:
+        raise AttributeError("Input list must have items in it and num_chunks must be a positive integer")
+
+    size = int(ceil(len(l) / num_chunks))
+    num_long = len(l) % num_chunks
+    num_long = num_long if num_long != 0 else num_chunks
+    chunks = [l[i:i + size] for i in range(0, num_long * size, size)]
+    if size != 1:
+        chunks += [l[i:i + size - 1] for i in range(num_long * size, len(l), size - 1)]
+    return chunks
 
 
 # ToDo: implement Regularized MCL to take into account flows of neighbors (Expansion step is M*M_G, instead of M*M)

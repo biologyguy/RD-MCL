@@ -17,7 +17,9 @@ import re
 import sys
 from collections import OrderedDict
 import os
+from os.path import join
 import argparse
+import json
 
 VERSION = hlp.VERSION
 VERSION.name = "group_by_cluster"
@@ -92,6 +94,8 @@ def argparse_init():
                               default=["gappyout", 0.5, 0.75, 0.9, 0.95, "clean"])
     parser_flags.add_argument("--strip_taxa", "-s", action="store_true",
                               help="Remove taxa prefix before searching sequence file.")
+    parser_flags.add_argument("--exclude_bhc_paralogs", "-ep", action="store_true",
+                              help="Leave only one representative sequence from within-taxa paralog cliques.")
     parser_flags.add_argument("--write", "-w", action="store", metavar="", help="Specify directory to write file(s)")
 
     # Misc
@@ -128,6 +132,18 @@ def main():
                 groups.append(group.lower())
         in_args.groups = "^%s$" % "$|^".join(groups)
 
+    paralogs = {}
+    if in_args.exclude_bhc_paralogs:
+        paralog_file = join(os.path.split(in_args.clusters)[0], "paralog_cliques")
+        if not os.path.isfile(paralog_file):
+            sys.stderr.write("%sWARNING%s: 'paralog_clique' file not found in clusters directory.\n" %
+                             (hlp.RED, hlp.END))
+        else:
+            with open(paralog_file, "r") as ifile:
+                paralogs = ifile.read()
+            paralogs = re.search("# group_0\n(.*)\n", paralogs)
+            paralogs = {} if not paralogs else json.loads(paralogs.group(1))
+
     for rank, node in cluster_file.items():
         rank = rank.split()[0]
         if in_args.groups:
@@ -141,6 +157,12 @@ def main():
         if in_args.max_size:
             if len(node) > in_args.max_size:
                 continue
+
+        if paralogs:
+            for rec_id, paralog_list in paralogs.items():
+                if rec_id in node:
+                    for p in paralog_list:
+                        del node[node.index(p)]
 
         if in_args.strip_taxa:
             node = [re.sub("^.*?\-", "", x) for x in node]

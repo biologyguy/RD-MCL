@@ -38,7 +38,7 @@ from io import StringIO
 from subprocess import Popen, PIPE
 from multiprocessing import Lock, Process
 from random import choice, Random, randint, random
-from math import ceil, log2
+from math import log2
 from collections import OrderedDict
 from copy import deepcopy, copy
 # from hashlib import md5
@@ -199,6 +199,11 @@ class Cluster(object):
         self.seq_ids_str = str(", ".join(seq_ids))
         self.seq_id_hash = hlp.md5_hash(self.seq_ids_str)
         self.seq_ids = set(seq_ids)
+        self.taxa = OrderedDict()
+        for next_seq_id in self.seq_ids:
+            taxa = next_seq_id.split(self.taxa_sep)[0]
+            self.taxa.setdefault(taxa, [])
+            self.taxa[taxa].append(next_seq_id)
 
     def collapse(self):
         breakout = False
@@ -1224,10 +1229,7 @@ def prepare_all_by_all(seqbuddy, psipred_dfs, cpus):
                 data[indx] = (rec1, rec2, psipred_dfs[rec1], psipred_dfs[rec2])
                 indx += 1
 
-        data_len = len(data)
-        n = int(ceil(data_len / cpus))
-        data = [data[i:i + n] for i in range(0, data_len, n)]
-        return data_len, data
+        return len(data), hlp.chunk_list(data, cpus)
 
 
 def set_final_sim_scores(sim_scores):
@@ -1440,6 +1442,8 @@ def mcmcmc_mcl(args, params):
         # Queue jobs if appropriate
         if WORKER_DB and os.path.isfile(WORKER_DB) and len(cluster_ids) >= MIN_SIZE_TO_WORKER:
             p = Process(target=mc_create_all_by_all_scores, args=(sb_copy, [psi_pred_ss2, sql_broker]))
+            # Need to slow the start down a little, otherwise it can run into concurrency issues
+            time.sleep(0.1)
             p.start()
             seq_ids = sorted([rec.id for rec in sb_copy.records])
             seq_id_hash = hlp.md5_hash(", ".join(seq_ids))
@@ -1874,10 +1878,12 @@ class Seqs2Clusters(object):
         hmm_scores_file = args[0]
         hmm_path = join(self.outdir, "hmm", "%s.hmm" % rec.id)
 
-        fwdback_output = Popen("%s %s %s" % (HMM_FWD_BACK, hmm_path, self.tmp_dir.subfiles[0]),
+        fwdback_output = Popen("%s %s %s" % (HMM_FWD_BACK, hmm_path, join(self.tmp_dir.path, self.tmp_dir.subfiles[0])),
                                shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
+
         fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
                                     header=None, comment="#", index_col=False)
+
         fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
         fwd_scores_df["hmm_id"] = rec.id
 
@@ -1904,7 +1910,7 @@ class Seqs2Clusters(object):
     def create_hmm_fwd_score_df(self):
         # Create HMM forward-score dataframe from initial input --> p(seq|hmm)
         self.create_hmms_for_every_rec()
-        self.seqbuddy.write(self.tmp_dir.subfiles[0], out_format="fasta")
+        self.seqbuddy.write(join(self.tmp_dir.path, self.tmp_dir.subfiles[0]), out_format="fasta")
         hmm_scores_file = br.TempFile()
         br.run_multicore_function(self.seqbuddy.records, self._mc_fwd_back_run, [hmm_scores_file.path],
                                   max_processes=CPUS, quiet=True)
@@ -1912,22 +1918,42 @@ class Seqs2Clusters(object):
         hmm_fwd_scores.columns = ["hmm_id", "rec_id", "fwd_raw"]
         return hmm_fwd_scores
 
+    @staticmethod
+    def _mc_rsquare_vals(recs, args):
+        rec1, sub_recs = recs
+        hmm_fwd_scores, tmp_rsquares_file = args
+        rsquare_vals_df = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
+        for rec2 in sub_recs:
+            fwd1 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec1.id].sort_values(by="hmm_id").fwd_raw
+            fwd2 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec2.id].sort_values(by="hmm_id").fwd_raw
+            corr = scipy.stats.pearsonr(fwd1, fwd2)
+            comparison = pd.DataFrame(data=[[rec1.id, rec2.id, corr[0]**2]],
+                                      columns=["rec_id1", "rec_id2", "r_square"])
+            rsquare_vals_df = rsquare_vals_df.append(comparison, ignore_index=True)
+        rsquare_vals_df = rsquare_vals_df.append(pd.DataFrame(data=[[rec1.id, rec1.id, 1.0]],
+                                                 columns=["rec_id1", "rec_id2", "r_square"]), ignore_index=True)
+
+        rsquare_vals_df = rsquare_vals_df.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
+        with LOCK:
+            with open(tmp_rsquares_file, "a") as ofile:
+                ofile.write(rsquare_vals_df)
+
     def create_fwd_score_rsquared_matrix(self):
         # Calculate all-by-all matrix of correlation coefficients on fwd scores among all sequences
         hmm_fwd_scores = self.create_hmm_fwd_score_df()
-        rsquare_vals_df = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
+        hmm_fwd_scores.to_csv(join(self.outdir, "hmm", "hmm_fwd_scores.csv"), index=False)
         sub_recs = list(self.seqbuddy.records[1:])
-        for rec1 in self.seqbuddy.records:
-            for rec2 in sub_recs:
-                fwd1 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec1.id].sort_values(by="hmm_id").fwd_raw
-                fwd2 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec2.id].sort_values(by="hmm_id").fwd_raw
-                corr = scipy.stats.pearsonr(fwd1, fwd2)
-                comparison = pd.DataFrame(data=[[rec1.id, rec2.id, corr[0]**2]],
-                                          columns=["rec_id1", "rec_id2", "r_square"])
-                rsquare_vals_df = rsquare_vals_df.append(comparison, ignore_index=True)
-            rsquare_vals_df = rsquare_vals_df.append(pd.DataFrame(data=[[rec1.id, rec1.id, 1.0]],
-                                                     columns=["rec_id1", "rec_id2", "r_square"]), ignore_index=True)
+        multicore_data = [None for _ in range(len(self.seqbuddy))]
+        tmp_rsquares_file = br.TempFile()
+        for indx, rec1 in enumerate(self.seqbuddy.records):
+            multicore_data[indx] = (rec1, sub_recs)
             sub_recs = sub_recs[1:]
+        br.run_multicore_function(multicore_data, self._mc_rsquare_vals, [hmm_fwd_scores, tmp_rsquares_file.path],
+                                  max_processes=CPUS, quiet=True)
+
+        rsquare_vals_df = pd.read_csv(tmp_rsquares_file.path, header=None)
+        rsquare_vals_df.columns = ["rec_id1", "rec_id2", "r_square"]
+        rsquare_vals_df = rsquare_vals_df.sort_values(by=["rec_id1", "rec_id2"]).reset_index(drop=True)
         return rsquare_vals_df
 
     @staticmethod
@@ -1971,15 +1997,21 @@ class Seqs2Clusters(object):
         """
         # Calculate HMMs from every sequence, calculate the forward probability for every sequences against every HMM,
         # and then calculate correlation coefficients between every pair of sequences (i.e., make an all-by-all matrix)
-        log_output = "# HMM forward scores all-by-all R² dataframe #\n"
+        log_output = br.TempFile()
+        log_output.write("# HMM forward scores all-by-all R² dataframe #\n")
         rsquares_df_path = join(self.outdir, "hmm", "rsquares_matrix.csv")
         if os.path.isfile(rsquares_df_path):
-            log_output += "\tRead from %s\n\n" % rsquares_df_path
+            log_output.write("\tRead from %s\n\n" % rsquares_df_path)
             rsquare_vals_df = pd.read_csv(rsquares_df_path)
         else:
-            log_output += "\tCalculated new and written to %s\n\n" % rsquares_df_path
+            log_output.write("\tCalculated new and written to %s\n\n" % rsquares_df_path)
             rsquare_vals_df = self.create_fwd_score_rsquared_matrix()
             rsquare_vals_df.to_csv(rsquares_df_path, index=False)
+
+        hmm_fwd_scores_path = join(self.outdir, "hmm", "hmm_fwd_scores.csv")
+        if not os.path.isfile(hmm_fwd_scores_path):
+            hmm_fwd_scores = self.create_hmm_fwd_score_df()
+            hmm_fwd_scores.to_csv(hmm_fwd_scores_path, index=False)
 
         valve = br.SafetyValve(round(len(self.clusters[0].get_base_cluster().seq_ids) * 1.2))
         placed = []
@@ -1988,7 +2020,7 @@ class Seqs2Clusters(object):
             try:
                 valve.step()
             except RuntimeError:
-                log_output += "\n\nERROR: place_seqs_in_clusts blew its safety valve; abort further placement.\n"
+                log_output.write("\n\nERROR: place_seqs_in_clusts blew its safety valve; abort further placement.\n")
                 break
 
             # Create a copy of the input clusters for checking later
@@ -2000,9 +2032,9 @@ class Seqs2Clusters(object):
             else:
                 breakout = False
 
-            log_output += "# Current clusters #\n"
+            log_output.write("# Current clusters #\n")
             for clust in self.clusters:
-                log_output += "%s\n%s\n\n" % (clust.name(), clust.seq_ids)
+                log_output.write("%s\n%s\n\n" % (clust.name(), clust.seq_ids))
 
             # Create a distribution from all R² values between records in each pre-called large cluster
             global_null_file = br.TempFile()
@@ -2012,7 +2044,7 @@ class Seqs2Clusters(object):
             out_of_cluster_file.write("rec_id1,rec_id2,r_square\n")
 
             # Also calculate sub-distributions from within each pre-called cluster, creating a cluster null
-            log_output += "# Cluster R² distribution statistics #\n"
+            log_output.write("# Cluster R² distribution statistics #\n")
             cluster_nulls_file = br.TempFile()
             cluster_nulls_file.write("{")
 
@@ -2031,21 +2063,21 @@ class Seqs2Clusters(object):
             cluster_nulls = {clust_name: self._create_truncnorm(dist["mu"], dist["sigma"])
                              for clust_name, dist in cluster_nulls.items()}
             out_of_cluster_df = pd.read_csv(out_of_cluster_file.path)
-            log_output += temp_log_output.read()
+            log_output.write(temp_log_output.read())
             temp_log_output.clear()
 
             # H₀: R² between two sequences is drawn from the same distribution as pre-called cluster pairs
             global_null_df = global_null_df.loc[global_null_df.rec_id1 != global_null_df.rec_id2].reset_index(drop=True)
-            log_output += "# Global null R² distribution statistics #\n"
-            log_output += "\tN: %s\n" % len(global_null_df)
-            log_output += "\tMean: %s\n" % hlp.mean(global_null_df.r_square)
-            log_output += "\tStd: %s\n\n" % hlp.std(global_null_df.r_square)
+            log_output.write("# Global null R² distribution statistics #\n")
+            log_output.write("\tN: %s\n" % len(global_null_df))
+            log_output.write("\tMean: %s\n" % hlp.mean(global_null_df.r_square))
+            log_output.write("\tStd: %s\n\n" % hlp.std(global_null_df.r_square))
 
             out_of_cluster_df = out_of_cluster_df.reset_index(drop=True)
-            log_output += "# Out of cluster R² distribution statistics #\n"
-            log_output += "\tN: %s\n" % len(out_of_cluster_df)
-            log_output += "\tMean: %s\n" % hlp.mean(out_of_cluster_df.r_square)
-            log_output += "\tStd: %s\n\n" % hlp.std(out_of_cluster_df.r_square)
+            log_output.write("# Out of cluster R² distribution statistics #\n")
+            log_output.write("\tN: %s\n" % len(out_of_cluster_df))
+            log_output.write("\tMean: %s\n" % hlp.mean(out_of_cluster_df.r_square))
+            log_output.write("\tStd: %s\n\n" % hlp.std(out_of_cluster_df.r_square))
 
             # Create Gaussian distribution object that is clipped off below 0 and above 1
             null_dist = self._create_truncnorm(hlp.mean(global_null_df.r_square),
@@ -2054,7 +2086,7 @@ class Seqs2Clusters(object):
                                                          hlp.std(out_of_cluster_df.r_square))
 
             # Calculate how well every sequence fits with every group
-            log_output += "# Group placements #\n"
+            log_output.write("# Group placements #\n")
             seq2group_dists_file = br.TempFile()
             seq2group_dists_file.write("{")
 
@@ -2067,25 +2099,25 @@ class Seqs2Clusters(object):
 
             seq2group_dists = json.loads(seq2group_dists_file.read().strip(",") + "}")
             orig_clusters = json.loads(orig_clusters_file.read().strip(",") + "}")
-            log_output += temp_log_output.read()
+            log_output.write(temp_log_output.read())
 
             new_groups = OrderedDict([(clust.name(), copy(clust.seq_ids)) for clust in self.clusters])
             new_groups["orphans"] = set()
 
             # Set a static order that sequences will be placed. Smallest clusters and largest average r_square first.
             sort_order = self.get_sort_order(seq2group_dists, placed, new_groups, orig_clusters)
-            log_output += "\n\n# Sort order #\n%s\n\n" % sort_order
+            log_output.write("\n\n# Sort order #\n%s\n\n" % sort_order)
             sort_order = [seq_id for group in sort_order for seq_id, val in group]
 
-            log_output += "# Placement #\n"
+            log_output.write("# Placement #\n")
             for seq_id in sort_order:
                 highest = [(group_id, val) for group_id, val in seq2group_dists[seq_id].items()]
                 group_id, val = sorted(highest, key=lambda i: i[1], reverse=True)[0]
-                log_output += "\t%s\t%s\t%s\n" % (seq_id, group_id, val)
-                log_output += "\tOut of Clust = %s\n" % out_of_cluster_dist.pdf(val)
-                log_output += "\tGlobal null = %s\n " % null_dist.pdf(val)
-                log_output += "\tCluster null = NONE\n" if group_id not in cluster_nulls \
-                    else "\tCluster null = %s\n" % cluster_nulls[group_id].pdf(val)
+                log_output.write("\t%s\t%s\t%s\n" % (seq_id, group_id, val))
+                log_output.write("\tOut of Clust = %s\n" % out_of_cluster_dist.pdf(val))
+                log_output.write("\tGlobal null = %s\n " % null_dist.pdf(val))
+                log_output.write("\tCluster null = NONE\n" if group_id not in cluster_nulls
+                                 else "\tCluster null = %s\n" % cluster_nulls[group_id].pdf(val))
 
                 # If the 'highest' cluster is not the original cluster and is at least 90% smaller than the original
                 # cluster, then check the original cluster first
@@ -2107,25 +2139,25 @@ class Seqs2Clusters(object):
                     orphaned = True
 
                 if orphaned:
-                    log_output += "\tOrphaned\n"
+                    log_output.write("\tOrphaned\n")
                     new_groups["orphans"].add(seq_id)
 
                 placed.append(seq_id)
                 if seq_id in new_groups["orphans"] or seq_id not in new_groups[group_id]:  # The Sequence has moved
                     # Add
                     if seq_id not in new_groups["orphans"]:
-                        log_output += "\tMoving from %s to %s\n\n" % (orig_clusters[seq_id], group_id)
+                        log_output.write("\tMoving from %s to %s\n\n" % (orig_clusters[seq_id], group_id))
                         new_groups[group_id].add(seq_id)
 
                     # Remove
                     if len(new_groups[orig_clusters[seq_id]]) == 1 and seq_id in new_groups["orphans"]:
                         # If the sequence started orphaned, don't change its group ID
-                        log_output += "\tRetaining original orphan %s\n\n" % orig_clusters[seq_id]
+                        log_output.write("\tRetaining original orphan %s\n\n" % orig_clusters[seq_id])
                         new_groups["orphans"].remove(seq_id)
 
                     else:
                         orig_clust = orig_clusters[seq_id]
-                        log_output += "\tCreating new group\n\n" if seq_id in new_groups["orphans"] else ""
+                        log_output.write("\tCreating new group\n\n" if seq_id in new_groups["orphans"] else "")
                         new_groups[orig_clust].remove(seq_id)
 
                         if not new_groups[orig_clust]:  # When removing a sequence leaves the cluster empty
@@ -2167,7 +2199,7 @@ class Seqs2Clusters(object):
                         breakout = False
                         break
                 else:  # The sequence was returned to its original group
-                    log_output += "\tReturned to group %s\n\n" % group_id
+                    log_output.write("\tReturned to group %s\n\n" % group_id)
 
             for clust in self.clusters:
                 if clust.name() in new_groups:
@@ -2231,7 +2263,7 @@ class Seqs2Clusters(object):
                 break
 
         with LOCK:
-            self.tmp_file.write(log_output)
+            self.tmp_file.write(log_output.read())
         return
 
 
@@ -2273,9 +2305,9 @@ def argparse_init():
     # Optional commands
     parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
 
-    outdir = join(os.getcwd(), "rdmcl-%s" % time.strftime("%d-%m-%Y"))
-    parser_flags.add_argument("-o", "--outdir", action="store", nargs="?", default=outdir, metavar="path",
-                              help="Where should results be written? (default=%s)" % outdir)
+    parser_flags.add_argument("-o", "--outdir", action="store", nargs="?", metavar="path",
+                              help="Where should results be written? (default=rdmcl-%s-UID)" %
+                                   time.strftime("%d-%m-%Y"))
     parser_flags.add_argument("-rs", "--r_seed", type=int, metavar="",
                               help="Specify a random seed for repeating a specific run")
     parser_flags.add_argument("-sql", "--sqlite_db", action="store", metavar="",
@@ -2336,6 +2368,10 @@ def argparse_init():
     misc.add_argument("-setup", action="setup", dest=argparse.SUPPRESS, default=argparse.SUPPRESS)
 
     in_args = parser.parse_args()
+    if not in_args.outdir:
+        with open(in_args.sequences, "r") as ifile:
+            uid = hlp.md5_hash(ifile.read() + str(in_args))[:6]
+        in_args.outdir = join(os.getcwd(), "rdmcl-%s-%s" % (time.strftime("%d-%m-%Y"), uid))
     return in_args
 
 
@@ -2739,14 +2775,18 @@ Continue? y/[n] """ % len(sequences)
 
     for clust in final_clusters:
         clust.parent = uncollapsed_group_0
-        if clust.collapsed_genes:
+        collapsed = False
+        for seq_id in clust.seq_ids:
+            if seq_id in group_0_cluster.collapsed_genes:
+                clust.reset_seq_ids(group_0_cluster.collapsed_genes[seq_id] + list(clust.seq_ids))
+                with open(join(in_args.outdir, "paralog_cliques"), "a") as outfile:
+                    if not collapsed:
+                        outfile.write("# %s\n" % clust.name())
+                        collapsed = True
+                    outfile.write('{"%s": %s}\n' % (seq_id, group_0_cluster.collapsed_genes[seq_id]))
+        if collapsed:
             with open(join(in_args.outdir, "paralog_cliques"), "a") as outfile:
-                outfile.write("# %s\n" % clust.name())
-                json.dump(clust.collapsed_genes, outfile)
-                outfile.write("\n\n")
-            for gene_id, paralog_list in clust.collapsed_genes.items():
-                clust.reset_seq_ids(paralog_list + list(clust.seq_ids))
-                clust.taxa[gene_id.split(in_args.taxa_sep)[0]].append(gene_id)
+                outfile.write("\n")
         clust.score(force=True)
 
     logging.warning("Preparing final_clusters.txt")

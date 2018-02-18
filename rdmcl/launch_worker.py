@@ -363,9 +363,8 @@ class Worker(object):
             df.to_csv(os.path.join(subjob_out_dir, "%s.ss2" % rec_id), header=None, index=False, sep=" ")
 
         # Break it up again into min number of chunks where len(each chunk) < #CPUs * job_size_coff
-        num_subjobs = int(rdmcl.ceil(len_data / (self.cpus * self.job_size_coff)))
-        job_size = int(rdmcl.ceil(len_data / num_subjobs))
-        data = [data[i:i + job_size] for i in range(0, len_data, job_size)]
+        num_subjobs = int(hlp.ceil(len_data / (self.cpus * self.job_size_coff)))
+        data = hlp.chunk_list(data, num_subjobs)
 
         for indx, subjob in enumerate(data):
             with open(os.path.join(subjob_out_dir, "%s_of_%s.txt" % (indx + 1, num_subjobs)), "w") as ofile:
@@ -383,8 +382,7 @@ class Worker(object):
             cursor.execute("INSERT INTO processing (hash, worker_id) VALUES (?, ?)",
                            ("1_%s_%s" % (num_subjobs, id_hash), self.heartbeat.id,))
 
-        n = int(rdmcl.ceil(len(data[0]) / self.cpus))
-        data = [data[0][i:i + n] for i in range(0, len(data[0]), n)]
+        data = hlp.chunk_list(data[0], self.cpus)
 
         subjob_num = 1
         return len(data[0]), data, subjob_num, num_subjobs
@@ -396,10 +394,7 @@ class Worker(object):
 
         data = [line.split() for line in data]
         data = [(rec1, rec2, psipred_dfs[rec1], psipred_dfs[rec2]) for rec1, rec2 in data]
-        data_len = len(data)
-        n = int(rdmcl.ceil(len(data) / self.cpus))
-        data = [data[i:i + n] for i in range(0, data_len, n)]
-        return data_len, data
+        return len(data), hlp.chunk_list(data, self.cpus)
 
     def process_subjob(self, id_hash, sim_scores, subjob_num, num_subjobs):
         output = pd.DataFrame()

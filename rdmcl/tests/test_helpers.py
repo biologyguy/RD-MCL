@@ -323,6 +323,21 @@ def test_create_truncnorm():
     assert round(dist.cdf(0.6), 12) == 0.693870199384
 
 
+def test_chunk_list():
+    assert helpers.chunk_list(list(range(10)), 4) == [[0, 1, 2], [3, 4, 5], [6, 7], [8, 9]]
+    assert helpers.chunk_list(list(range(10)), 10) == [[0], [1], [2], [3], [4], [5], [6], [7], [8], [9]]
+    assert helpers.chunk_list(list(range(10)), 100) == [[0], [1], [2], [3], [4], [5], [6], [7], [8], [9]]
+    assert helpers.chunk_list(list(range(10)), 1) == [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]]
+
+    with pytest.raises(AttributeError) as err:
+        helpers.chunk_list(list(range(10)), 0)
+    assert "Input list must have items in it and num_chunks must be a positive integer" in str(err)
+
+    with pytest.raises(AttributeError) as err:
+        helpers.chunk_list([], 10)
+    assert "Input list must have items in it and num_chunks must be a positive integer" in str(err)
+
+
 def test_markov_clustering_init():
     data = """\
 Bab\tCfu\t1

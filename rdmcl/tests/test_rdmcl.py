@@ -136,10 +136,12 @@ def test_cluster_instantiate_child(hf):
 
 def test_cluster_reset_seq_ids(hf):
     cluster = rdmcl.Cluster(*hf.base_cluster_args())
+    assert cluster.taxa["BOL"] == ['BOL-PanxαA', 'BOL-PanxαB', 'BOL-PanxαC', 'BOL-PanxαD', 'BOL-PanxαE', 'BOL-PanxαF',
+                                   'BOL-PanxαG', 'BOL-PanxαH'], print(cluster.taxa["BOL"])
     cluster.reset_seq_ids(['Dgl-PanxαE', 'Bfo-PanxαB', 'Tin-PanxαC', 'BOL-PanxαA', 'Edu-PanxαA',
                            'Bch-PanxαC', 'Vpa-PanxαB', 'Hru-PanxαA', 'Lcr-PanxαH', 'Hca-PanxαB',
                            'Oma-PanxαC', 'Bab-PanxαB', 'Mle-Panxα10A'])
-
+    assert cluster.taxa["BOL"] == ["BOL-PanxαA"], print(cluster.taxa["BOL"])
     assert sorted(cluster.seq_ids) == ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE',
                                        'Edu-PanxαA', 'Hca-PanxαB', 'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A',
                                        'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
@@ -1764,6 +1766,7 @@ def test_mc_fwd_back_run(hf):
         shutil.copyfile(join(hf.resource_path, "hmms", "%s.hmm" % seq_id), join(hmm_dir, "%s.hmm" % seq_id))
     
     seq2clust_obj = rdmcl.Seqs2Clusters([], 3, parent_sb, tmp_dir.path)
+    parent_sb.write(join(seq2clust_obj.tmp_dir.path, "seqs.fa"))
 
     hmm_scores_file = br.TempFile()
     seq2clust_obj._mc_fwd_back_run(parent_sb.records[0], [hmm_scores_file.path])
@@ -1815,10 +1818,14 @@ def test_create_hmm_fwd_score_df(hf, monkeypatch):
 
 
 def test_create_fwd_score_rsquared_matrix(hf, monkeypatch):
+    # Note that this calls _mc_rsquare_vals(), so the two are bundled in one test
     parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
     parent_sb.records = [rec for rec in parent_sb.records if rec.id in
                          ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE']]
-    seq2clust_obj = rdmcl.Seqs2Clusters([], 3, parent_sb, "foo.path")
+    tmp_dir = br.TempDir()
+    tmp_dir.subdir("hmm")
+
+    seq2clust_obj = rdmcl.Seqs2Clusters([], 3, parent_sb, tmp_dir.path)
     hmm_fwd_scores = pd.read_csv(join(hf.resource_path, "hmms", "fwd_df.csv"), index_col=0)
 
     monkeypatch.setattr(rdmcl.Seqs2Clusters, "_separate_large_small", lambda *_: True)
@@ -1826,18 +1833,18 @@ def test_create_fwd_score_rsquared_matrix(hf, monkeypatch):
                         lambda *_: hmm_fwd_scores)
 
     rsquare_vals_df = seq2clust_obj.create_fwd_score_rsquared_matrix()
-    # rsquare_vals_df.to_csv("tests/unit_test_resources/hmms/fwd_r2.csv")
+
     assert str(rsquare_vals_df) == """\
       rec_id1     rec_id2        r_square
-0  BOL-PanxαB  Bab-PanxαA  0.016894041431
-1  BOL-PanxαB  Bch-PanxαA  0.087311057754
-2  BOL-PanxαB  Bfo-PanxαE  0.274041115357
-3  BOL-PanxαB  BOL-PanxαB  1.000000000000
-4  Bab-PanxαA  Bch-PanxαA  0.497451379268
-5  Bab-PanxαA  Bfo-PanxαE  0.453877689738
-6  Bab-PanxαA  Bab-PanxαA  1.000000000000
-7  Bch-PanxαA  Bfo-PanxαE  0.390838714109
-8  Bch-PanxαA  Bch-PanxαA  1.000000000000
+0  BOL-PanxαB  BOL-PanxαB  1.000000000000
+1  BOL-PanxαB  Bab-PanxαA  0.016894041431
+2  BOL-PanxαB  Bch-PanxαA  0.087311057754
+3  BOL-PanxαB  Bfo-PanxαE  0.274041115357
+4  Bab-PanxαA  Bab-PanxαA  1.000000000000
+5  Bab-PanxαA  Bch-PanxαA  0.497451379268
+6  Bab-PanxαA  Bfo-PanxαE  0.453877689738
+7  Bch-PanxαA  Bch-PanxαA  1.000000000000
+8  Bch-PanxαA  Bfo-PanxαE  0.390838714109
 9  Bfo-PanxαE  Bfo-PanxαE  1.000000000000""", print(rsquare_vals_df)
 
 
@@ -2083,7 +2090,7 @@ def test_full_run(hf, capsys):
     with open(join(out_dir.path, "final_clusters.txt"), "r") as ifile:
         content = ifile.read()
         assert content == """\
-group_0_0_0\t20.3333\tBOL-PanxαA\tLcr-PanxαH\tMle-Panxα10A\tMle-Panxα9\tVpa-PanxαB
+group_0_0_0\t20.5286\tBOL-PanxαA\tLcr-PanxαH\tMle-Panxα10A\tMle-Panxα9\tVpa-PanxαB
 group_0_2\t4.0\tBOL-PanxαH\tMle-Panxα8
 group_0_1_1\t5.25\tLcr-PanxαK\tMle-Panxα7A
 group_0_0_1\t1.25\tMle-Panxα5
