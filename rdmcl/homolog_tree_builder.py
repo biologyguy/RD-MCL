@@ -6,10 +6,8 @@
 Convert the output from orthogroup_caller into an SVG tree of polytomies
 """
 try:
-    from .compare_homolog_groups import prepare_clusters
     from . import helpers as hlp
 except ImportError:
-    from compare_homolog_groups import prepare_clusters
     import helpers as hlp
 
 from collections import OrderedDict
@@ -263,7 +261,7 @@ def main():
 
     in_args = parser.parse_args()
     ctenos = CtenoColors()
-    cluster_file = prepare_clusters(in_args.cluster_file, hierarchy=True)
+    cluster_file = hlp.prepare_clusters(in_args.cluster_file, hierarchy=True)
 
     colors = KellysColors().color_iter()
     color_map = {}

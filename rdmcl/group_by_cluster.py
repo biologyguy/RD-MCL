@@ -6,10 +6,8 @@ Output the description line for each record in each cluster, neatly organized as
 """
 
 try:
-    from .compare_homolog_groups import prepare_clusters
     from . import helpers as hlp
 except ImportError:
-    from compare_homolog_groups import prepare_clusters
     import helpers as hlp
 
 from buddysuite import SeqBuddy as Sb
@@ -117,7 +115,7 @@ def main():
         Sb.br._stderr('Unrecognized mode, please select from ["seqs", "aln", "con", "list"].\n')
         sys.exit()
 
-    cluster_file = prepare_clusters(in_args.clusters, hierarchy=True)
+    cluster_file = hlp.prepare_clusters(in_args.clusters, hierarchy=True)
     seqbuddy = Sb.SeqBuddy(in_args.sequence_file)
     output = OrderedDict()
 

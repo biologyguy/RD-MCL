@@ -4,6 +4,7 @@ import json
 import logging
 import shutil
 import os
+import re
 import pandas as pd
 import numpy as np
 from scipy import stats
@@ -11,6 +12,7 @@ from math import log, sqrt
 from time import time, sleep
 from copy import copy
 from hashlib import md5
+from collections import OrderedDict
 from multiprocessing import SimpleQueue, Process, Pipe
 from subprocess import PIPE, check_output, CalledProcessError
 
@@ -305,6 +307,27 @@ def create_truncnorm(mu, sigma, lower=0, upper=1):
     sigma = sigma if sigma > 0.001 else 0.001  # This prevents unrealistically small differences and DivBy0 errors
     dist = stats.truncnorm((lower - mu) / sigma, (upper - mu) / sigma, loc=mu, scale=sigma)
     return dist
+
+
+def prepare_clusters(ifile,  hierarchy=False):
+    with open(ifile, "r") as ifile:
+        output = ifile.readlines()
+    if output[-1] == "\n":
+        del output[-1]
+
+    if hierarchy:
+        for indx, line in enumerate(output):
+            group_name = re.search("(^.*?)\s", line).group(1)
+            line = re.sub("(^.*?)\s-*[0-9]+\.[0-9]*\s+", "", line)
+            line = line.split()
+            output[indx] = (group_name, line)
+        output = OrderedDict(output)
+    else:
+        for indx, line in enumerate(output):
+            line = re.sub("(^.*?)\s-*[0-9]+\.[0-9]*\s+", "", line)
+            line = line.split()
+            output[indx] = line
+    return output
 
 
 # ToDo: implement Regularized MCL to take into account flows of neighbors (Expansion step is M*M_G, instead of M*M)

@@ -8,11 +8,11 @@ Only allow groups to be placed in larger groups
 """
 
 try:
-    from .compare_homolog_groups import prepare_clusters, Cluster
+    from .compare_homolog_groups import Cluster
     from . import helpers as hlp
     from . import rdmcl
 except ImportError:
-    from compare_homolog_groups import prepare_clusters, Cluster
+    from compare_homolog_groups import Cluster
     import helpers as hlp
     import rdmcl
 
@@ -39,7 +39,7 @@ class Check(object):
         self.group_name = None
         self.output = None
         self.rdmcl_dir = rdmcl_dir
-        self.clusters = prepare_clusters(join(self.rdmcl_dir, "final_clusters.txt"), hierarchy=True)
+        self.clusters = hlp.prepare_clusters(join(self.rdmcl_dir, "final_clusters.txt"), hierarchy=True)
         self.master_clust = Cluster([seq for group, ids in self.clusters.items() for seq in ids])
         self.r_squares = pd.read_csv(join(self.rdmcl_dir, "hmm", "rsquares_matrix.csv"))
         self.within_group_rsquares = self._prepare_within_group_df()
