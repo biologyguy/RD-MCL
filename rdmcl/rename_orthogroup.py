@@ -135,6 +135,11 @@ def main():
             print(os.path.relpath(f), "-->", os.path.relpath(new_path))
         except FileNotFoundError:
             print("Warning: '%s' does not exist." % os.path.relpath(f))
+        except OSError as err:
+            if "File name too long" in str(err):
+                continue
+            else:
+                raise err
 
     # Modify directory names
     r_dirs = [join(rdmcl_dir, "mcmcmc", group_name)]
@@ -143,8 +148,13 @@ def main():
             new_path = re.sub(r'%s($|\.scores)' % group_name, r'%s\1' % in_args.new_name, f)
             shutil.move(d, new_path)
             print(os.path.relpath(d), "-->", os.path.relpath(new_path))
-        except NotADirectoryError:
+        except (NotADirectoryError, FileNotFoundError):
             print("Warning: '%s' does not exist." % os.path.relpath(d))
+        except OSError as err:
+            if "File name too long" in str(err):
+                continue
+            else:
+                raise err
 
     # Modify file contents
     m_files = [join(rdmcl_dir, f) for f in ["final_clusters.txt", "paralog_cliques",
