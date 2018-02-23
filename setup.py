@@ -60,7 +60,8 @@ ENTRY_POINTS = {
         'compare_homolog_groups = rdmcl.compare_homolog_groups:main',
         'homolog_tree_builder = rdmcl.homolog_tree_builder:main',
         'merge_orthogroups = rdmcl.merge_orthogroups:main',
-        'rename_orthogroup = rdmcl.rename_orthogroup:main'
+        'rename_orthogroup = rdmcl.rename_orthogroup:main',
+        'psi-blast-alignment-parser = psi-blast-alignment-parser:main'
     ]
 }
 
