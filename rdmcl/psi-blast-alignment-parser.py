@@ -10,6 +10,7 @@ server, into FASTA.
 import re
 import argparse
 import os
+import sys
 from io import StringIO
 from collections import OrderedDict
 from tempfile import TemporaryFile
@@ -44,7 +45,12 @@ class Match(object):
 
     def update_seq(self, indx, seq, end):
         # Ensure the input sequence is correctly sized
-        assert len(seq) == len(self.sequence[indx])
+        try:
+            assert len(seq) == len(self.sequence[indx])
+        except AssertionError:
+            print("Self: ", self.sequence[indx])
+            print("New: ", seq)
+            sys.exit()
         self.sequence[indx] = seq
         self.end = end
         return
@@ -72,7 +78,8 @@ def argparse_init():
     # Positional
     positional = parser.add_argument_group(title="\033[1mPositional argument\033[m")
 
-    positional.add_argument("input_file", help="Input file (path or stdin)", action="store")
+    positional.add_argument("input_file", help="Input file (path or stdin)", action="store", nargs="*",
+                            default=[sys.stdin])
 
     # Misc
     misc = parser.add_argument_group(title="\033[1mMisc options\033[m")
@@ -85,6 +92,7 @@ def argparse_init():
 
 def main():
     in_args = argparse_init()
+    in_args.input_file = in_args.input_file[0]
 
     if str(type(in_args.input_file)) == "<class '_io.TextIOWrapper'>":
         if not in_args.input_file.seekable():  # Deal with input streams (e.g., stdout pipes)
@@ -102,12 +110,14 @@ def main():
         data = in_args.input_file
 
     blocks = re.findall("Query[^=]*?\n\n|Query[^=]*$", data, re.DOTALL)
+    front_matter_len = re.match("Query +1 +", blocks[0])
+    front_matter_len = front_matter_len.end()
     for i, block in enumerate(blocks):
         block = block.strip().split("\n")
         for j, line in enumerate(block):
-            front = line[:20].split()
+            front = line[:front_matter_len].split()
             front = [front[0], int(front[1])] if len(front) == 2 else [front[0], None]
-            back = line[20:]
+            back = line[front_matter_len:]
             if back.endswith(" "):
                 back = [back[:-2], None]
             else:
@@ -117,10 +127,8 @@ def main():
             line = front + back
             block[j] = line
         blocks[i] = block
-
     block_len = len(blocks[0][0][2])
     query_len = block_len * (len(blocks) - 1) + (len(blocks[-1][0][2]))
-
     output = OrderedDict()
     for b_indx, block in enumerate(blocks):
         for line in block:
