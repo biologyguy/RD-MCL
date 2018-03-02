@@ -93,9 +93,11 @@ def argparse_init():
                               help="Specify trimal parameters",
                               default=["gappyout", 0.5, 0.75, 0.9, 0.95, "clean"])
     parser_flags.add_argument("--strip_taxa", "-st", action="store_true",
-                              help="Remove taxa prefix before searching sequence file.")
+                              help="Remove taxa prefix before searching sequence file")
     parser_flags.add_argument("--exclude_bhc_paralogs", "-ep", action="store_true",
-                              help="Leave only one representative sequence from within-taxa paralog cliques.")
+                              help="Leave only one representative sequence from within-taxa paralog cliques")
+    parser_flags.add_argument("--include_count", "-ic", action="store_true",
+                              help="Add the size of each orthogroup as part of the group names")
     parser_flags.add_argument("--write", "-w", action="store", metavar="", help="Specify directory to write file(s)")
 
     # Misc
@@ -157,7 +159,7 @@ def main():
         else:
             with open(paralog_file, "r") as ifile:
                 paralogs = ifile.read()
-            paralogs = re.search("# group_0\n(.*)\n", paralogs)
+            paralogs = re.search("# .*?(?:_0)\n(.*)\n", paralogs)
             paralogs = {} if not paralogs else json.loads(paralogs.group(1))
 
     for rank, node in cluster_file.items():
@@ -187,6 +189,8 @@ def main():
         subset = Sb.pull_recs(Sb.make_copy(seqbuddy), ids)
         subset = Sb.order_ids(subset)
 
+        if in_args.include_count:
+            rank += "(%s)" % len(subset)
         rank_output = ""
         if mode == "list":
             rank_output += rank

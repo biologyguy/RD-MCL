@@ -186,6 +186,24 @@ def test_main_strip_taxa(monkeypatch, hf, capsys):
     assert hf.string2hash(out) == "3020ea067affd21c77b7446f35689a6a", print(out)
 
 
+def test_main_exclude_rbh_paralogs():
+    pass
+
+
+def test_main_include_counts(monkeypatch, hf, capsys):
+    argv = ['rdmcl.py', hf.resource_path, "-ic"]
+    monkeypatch.setattr(sys, "argv", argv)
+    group_by_cluster.main()
+    out, err = capsys.readouterr()
+    assert hf.string2hash(out) == "c22972e858d902a12e662e0899a3395a", print(out)
+
+    argv = ['rdmcl.py', hf.resource_path, "cons", "-ic"]
+    monkeypatch.setattr(sys, "argv", argv)
+    group_by_cluster.main()
+    out, err = capsys.readouterr()
+    assert hf.string2hash(out) == "48899e416bcd4272386d718de7324754", print(out)
+
+
 def test_main_write(monkeypatch, hf, capsys):
     tmp_dir = br.TempDir()
     argv = ['rdmcl.py', hf.resource_path, "-w", tmp_dir.path]
