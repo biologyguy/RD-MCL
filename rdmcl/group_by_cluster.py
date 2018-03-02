@@ -129,7 +129,7 @@ def main():
             if group not in cluster_file:
                 sys.stderr.write("%sWARNING%s: '%s' not present in clusters.\n" % (hlp.RED, hlp.END, group))
             else:
-                groups.append(group.lower())
+                groups.append(group)
         in_args.groups = "^%s$" % "$|^".join(groups)
 
     paralogs = {}
