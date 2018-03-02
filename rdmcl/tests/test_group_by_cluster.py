@@ -7,6 +7,7 @@ from buddysuite import SeqBuddy as Sb
 from buddysuite import AlignBuddy as Alb
 from buddysuite import buddy_resources as br
 import os
+from os.path import join
 import sys
 
 
@@ -101,8 +102,7 @@ M---TCAILP
 
 
 def test_argparse_init(monkeypatch, hf):
-    argv = ['rdmcl.py', os.path.join(hf.resource_path, "final_clusters.txt"),
-            os.path.join(hf.resource_path, "Cteno_pannexins.fa")]
+    argv = ['rdmcl.py', hf.resource_path]
     monkeypatch.setattr(sys, "argv", argv)
     temp_in_args = group_by_cluster.argparse_init()
     assert temp_in_args.mode == "list"
@@ -111,8 +111,16 @@ def test_argparse_init(monkeypatch, hf):
 
 
 def test_main_list(monkeypatch, hf, capsys):
-    argv = ['rdmcl.py', os.path.join(hf.resource_path, "final_clusters.txt"),
-            os.path.join(hf.resource_path, "Cteno_pannexins.fa"), "list"]
+    argv = ['rdmcl.py', hf.resource_path, "list"]
+    monkeypatch.setattr(sys, "argv", argv)
+    group_by_cluster.main()
+    out, err = capsys.readouterr()
+    assert hf.string2hash(out) == "dffc4d7bea1917711bf01132a42f2891", print(out)
+
+
+def test_sequence_file(monkeypatch, hf, capsys):
+    argv = ['rdmcl.py', hf.resource_path, "--sequence_file",
+            join(hf.resource_path, "Cteno_pannexins.fa")]
     monkeypatch.setattr(sys, "argv", argv)
     group_by_cluster.main()
     out, err = capsys.readouterr()
@@ -120,8 +128,7 @@ def test_main_list(monkeypatch, hf, capsys):
 
 
 def test_main_seqs(monkeypatch, hf, capsys):
-    argv = ['rdmcl.py', os.path.join(hf.resource_path, "final_clusters.txt"),
-            os.path.join(hf.resource_path, "Cteno_pannexins.fa"), "seqs"]
+    argv = ['rdmcl.py', hf.resource_path, "seqs"]
     monkeypatch.setattr(sys, "argv", argv)
     group_by_cluster.main()
     out, err = capsys.readouterr()
@@ -129,8 +136,7 @@ def test_main_seqs(monkeypatch, hf, capsys):
 
 
 def test_main_aln(monkeypatch, hf, capsys):
-    argv = ['rdmcl.py', os.path.join(hf.resource_path, "final_clusters.txt"),
-            os.path.join(hf.resource_path, "Cteno_pannexins.fa"), "aln"]
+    argv = ['rdmcl.py', hf.resource_path, "aln"]
     monkeypatch.setattr(sys, "argv", argv)
     group_by_cluster.main()
     out, err = capsys.readouterr()
@@ -138,8 +144,7 @@ def test_main_aln(monkeypatch, hf, capsys):
 
 
 def test_main_cons(monkeypatch, hf, capsys):
-    argv = ['rdmcl.py', os.path.join(hf.resource_path, "final_clusters.txt"),
-            os.path.join(hf.resource_path, "Cteno_pannexins.fa"), "cons"]
+    argv = ['rdmcl.py', hf.resource_path, "cons"]
     monkeypatch.setattr(sys, "argv", argv)
     group_by_cluster.main()
     out, err = capsys.readouterr()
@@ -147,16 +152,14 @@ def test_main_cons(monkeypatch, hf, capsys):
 
 
 def test_main_select_groups(monkeypatch, hf, capsys):
-    argv = ['rdmcl.py', os.path.join(hf.resource_path, "final_clusters.txt"),
-            os.path.join(hf.resource_path, "Cteno_pannexins.fa"), "-g", "group_0_1", "group_0_3", "group_0_0"]
+    argv = ['rdmcl.py', hf.resource_path, "-g", "group_0_1", "group_0_3", "group_0_0"]
     monkeypatch.setattr(sys, "argv", argv)
     group_by_cluster.main()
     out, err = capsys.readouterr()
     assert hf.string2hash(out) == "9a03d8619d686cc553f09138635c8685", print(out)
     assert not err
 
-    argv = ['rdmcl.py', os.path.join(hf.resource_path, "final_clusters.txt"),
-            os.path.join(hf.resource_path, "Cteno_pannexins.fa"), "-g", "group_0_1", "group_wonky"]
+    argv = ['rdmcl.py', hf.resource_path, "-g", "group_0_1", "group_wonky"]
     monkeypatch.setattr(sys, "argv", argv)
     group_by_cluster.main()
     out, err = capsys.readouterr()
@@ -164,8 +167,7 @@ def test_main_select_groups(monkeypatch, hf, capsys):
 
 
 def test_main_min_max(monkeypatch, hf, capsys):
-    argv = ['rdmcl.py', os.path.join(hf.resource_path, "final_clusters.txt"),
-            os.path.join(hf.resource_path, "Cteno_pannexins.fa"), "-min", "5", "-max", "7"]
+    argv = ['rdmcl.py', hf.resource_path, "-min", "5", "-max", "7"]
     monkeypatch.setattr(sys, "argv", argv)
     group_by_cluster.main()
     out, err = capsys.readouterr()
@@ -174,11 +176,10 @@ def test_main_min_max(monkeypatch, hf, capsys):
 
 def test_main_strip_taxa(monkeypatch, hf, capsys):
     tmp_file = br.TempFile()
-    seqbuddy = Sb.SeqBuddy(os.path.join(hf.resource_path, "Cteno_pannexins.fa"))
+    seqbuddy = Sb.SeqBuddy(join(hf.resource_path, "Cteno_pannexins.fa"))
     seqbuddy = Sb.rename(seqbuddy, "^.*?\-")
     tmp_file.write(str(seqbuddy))
-    argv = ['rdmcl.py', os.path.join(hf.resource_path, "final_clusters.txt"),
-            tmp_file.path, "-s"]
+    argv = ['rdmcl.py', hf.resource_path, "-s", tmp_file.path, "-st"]
     monkeypatch.setattr(sys, "argv", argv)
     group_by_cluster.main()
     out, err = capsys.readouterr()
@@ -187,8 +188,7 @@ def test_main_strip_taxa(monkeypatch, hf, capsys):
 
 def test_main_write(monkeypatch, hf, capsys):
     tmp_dir = br.TempDir()
-    argv = ['rdmcl.py', os.path.join(hf.resource_path, "final_clusters.txt"),
-            os.path.join(hf.resource_path, "Cteno_pannexins.fa"), "-w", tmp_dir.path]
+    argv = ['rdmcl.py', hf.resource_path, "-w", tmp_dir.path]
     monkeypatch.setattr(sys, "argv", argv)
     group_by_cluster.main()
     root, dirs, files = next(os.walk(tmp_dir.path))
@@ -200,16 +200,14 @@ def test_main_write(monkeypatch, hf, capsys):
 
 
 def test_main_errors(monkeypatch, hf, capsys):
-    argv = ['rdmcl.py', os.path.join(hf.resource_path, "final_clusters.txt"),
-            os.path.join(hf.resource_path, "Cteno_pannexins.fa"), "FOOBAR"]
+    argv = ['rdmcl.py', hf.resource_path, "FOOBAR"]
     monkeypatch.setattr(sys, "argv", argv)
     with pytest.raises(SystemExit):
         group_by_cluster.main()
     out, err = capsys.readouterr()
     assert 'Unrecognized mode, please select from ["seqs", "aln", "con", "list"].' in err
 
-    argv = ['rdmcl.py', os.path.join(hf.resource_path, "final_clusters.txt"),
-            os.path.join(hf.resource_path, "Cteno_pannexins.fa"), "aln"]
+    argv = ['rdmcl.py', hf.resource_path, "aln"]
     monkeypatch.setattr(sys, "argv", argv)
 
     def kill1(*_):

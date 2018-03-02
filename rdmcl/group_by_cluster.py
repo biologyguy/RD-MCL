@@ -68,19 +68,19 @@ def argparse_init():
   alignments, consensus sequences, or lists of metadata.
 
 \033[1mUsage\033[m:
-  group_by_cluster "clusters" "sequence_file" [mode] [-options]
+  group_by_cluster "rdmcl_dir" [mode] [-options]
 ''')
 
     # Positional
     positional = parser.add_argument_group(title="\033[1mPositional argument\033[m")
 
-    positional.add_argument("clusters", action="store", help="Path to clusters file")
-    positional.add_argument("sequence_file", action="store", help="Path to original sequence file")
+    positional.add_argument("rdmcl_dir", action="store", help="Path to RD-MCL output directory")
     positional.add_argument("mode", action="store", nargs="?", default="list",
                             help="Choose the output type [list, seqs, sequences, aln, alignment, con, consensus]")
 
     # Optional commands
     parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
+    parser_flags.add_argument("--sequence_file", "-s", action="store", help="Path to sequence file")
     parser_flags.add_argument("--aligner", "-a", action="store", default="clustalo", metavar="",
                               help="Specify a multiple sequence alignment program")
     parser_flags.add_argument("--groups", "-g", action="append", nargs="+", metavar="group",
@@ -92,7 +92,7 @@ def argparse_init():
     parser_flags.add_argument("--trimal", "-trm", action="append", nargs="*", metavar="param",
                               help="Specify trimal parameters",
                               default=["gappyout", 0.5, 0.75, 0.9, 0.95, "clean"])
-    parser_flags.add_argument("--strip_taxa", "-s", action="store_true",
+    parser_flags.add_argument("--strip_taxa", "-st", action="store_true",
                               help="Remove taxa prefix before searching sequence file.")
     parser_flags.add_argument("--exclude_bhc_paralogs", "-ep", action="store_true",
                               help="Leave only one representative sequence from within-taxa paralog cliques.")
@@ -119,8 +119,24 @@ def main():
         Sb.br._stderr('Unrecognized mode, please select from ["seqs", "aln", "con", "list"].\n')
         sys.exit()
 
-    cluster_file = hlp.prepare_clusters(in_args.clusters, hierarchy=True)
-    seqbuddy = Sb.SeqBuddy(in_args.sequence_file)
+    rdmcl_dir = os.path.abspath(in_args.rdmcl_dir)
+
+    if not os.path.isdir(rdmcl_dir):
+        sys.stderr.write("Error: The provided RD-MCL output directory does not exist.\n")
+        sys.exit()
+
+    if not os.path.isfile(join(rdmcl_dir, "final_clusters.txt")):
+        sys.stderr.write("Error: The provided RD-MCL output directory does not "
+                         "contain the necessary file 'final_clusters.txt'.\n")
+        sys.exit()
+
+    cluster_file = hlp.prepare_clusters(join(rdmcl_dir, "final_clusters.txt"), hierarchy=True)
+    sequence_file = join(rdmcl_dir, "input_seqs.fa") if not in_args.sequence_file else in_args.sequence_file
+    if not os.path.isfile(sequence_file):
+        sys.stderr.write("Error: Unable to find sequence file.\n")
+        sys.exit()
+
+    seqbuddy = Sb.SeqBuddy(sequence_file)
     output = OrderedDict()
 
     if in_args.groups:
@@ -134,7 +150,7 @@ def main():
 
     paralogs = {}
     if in_args.exclude_bhc_paralogs:
-        paralog_file = join(os.path.split(in_args.clusters)[0], "paralog_cliques")
+        paralog_file = join(rdmcl_dir, "paralog_cliques")
         if not os.path.isfile(paralog_file):
             sys.stderr.write("%sWARNING%s: 'paralog_clique' file not found in clusters directory.\n" %
                              (hlp.RED, hlp.END))
