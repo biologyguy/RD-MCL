@@ -113,6 +113,12 @@ def test_cluster_instantiate_group_0(hf, monkeypatch):
     os.remove("cad7ae67468eea9293c3ae2689e116ed.error")
 
 
+def test_cluster_instantiate_with_group_name_prefix(hf, monkeypatch):
+    monkeypatch.setattr(rdmcl.Cluster, "collapse", lambda *_: True)  # Don't actually call the collapse method
+    cluster = rdmcl.Cluster(*hf.base_cluster_args(), group_prefix="cteno")
+    assert cluster._name == "cteno_0"
+
+
 def test_cluster_instantiate_child(hf):
     parent = rdmcl.Cluster(*hf.base_cluster_args())
     parent.collapsed_genes = OrderedDict([('Mle-Panxα10A', ['Mle-Panxα9'])])
@@ -1598,7 +1604,7 @@ def test_write_mcl_clusters(hf):
 
 
 # #########  Final sequence placement  ########## #
-def test_instantiate_seqs2clusters(hf, monkeypatch):
+def test_instantiate_seqs2clusters(hf):
     # Get starting graph from pre-computed database
     broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
     broker.start_broker()
@@ -2021,6 +2027,8 @@ parser.add_argument("-op", "--open_penalty", help="Penalty for opening a gap in 
                     type=float, default=rdmcl.GAP_OPEN)
 parser.add_argument("-ep", "--ext_penalty", help="Penalty for extending a gap in pairwise alignment scoring",
                     type=float, default=rdmcl.GAP_EXTEND)
+parser.add_argument("-gn", "--group_name", action="store", default="group", metavar="",
+                    help="Supply a name prefix for cluster names (default='group')")
 parser.add_argument("-ts", "--taxa_sep", action="store", default="-",
                     help="Specify a string that separates taxa ids from gene names")
 parser.add_argument("-cpu", "--max_cpus", type=int, action="store", default=rdmcl.CPUS,

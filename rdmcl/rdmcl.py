@@ -126,7 +126,7 @@ pd.set_option("display.precision", 12)
 
 # ToDo: Maybe remove support for taxa_sep. It's complicating my life, so just impose the '-' on users?
 class Cluster(object):
-    def __init__(self, seq_ids, sim_scores, taxa_sep="-", parent=None, collapse=False, r_seed=None):
+    def __init__(self, seq_ids, sim_scores, taxa_sep="-", group_prefix="group", parent=None, collapse=False, r_seed=None):
         """
         - Note that reciprocal best hits between paralogs are collapsed when instantiating group_0, so
           no problem strongly penalizing all paralogs in the scoring algorithm
@@ -135,6 +135,8 @@ class Cluster(object):
         :type seq_ids: list or set
         :param sim_scores: All-by-all similarity matrix for everything in the sequence_ids (and parental clusters)
         :type sim_scores: pandas.DataFrame
+        :param taxa_sep: What character partitions taxon from rec id (deprecated)
+        :param group_prefix: The name that is attached to each group
         :param parent: Parental sequence_ids
         :type parent: Cluster
         :param collapse: Specify whether reciprocal best hit paralogs should be combined
@@ -185,7 +187,7 @@ class Cluster(object):
 
         else:
             self.max_genes_in_a_taxa = max([len(self.taxa[taxa]) for taxa in self.taxa])
-            self._name = "group_0"
+            self._name = "%s_0" % group_prefix
             # This next bit can collapse all paralog reciprocal best-hit cliques so they don't gum up MCL
             if collapse:
                 self.collapse()
@@ -2314,6 +2316,8 @@ def argparse_init():
                               help="If RD-MCL has already created a SQLite database, reusing it can speed things up")
     parser_flags.add_argument("-psi", "--psipred_dir", action="store", metavar="",
                               help="If RD-MCL has already calculated PSI-Pred files, point to the directory")
+    parser_flags.add_argument("-gn", "--group_name", action="store", default="group", metavar="",
+                              help="Supply a name prefix for cluster names (default='group')")
     parser_flags.add_argument("-ts", "--taxa_sep", action="store", default="-", metavar="",
                               help="Specify the string that separates taxa ids from gene names (default='-')")
     parser_flags.add_argument("-ch", "--chains", default=MCMC_CHAINS, type=int, metavar="",
@@ -2626,15 +2630,18 @@ Continue? y/[n] """ % len(sequences)
                        header=None, index=False, sep="\t")
     logging.info("\t-- finished in %s --\n" % TIMER.split())
 
+    # Don't allow forward slashes or spaces in group names
+    in_args.group_name = re.sub("[/ ]", "_", in_args.group_name)
+
     # First prepare the really raw first alignment in the database, without any collapsing.
     uncollapsed_group_0 = Cluster([rec.id for rec in sequences.records], scores_data,
-                                  taxa_sep=in_args.taxa_sep, r_seed=in_args.r_seed)
+                                  taxa_sep=in_args.taxa_sep, group_prefix=in_args.group_name, r_seed=in_args.r_seed)
     cluster2database(uncollapsed_group_0, broker, alignbuddy)
 
     # Then prepare the 'real' group_0 cluster
     if not in_args.suppress_paralog_collapse:
-        group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data,
-                                  taxa_sep=in_args.taxa_sep, collapse=True, r_seed=in_args.r_seed)
+        group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data, taxa_sep=in_args.taxa_sep,
+                                  group_prefix=in_args.group_name, collapse=True, r_seed=in_args.r_seed)
     else:
         group_0_cluster = uncollapsed_group_0
 
