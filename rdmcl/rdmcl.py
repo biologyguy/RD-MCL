@@ -2522,7 +2522,6 @@ Continue? y/[n] """ % len(sequences)
         else:
             logging.warning("Proceeding with large run.\n")
 
-    sequences = Sb.delete_metadata(sequences)
     if not check_sequences(sequences, in_args.taxa_sep):
         heartbeat.end()
         sys.exit()
@@ -2574,6 +2573,9 @@ Continue? y/[n] """ % len(sequences)
 
     # Write a copy of input sequences
     sequences.write(join(in_args.outdir, "input_seqs.fa"), out_format="fasta")
+
+    # Remove medadata to reduce memory
+    sequences = Sb.delete_metadata(sequences)
 
     # PSIPRED
     logging.warning("\n** PSI-Pred **")
