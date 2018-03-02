@@ -111,7 +111,7 @@ def test_argparse_init(monkeypatch, hf):
 
 
 def test_main_list(monkeypatch, hf, capsys):
-    argv = ['rdmcl.py', hf.resource_path, "list"]
+    argv = ['rdmcl.py', hf.resource_path, "-m", "list"]
     monkeypatch.setattr(sys, "argv", argv)
     group_by_cluster.main()
     out, err = capsys.readouterr()
@@ -128,7 +128,7 @@ def test_sequence_file(monkeypatch, hf, capsys):
 
 
 def test_main_seqs(monkeypatch, hf, capsys):
-    argv = ['rdmcl.py', hf.resource_path, "seqs"]
+    argv = ['rdmcl.py', hf.resource_path, "-m", "seqs"]
     monkeypatch.setattr(sys, "argv", argv)
     group_by_cluster.main()
     out, err = capsys.readouterr()
@@ -136,7 +136,7 @@ def test_main_seqs(monkeypatch, hf, capsys):
 
 
 def test_main_aln(monkeypatch, hf, capsys):
-    argv = ['rdmcl.py', hf.resource_path, "aln"]
+    argv = ['rdmcl.py', hf.resource_path, "-m", "aln"]
     monkeypatch.setattr(sys, "argv", argv)
     group_by_cluster.main()
     out, err = capsys.readouterr()
@@ -144,7 +144,7 @@ def test_main_aln(monkeypatch, hf, capsys):
 
 
 def test_main_cons(monkeypatch, hf, capsys):
-    argv = ['rdmcl.py', hf.resource_path, "cons"]
+    argv = ['rdmcl.py', hf.resource_path, "-m", "cons"]
     monkeypatch.setattr(sys, "argv", argv)
     group_by_cluster.main()
     out, err = capsys.readouterr()
@@ -197,7 +197,7 @@ def test_main_include_counts(monkeypatch, hf, capsys):
     out, err = capsys.readouterr()
     assert hf.string2hash(out) == "c22972e858d902a12e662e0899a3395a", print(out)
 
-    argv = ['rdmcl.py', hf.resource_path, "cons", "-ic"]
+    argv = ['rdmcl.py', hf.resource_path, "-m", "cons", "-ic"]
     monkeypatch.setattr(sys, "argv", argv)
     group_by_cluster.main()
     out, err = capsys.readouterr()
@@ -218,14 +218,14 @@ def test_main_write(monkeypatch, hf, capsys):
 
 
 def test_main_errors(monkeypatch, hf, capsys):
-    argv = ['rdmcl.py', hf.resource_path, "FOOBAR"]
+    argv = ['rdmcl.py', hf.resource_path, "-m", "FOOBAR"]
     monkeypatch.setattr(sys, "argv", argv)
     with pytest.raises(SystemExit):
         group_by_cluster.main()
     out, err = capsys.readouterr()
     assert 'Unrecognized mode, please select from ["seqs", "aln", "con", "list"].' in err
 
-    argv = ['rdmcl.py', hf.resource_path, "aln"]
+    argv = ['rdmcl.py', hf.resource_path, "-m", "aln"]
     monkeypatch.setattr(sys, "argv", argv)
 
     def kill1(*_):

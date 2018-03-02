@@ -74,12 +74,12 @@ def argparse_init():
     # Positional
     positional = parser.add_argument_group(title="\033[1mPositional argument\033[m")
 
-    positional.add_argument("rdmcl_dir", action="store", help="Path to RD-MCL output directory")
-    positional.add_argument("mode", action="store", nargs="?", default="list",
-                            help="Choose the output type [list, seqs, sequences, aln, alignment, con, consensus]")
+    positional.add_argument("rdmcl_dir", action="append", nargs="+", help="Path(s) to RD-MCL output directory(ies)")
 
     # Optional commands
     parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
+    positional.add_argument("--mode", "-m", action="store", default="list",
+                            help="Choose the output type [list, seqs, sequences, aln, alignment, con, consensus]")
     parser_flags.add_argument("--sequence_file", "-s", action="store", help="Path to sequence file")
     parser_flags.add_argument("--aligner", "-a", action="store", default="clustalo", metavar="",
                               help="Specify a multiple sequence alignment program")
@@ -121,30 +121,42 @@ def main():
         Sb.br._stderr('Unrecognized mode, please select from ["seqs", "aln", "con", "list"].\n')
         sys.exit()
 
-    rdmcl_dir = os.path.abspath(in_args.rdmcl_dir)
+    rdmcl_dirs = {}
+    sequences = []
 
-    if not os.path.isdir(rdmcl_dir):
-        sys.stderr.write("Error: The provided RD-MCL output directory does not exist.\n")
-        sys.exit()
+    for rdmcl_dir in in_args.rdmcl_dir[0]:
+        rdmcl_dir = os.path.abspath(rdmcl_dir)
 
-    if not os.path.isfile(join(rdmcl_dir, "final_clusters.txt")):
-        sys.stderr.write("Error: The provided RD-MCL output directory does not "
-                         "contain the necessary file 'final_clusters.txt'.\n")
-        sys.exit()
+        if not os.path.isdir(rdmcl_dir):
+            sys.stderr.write("Error: The provided RD-MCL output directory does not exist.\n")
+            sys.exit()
 
-    cluster_file = hlp.prepare_clusters(join(rdmcl_dir, "final_clusters.txt"), hierarchy=True)
-    sequence_file = join(rdmcl_dir, "input_seqs.fa") if not in_args.sequence_file else in_args.sequence_file
-    if not os.path.isfile(sequence_file):
-        sys.stderr.write("Error: Unable to find sequence file.\n")
-        sys.exit()
+        if not os.path.isfile(join(rdmcl_dir, "final_clusters.txt")):
+            sys.stderr.write("Error: The provided RD-MCL output directory does not "
+                             "contain the necessary file 'final_clusters.txt'.\n")
+            sys.exit()
 
-    seqbuddy = Sb.SeqBuddy(sequence_file)
+        rdmcl_dirs[rdmcl_dir] = hlp.prepare_clusters(join(rdmcl_dir, "final_clusters.txt"), hierarchy=True)
+
+        if not in_args.sequence_file:
+            sequences.append(Sb.SeqBuddy(join(rdmcl_dir, "input_seqs.fa")))
+
+    if in_args.sequence_file:
+        if not os.path.isfile(in_args.sequence_file):
+            sys.stderr.write("Error: Unable to find sequence file at %s\n" % in_args.sequence_file)
+            sys.exit()
+        else:
+            seqbuddy = Sb.SeqBuddy(in_args.sequence_file)
+    else:
+        seqbuddy = Sb.SeqBuddy([rec for sb in sequences for rec in sb.records], out_format=sequences[0].out_format)
+
+    all_clusters = [clust for rdmcl_dir, clusts in rdmcl_dirs.items() for clust in clusts]
     output = OrderedDict()
 
     if in_args.groups:
         groups = []
         for group in in_args.groups[0]:
-            if group not in cluster_file:
+            if group not in all_clusters:
                 sys.stderr.write("%sWARNING%s: '%s' not present in clusters.\n" % (hlp.RED, hlp.END, group))
             else:
                 groups.append(group)
@@ -162,64 +174,65 @@ def main():
             paralogs = re.search("# .*?(?:_0)\n(.*)\n", paralogs)
             paralogs = {} if not paralogs else json.loads(paralogs.group(1))
 
-    for rank, node in cluster_file.items():
-        rank = rank.split()[0]
-        if in_args.groups:
-            if not re.search(in_args.groups, rank):
-                continue
+    for rdmcl_dir, cluster_file in rdmcl_dirs.items():
+        for rank, node in cluster_file.items():
+            rank = rank.split()[0]
+            if in_args.groups:
+                if not re.search(in_args.groups, rank):
+                    continue
 
-        if in_args.min_size:
-            if len(node) < in_args.min_size:
-                continue
+            if in_args.min_size:
+                if len(node) < in_args.min_size:
+                    continue
 
-        if in_args.max_size:
-            if len(node) > in_args.max_size:
-                continue
+            if in_args.max_size:
+                if len(node) > in_args.max_size:
+                    continue
 
-        if paralogs:
-            for rec_id, paralog_list in paralogs.items():
-                if rec_id in node:
-                    for p in paralog_list:
-                        del node[node.index(p)]
+            if paralogs:
+                for rec_id, paralog_list in paralogs.items():
+                    if rec_id in node:
+                        for p in paralog_list:
+                            del node[node.index(p)]
 
-        if in_args.strip_taxa:
-            node = [re.sub("^.*?\-", "", x) for x in node]
+            if in_args.strip_taxa:
+                node = [re.sub("^.*?-", "", x) for x in node]
 
-        ids = "^%s$" % "$|^".join(node)
-        subset = Sb.pull_recs(Sb.make_copy(seqbuddy), ids)
-        subset = Sb.order_ids(subset)
+            ids = "^%s$" % "$|^".join(node)
+            subset = Sb.pull_recs(Sb.make_copy(seqbuddy), ids)
+            subset = Sb.order_ids(subset)
 
-        if in_args.include_count:
-            rank += "(%s)" % len(subset)
-        rank_output = ""
-        if mode == "list":
-            rank_output += rank
-            for rec in subset.records:
-                rec.description = re.sub("^%s" % rec.id, "", rec.description)
-                rank_output += "\n%s %s" % (rec.id, rec.description)
-            rank_output += "\n"
+            if in_args.include_count:
+                rank += "(%s)" % len(subset)
+            rank_output = ""
+            if mode == "list":
+                rank_output += rank
+                for rec in subset.records:
+                    rec.description = re.sub("^%s" % rec.id, "", rec.description)
+                    rank_output += "\n%s %s" % (rec.id, rec.description)
+                rank_output += "\n"
 
-        elif mode == "seqs":
-            for rec in subset.records:
-                rec.description = "%s %s" % (rank, rec.description)
-            rank_output += str(subset)
+            elif mode == "seqs":
+                for rec in subset.records:
+                    rec.description = "%s %s" % (rank, rec.description)
+                rank_output += str(subset)
 
-        elif mode in ["aln", "con"]:
-            try:
-                rank_output = make_msa(subset, in_args.aligner, in_args.trimal)
-            except (SystemError, AttributeError) as err:
-                print(err)
-                sys.exit()
-            rank_output.out_format = "phylip-relaxed"
+            elif mode in ["aln", "con"]:
+                try:
+                    rank_output = make_msa(subset, in_args.aligner, in_args.trimal)
+                except (SystemError, AttributeError) as err:
+                    print(err)
+                    sys.exit()
+                rank_output.out_format = "phylip-relaxed"
 
-        if mode == "con":
-            rec = Alb.consensus_sequence(rank_output).records()[0]
-            rec.id = rank
-            rec.name = rank
-            rec.description = ""
-            rank_output.out_format = "fasta"
+            if mode == "con":
+                rec = Alb.consensus_sequence(rank_output).records()[0]
+                rec.id = rank
+                rec.name = rank
+                rec.description = ""
+                rank_output.out_format = "fasta"
 
-        output[rank] = str(rank_output)
+            output[rank] = str(rank_output)
 
     if not in_args.write:
         print("\n".join(data for rank, data in output.items()).strip())
