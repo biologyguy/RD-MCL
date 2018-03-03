@@ -80,7 +80,8 @@ def argparse_init():
     parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
     positional.add_argument("--mode", "-m", action="store", default="list",
                             help="Choose the output type [list, seqs, sequences, aln, alignment, con, consensus]")
-    parser_flags.add_argument("--sequence_file", "-s", action="store", help="Path to sequence file")
+    parser_flags.add_argument("--sequence_file", "-s", action="append", nargs="+",
+                              help="Manually set path to sequence file(s)")
     parser_flags.add_argument("--aligner", "-a", action="store", default="clustalo", metavar="",
                               help="Specify a multiple sequence alignment program")
     parser_flags.add_argument("--groups", "-g", action="append", nargs="+", metavar="group",
@@ -142,13 +143,14 @@ def main():
             sequences.append(Sb.SeqBuddy(join(rdmcl_dir, "input_seqs.fa")))
 
     if in_args.sequence_file:
-        if not os.path.isfile(in_args.sequence_file):
-            sys.stderr.write("Error: Unable to find sequence file at %s\n" % in_args.sequence_file)
-            sys.exit()
-        else:
-            seqbuddy = Sb.SeqBuddy(in_args.sequence_file)
-    else:
-        seqbuddy = Sb.SeqBuddy([rec for sb in sequences for rec in sb.records], out_format=sequences[0].out_format)
+        for next_path in in_args.sequence_file[0]:
+            if not os.path.isfile(next_path):
+                sys.stderr.write("Error: Unable to find sequence file at %s\n" % in_args.sequence_file)
+                sys.exit()
+
+            sequences.append(Sb.SeqBuddy(next_path))
+
+    seqbuddy = Sb.SeqBuddy([rec for sb in sequences for rec in sb.records], out_format=sequences[0].out_format)
 
     all_clusters = [clust for rdmcl_dir, clusts in rdmcl_dirs.items() for clust in clusts]
     output = OrderedDict()
@@ -162,19 +164,19 @@ def main():
                 groups.append(group)
         in_args.groups = "^%s$" % "$|^".join(groups)
 
-    paralogs = {}
-    if in_args.exclude_bhc_paralogs:
-        paralog_file = join(rdmcl_dir, "paralog_cliques")
-        if not os.path.isfile(paralog_file):
-            sys.stderr.write("%sWARNING%s: 'paralog_clique' file not found in clusters directory.\n" %
-                             (hlp.RED, hlp.END))
-        else:
-            with open(paralog_file, "r") as ifile:
-                paralogs = ifile.read()
-            paralogs = re.search("# .*?(?:_0)\n(.*)\n", paralogs)
-            paralogs = {} if not paralogs else json.loads(paralogs.group(1))
-
     for rdmcl_dir, cluster_file in rdmcl_dirs.items():
+        paralogs = {}
+        if in_args.exclude_bhc_paralogs:
+            paralog_file = join(rdmcl_dir, "paralog_cliques")
+            if not os.path.isfile(paralog_file):
+                sys.stderr.write("%sWARNING%s: 'paralog_clique' file not found in clusters directory.\n" %
+                                 (hlp.RED, hlp.END))
+            else:
+                with open(paralog_file, "r") as ifile:
+                    paralogs = ifile.read()
+                paralogs = re.search("# .*?(?:_0)\n(.*)\n", paralogs)
+                paralogs = {} if not paralogs else json.loads(paralogs.group(1))
+
         for rank, node in cluster_file.items():
             rank = rank.split()[0]
             if in_args.groups:
