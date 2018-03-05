@@ -231,9 +231,9 @@ Blahh
 %% See the Results and Discussion section   %%
 %% for details on how to create sub-sections%%
 %%                                          %%
-%% use \cite{...} to cite references        %%
-%%  \cite{koon} and                         %%
-%%  \cite{oreg,khar,zvai,xjon,schn,pond}    %%
+%% use~\cite{...} to cite references        %%
+%% ~\cite{koon} and                         %%
+%% ~\cite{oreg,khar,zvai,xjon,schn,pond}    %%
 %%  \nocite{smith,marg,hunn,advi,koha,mouse}%%
 %%                                          %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -244,53 +244,64 @@ Blahh
 %%%%%%%%%%%%%%%%
 %% Background %%
 %%
-\section{Background and rationale}
-When a gene evolves an important physiological function, purifying selection tends to maintain that function through evolutionary time \cite{Altenhoff:2012ea, Rogozin:2014fp, KryuchkovaMostacci:2016iw}.
+\section{Background and rationale}\label{sec:backgroundAndRationale}
+When a gene evolves an important physiological function, purifying selection tends to maintain that function through evolutionary time~\cite{Altenhoff:2012ea, KryuchkovaMostacci:2016iw, Rogozin:2014fp}.
 As a result, orthology (i.e., homology via speciation) has become a widely used predictor of shared gene product function among species, with considerable effort made to develop computational methods for identifying orthologs.
-Due to the non-transitive nature of orthology (i.e., paralogs in one species can be orthologous to a single gene in another species), groupings of pure orthologs may not be possible \cite{Fitch:2000tf}.
-Instead, the term `orthogroup' has come to represent a cluster of genes desended from a common ancestor of the clade in question, which may include paralogs \cite{Wapinski:2007fa}.
-The algorithms currently in popular use for defining orthogroups fall into three broad categories: Synteny-based, tree-based, and graph-based clustering methods (recently reviewed in \cite{Tekaia:2016ga} and \cite{Habermann2016}).
+Due to the non-transitive nature of orthology (i.e., paralogs in one species can be orthologous to a single gene in another species), groupings of pure orthologs may not be possible~\cite{Fitch:2000tf}.
+Instead, the term `orthogroup' has come to represent a cluster of genes desended from a common ancestor of the clade in question, which may include paralogs~\cite{Wapinski:2007fa}.
+The algorithms currently in popular use for defining orthogroups fall into three broad categories: Synteny-based, tree-based, and graph-based clustering methods (recently reviewed in~\cite{Tekaia:2016ga} and~\cite{Habermann2016}).
 
-Syntenic neighborhoods degrade rapidly with evolutionary distance, so pure synteny-based approaches are not generally appropriate except between closely related taxa \cite{Kristensen:2011gw}.
-Furthermore, such approaches require highly contiguous genomic assemblies; while advances in long-read sequencing technology and de novo assembly will likely allow future genome sequencing efforts to acheive the necessary standards, current genome projects often remain highly fragmented \cite{Koren:2015il}.
+Syntenic neighborhoods degrade rapidly with evolutionary distance, so pure synteny-based approaches are not generally appropriate except between closely related taxa~\cite{Kristensen:2011gw}.
+Furthermore, such approaches require highly contiguous genomic assemblies;
+while advances in long-read sequencing technology and de novo assembly will likely allow future genome sequencing efforts to acheive the necessary standards, current genome projects often remain highly fragmented~\cite{Koren:2015il}.
 
-Tree-based approaches (e.g., Ensembl Compara \cite{Vilella:2009ju}, LOFT \cite{vanderHeijden:2007bo}, and SYNERGY \cite{Wapinski:2007fa}) identify orthologous clades by estimating phylogenetic trees for a target gene family, and then attempt to reconcile those gene trees against a `known' species tree.
-The accuracy of tree-based orthology prediction methods is tied closely to the accuracy of the species trees they rely on; this can lead to considerable uncertainty or error, especially for less well-studied taxonomic groups \cite{Xu:2016ek}.
+Tree-based approaches (e.g., Ensembl Compara~\cite{Vilella:2009ju}, LOFT~\cite{vanderHeijden:2007bo}, and SYNERGY~\cite{Wapinski:2007fa}) identify orthologous clades by estimating phylogenetic trees for a target gene family, and then attempt to reconcile those gene trees against a `known' species tree.
+The accuracy of tree-based orthology prediction methods is tied closely to the accuracy of the species trees they rely on;
+this can lead to considerable uncertainty or error, especially for less well-studied taxonomic groups~\cite{Xu:2016ek}.
 
 Finally, pairwise similarity graph clustering methods leverage graph theory to rapidly identify groups of related sequences.
-InParanoid \cite{OBrien:2005cy}, EggNOG \cite{Jensen:2007cc}, and OMA \cite{Roth:2009iu} are popular tools for assigning sequences to orthogroups using a `best-hit clique' approach, where closed best-hit sub-graphs are identified in the dataset.
-These methods can be fast and accurate for detecting one-to-one orthologs, but they suffer dimminishing recall rates when in-paralogs are present among the species under study \cite{Dalquen:2013fz} (`in-paralog' describes homologs derivied from genetic duplication \textit{after} speciation \cite{Sonnhammer:2002vm,Tekaia:2016ga}).
-In contrast, Markov clustering (MCL) can efficiently isolate more inclusive sub-graphs \cite{VanDongen:kJZ890qx,Enright:2002uq}, althought the tradeoff can be a reduction in precision (too many in-paralogs may be placed into orthogroups).
-OrthoMCL \cite{Li:2003en}, OrthoFinder \cite{Emms:2015ig}, and ProteinOrtho \cite{Lechner:2011jk} are popular MCL-based ortholog prediction methods.
+InParanoid~\cite{OBrien:2005cy}, EggNOG~\cite{Jensen:2007cc}, and OMA~\cite{Roth:2009iu} are popular tools for assigning sequences to orthogroups using a `best-hit clique' approach, where closed best-hit sub-graphs are identified in the dataset.
+These methods can be fast and accurate for detecting one-to-one orthologs, but they suffer dimminishing recall rates when in-paralogs are present among the species under study~\cite{Dalquen:2013fz} (`in-paralog' describes homologs derivied from genetic duplication \textit{after} speciation~\cite{Sonnhammer:2002vm,Tekaia:2016ga}).
+In contrast, Markov clustering (MCL) can efficiently isolate more inclusive sub-graphs~\cite{VanDongen:kJZ890qx,Enright:2002uq}, althought the tradeoff can be a reduction in precision (too many in-paralogs may be placed into orthogroups).
+OrthoMCL~\cite{Li:2003en}, OrthoFinder~\cite{Emms:2015ig}, and ProteinOrtho~\cite{Lechner:2011jk} are popular MCL-based ortholog prediction methods.
 
 In this current study we strive to further refine the precision of pairwise similarity graph orthogroup prediction.
 Specifically, we introduce Recursive Dynamic Markov Clustering (RD-MCL), a new method that improves upon the BLASTP-based pairwise similarity metrics currently in popular use, uses an optimization algorithm to dynamically select MCL parameters, recursively subdivides overly inclusive orthogroups, and implements a number of final `polishing' steps to maximize overall accuracy.
 
 
 
-
-\section{Results and Discussion}
-\subsection{Description of the RD-MCL algorithm and software}
+\section{Results and Discussion}\label{sec:resultsAndDiscussion}
+\subsection{Description of the RD-MCL algorithm and software}\label{subsec:descriptionOfTheRd-mclAlgorithmAndSoftware}
 The impetus for developing RD-MCL was to predict high-quality fine-grained orthogroups among any collection of homologous protein sequence.
 
 \lipsum[3]
 
-\subsection{BLASTP scores reduce overall resolving power of MCL when sequences are too similar or too dissimilar}
-BLAST scores (bit or e-value) have a strong length bias when calculating orthogroups, but this can be corrected for by creating a linear model from the top 5\% of matches between two species and scaling all other matches according to that model \cite{Emms:2015ig}. OrthoFinder also uses a static inflation/edge similarity threashold for MCL \cite{Emms:2015ig}
+\subsection{BLASTP scores reduce overall resolving power of MCL when sequences are too similar or too dissimilar}\label{subsec:blastpScoresReduceOverallResolvingPowerOfMclWhenSequencesAreTooSimilarOrTooDissimilar}
+BLAST scores (bit or e-value) have a strong length bias when calculating orthogroups, but this can be corrected for by creating a linear model from the top 5\% of matches between two species and scaling all other matches according to that model~\cite{Emms:2015ig}.
+OrthoFinder also uses a static inflation/edge similarity threashold for MCL~\cite{Emms:2015ig}
 
 
-\subsection{Simulation data across the dynamic range of RD-MCL}
-To test the performance of RD-MCL compared to other available ortholog prediction tools, we simulated sets of homologs using the Pyvolve module \cite{Spielman:2015kv}. These simulations varied in the number of sequences, branch length (substitutions per site), degree of gene loss or duplication, and domain architecture. The initial seed sequence for all simulations was a polypeptide 398 amino acids long containing four transmembrane domains. More extensive descriptions of the following simulations can be found in the Methods section.
+\subsection{Simulation data across the dynamic range of RD-MCL}\label{subsec:simulationDataAcrossTheDynamicRangeOfRd-mcl}
+To test the performance of RD-MCL compared to other available ortholog prediction tools, we simulated sets of homologs using the Pyvolve module~\cite{Spielman:2015kv}.
+These simulations varied in the number of sequences, branch length (substitutions per site), degree of gene loss or duplication, and domain architecture.
+The initial seed sequence for all simulations was a polypeptide 398 amino acids long containing four transmembrane domains.
+More extensive descriptions of the following simulations can be found in the Methods section.
 
-OrthoFinder performs extremely poorly, but this is probably due to the scaling factor that it generates when classifying orthogroups. We are not providing enough data to generate a productive linear model \cite{Emms:2015ig}.
+OrthoFinder performs extremely poorly, but this is probably due to the scaling factor that it generates when classifying orthogroups.
+We are not providing enough data to generate a productive linear model~\cite{Emms:2015ig}.
 Is it worth while to create a ven diagram illustrating the overlap between methods?
 
 \subsubsection{Branch lengths}
-Given an idealized set of homologous sequences, where there has been no gene loss and all gene duplications occured prior to the last common ancestor of the taxa included in the set, the phylogenetic relationship within each orthogroup should closely approximate the underlying species tree. Fruthermore, the phylogenetic relationship among the orthogroups will approximate the original gene tree of all paralogs present in the last common ancestor. As such, two distinct axes of divergence must be accounted for when assessing the effect of branch length (i.e., substitutions per site), which we will refer to as the 'species tree length' and 'gene tree length', respectively.
+Given an idealized set of homologous sequences, where there has been no gene loss and all gene duplications occured prior to the last common ancestor of the taxa included in the set, the phylogenetic relationship within each orthogroup should closely approximate the underlying species tree.
+Fruthermore, the phylogenetic relationship among the orthogroups will approximate the original gene tree of all paralogs present in the last common ancestor.
+As such, two distinct axes of divergence must be accounted for when assessing the effect of branch length (i.e., substitutions per site), which we will refer to as the 'species tree length' and 'gene tree length', respectively.
 
 % Maybe make a figure here, to show the two axes of divergence??
 
-A total of 625 datasets were simulated, with each containing eight taxa and seven orthologs (for 56 sequences per dataset). Branch lengths were varied from 0.05 to 1.55 substitutions per site with standard deviations between 0.05 and 1.05 to prevent perfectly symetrical trees. As illustrated in Figure \ref{fig:branch_len_3d}, RD-MCL was either equivilent to or out performed OrthoFinder, OrthoMCL, and ProteinOrtho across the entire dynamic range assessed. All of the methods tested were more sensitive to echanges in species tree branch lengths than they were to gene tree branch lengths (i.e., branches within an orthogroup, as opposed to between orthogroups), although both RD-MCL and OrthoMCL performed marginally better on short species trees with the gene trees were longer.
+A total of 625 datasets were simulated, with each containing eight taxa and seven orthologs (for 56 sequences per dataset).
+Branch lengths were varied from 0.05 to 1.55 substitutions per site with standard deviations between 0.05 and 1.05 to prevent perfectly symetrical trees.
+As illustrated in Figure~\ref{fig:branch_len_3d}, RD-MCL was either equivilent to or out performed OrthoFinder, OrthoMCL, and ProteinOrtho across the entire dynamic range assessed.
+All of the methods tested were more sensitive to echanges in species tree branch lengths than they were to gene tree branch lengths (i.e., branches within an orthogroup, as opposed to between orthogroups), although both RD-MCL and OrthoMCL performed marginally better on short species trees with the gene trees were longer.
 
 % May_3_2017_orthofinder_branch_lengths/orthofinder_BL.ipynb
 % May_3_2017_OrthoMCL_branch_lengths/orthomcl_BL.ipynb
@@ -304,7 +315,7 @@ A total of 625 datasets were simulated, with each containing eight taxa and seve
 \label{fig:branch_len_3d}
 \end{figure}
 
-Figure \ref{fig:branch_len_std} illustrates the case-by-case performance of RD-MCL compared to the other methods by standardizing the relative precision achieved on each dataset against the precision of RD-MCL.
+Figure~\ref{fig:branch_len_std} illustrates the case-by-case performance of RD-MCL compared to the other methods by standardizing the relative precision achieved on each dataset against the precision of RD-MCL\@.
 
 % May_03_2017_branch_lengths.ipynb
 \begin{figure}[t]
@@ -319,7 +330,7 @@ Figure \ref{fig:branch_len_std} illustrates the case-by-case performance of RD-M
 \subsubsection{Number of sequences}
 To test the effects of increasing the number of orthogroups and orthogroup size, datasets were simulated with 4 to 30 taxa and between 4 and 30 genes per taxa.
 
-\subsubsection{Differing seed sequences (maybe not though...)}
+\subsubsection{Differing seed sequences (maybe not though\ldots)}
 \lipsum[2]
 
 \subsubsection{Missing data}
@@ -331,7 +342,7 @@ To test the effects of increasing the number of orthogroups and orthogroup size,
 \subsubsection{Hybrid sequences (weird domain structures)}
 \lipsum[1]
 
-\subsection{RD-MCL classification of known gene families}
+\subsection{RD-MCL classification of known gene families}\label{subsec:rd-mclClassificationOfKnownGeneFamilies}
 \lipsum[1]
 
 \subsubsection{Caspases}
@@ -340,7 +351,7 @@ Used the human refseq caspase-2 (NP\_116764.2) CASc domain as seed sequence for 
 \subsubsection{Gene family 2}
 \lipsum[1]
 
-\subsection{RD-MCL classification of new gene families}
+\subsection{RD-MCL classification of new gene families}\label{subsec:rd-mclClassificationOfNewGeneFamilies}
 \lipsum[1]
 
 \subsubsection{New gene family}
@@ -355,52 +366,51 @@ Used the human refseq caspase-2 (NP\_116764.2) CASc domain as seed sequence for 
 \subsubsection{Secondary placement of new genes into pre-calculated orthogroups}
 \lipsum[1]
 
-\section{Conclusions}
-It is important to remember that there is nothing intrinsically special about true orthologs, and that while there may be a strong tendency to retain function due to evolutionary pressures, the fate of any given gene is still at the mercy of the biological context it finds itself in and the stochastic nature of inheritence. In light of this uncertainty it is almost certainly more useful, from a biological and functional perspective, to focus more on heirarchical similarity among proteins than on the actual geneology.
+\section{Conclusions}\label{sec:conclusions}
+It is important to remember that there is nothing intrinsically special about true orthologs, and that while there may be a strong tendency to retain function due to evolutionary pressures, the fate of any given gene is still at the mercy of the biological context it finds itself in and the stochastic nature of inheritence.
+In light of this uncertainty it is almost certainly more useful, from a biological and functional perspective, to focus more on heirarchical similarity among proteins than on the actual geneology.
 
-\section{Methods}
-\subsection{Simulation data}
-The performance of each tool was assessed by calculating the precision and recall of the result on simulated data \cite{Emms:2015ig}.
+\section{Methods}\label{sec:methods}
+\subsection{Simulation data}\label{subsec:simulationData}
+The performance of each tool was assessed by calculating the precision and recall of the result on simulated data~\cite{Emms:2015ig}.
 
-$$
-Precision = \frac{TP}{TP + FP}
-$$
-
-$$
-Recall = \frac{TP}{TP + FN}
-$$
-
-$$
-F Score = 2 * \frac{precision * recall}{precision + recall}
-$$
+\begin{gather*}
+    Precision = \frac{TP}{TP + FP}\\
+    \\
+    Recall = \frac{TP}{TP + FN}\\
+    \\
+    F Score = 2 * \frac{precision * recall}{precision + recall}\\
+\end{gather*}
 
 Where TP is True Positive, FP is False Positives, and FN is False Negatives.
 
-\subsection{RD-MCL fitness function}
+\subsection{RD-MCL fitness function}\label{subsec:rd-mclFitnessFunction}
 Putative orthogroups were assigned a score based on the size and composition of the cluster, as well as the entire population of sequences available.
 
 Let each sequence $s$ be an element of a set $T$ where all sequences come from the same taxa $j$.
 
-$$
+\[
 T_j = \{s:s \text{ is a gene in } j\}
-$$
+\]
 
 All sequences are assigned a score $S$, which is scaled against the largest set of sequences, $T^*$, to bound the minimum score at 1.
 
-$$
-T^* = T_j:|T_j| = max(|T|)
-$$
-
-$$
-S_j = \frac{|T^*|}{|T_j|}
-$$
+\begin{gather*}
+    T^* = T_j:|T_j| = max(|T|)\\
+    \\
+    S_j = \frac{|T^*|}{|T_j|}\\
+\end{gather*}
 
 Doing so gives greater weight to those species which have not experienced additional gene expansion, thus allowing greater inclusion of paralogs from those species where gene expansion has been more common.
 
-To penalize the inclusion of paralogs in a putative orthogroup $O$, a diminishing returns algorithm was implemented. Sequences in the cluster are first sorted into the fewest number of subsets, of largest possible size, where each taxa is represented only once. This can be expressed as a matrix of size $X \times Y$, where $X$ is the total number of unique taxa and $Y$ is the largest number of sequences derived from a single taxon in the given set. Each column therefore represents a taxon and is filled from the top down with $S_j$ for each gene it contains, followed by zeros. For example:
+To penalize the inclusion of paralogs in a putative orthogroup $O$, a diminishing returns algorithm was implemented.
+Sequences in the cluster are first sorted into the fewest number of subsets, of largest possible size, where each taxa is represented only once.
+This can be expressed as a matrix of size $X \times Y$, where $X$ is the total number of unique taxa and $Y$ is the largest number of sequences derived from a single taxon in the given set.
+Each column therefore represents a taxon and is filled from the top down with $S_j$ for each gene it contains, followed by zeros.
+For example:
 
 
-$$
+\[
 O \equiv
 \begin{bmatrix}
     S_{j_1} & S_{j_2} & S_{j_3} & S_{j_4} & S_{j_5} & 0 & S_{j_7}\\
@@ -408,35 +418,31 @@ O \equiv
     0 & S_{j_2} & 0 & S_{j_4} & 0 & 0 & 0 \\
     0 & S_{j_2} & 0 & 0 & 0 & 0 & 0 \\
 \end{bmatrix}
-$$
+\]
 
 Each row $Y$ is summed and modified by cofactors $\psi$ and $\gamma$. $\psi$ is proportional to the number of taxa in $Y$ relative to the total number of taxa present globaly (i.e., the length of $X$ in the above matrix), and $\gamma$ imposes exponentially diminishing returns on the score for each successive index of $Y$.
 
-$$
-\psi = \frac{|\{Y:Y \neq 0\}|}{|j|} + 1
-$$
-
-$$
-\gamma = DRB^{Y_{index}}
-$$
-
-$$
-S_Y = \gamma\psi\sum_{j} S_j
-$$
+\begin{gather*}
+    \psi = \frac{|\{Y:Y \neq 0\}|}{|j|} + 1\\
+    \\
+    \gamma = DRB^{Y_{index}}\\
+    \\
+    S_Y = \gamma\psi\sum_{j} S_j\\
+\end{gather*}
 
 Where:
 
-$$
+\[
 DRB = \text{Diminishing returns base}; 0 \leq DRB \leq 1
-$$
+\]
 
-The effects of altering $DRB$ are summarized in Figure \ref{fig:dim_rets}, and we have emperically determined that values between 0.75 and 0.85 generally perform the best.
+The effects of altering $DRB$ are summarized in Figure~\ref{fig:dim_rets}, and we have emperically determined that values between 0.75 and 0.85 generally perform the best.
 
 The final fitness score assigned to a putative orthogroup is thus the sum of each row score:
 
-$$
+\[
 S_O = \sum_{Y} S_Y
-$$
+\]
 
 % Apr_19_17_diminishing_returns/dim_returns3D.ipynb
 \begin{figure}[t]
@@ -448,11 +454,11 @@ $$
 \end{figure}
 
 
-\subsection{Markov chain convergence}
+\subsection{Markov chain convergence}\label{subsec:markovChainConvergence}
 \lipsum[3]
 
 
-\subsection{Orphan placement}
+\subsection{Orphan placement}\label{subsec:orphanPlacement}
 \begin{enumerate}
   \item Hidden Markov models are created for each individual sequence and for alignements from each cluster
   \item The probability of emitting each sequence from each sequence hmm is calculated \(forward score\)
@@ -473,7 +479,7 @@ $$
 % Text for this sub-sub-heading \ldots
 % \paragraph*{Sub-sub-sub heading for section}
 % Text for this sub-sub-sub-heading \ldots
-% (also see \cite{koon,khar,zvai,xjon,marg}).
+% (also see~\cite{koon,khar,zvai,xjon,marg}).
 % \nocite{oreg,schn,pond,smith,marg,hunn,advi,koha,mouse}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -488,7 +494,8 @@ $$
   The authors declare that they have no competing interests.
 
 \section*{Author's contributions}
-  SRB is the lead developer of RD-MCL and wrote the manuscript, KEK contributed significantly to the code base, and ADB was involved in the design and coordination of the project. All authors read and approved the final manuscript.
+  SRB is the lead developer of RD-MCL and wrote the manuscript, KEK contributed significantly to the code base, and ADB was involved in the design and coordination of the project.
+  All authors read and approved the final manuscript.
 
 \section*{Acknowledgements}
   This research was supported by the Intramural Research Program of the National Human Genome Research Institute, National Institutes of Health.
@@ -556,18 +563,18 @@ $$
 %        \hline \\
 %	   BuddySuite program	& Third-party program					& Reference  \\ \\
 %        \hline
-%        SeqBuddy			& BLAST 								& \cite{Chiba:2015ed} \\
+%        SeqBuddy			& BLAST 								&~\cite{Chiba:2015ed} \\
 %        \hline
-%        AlignBuddy			& Clustal Omega 						& \cite{Chiba:2015ed} \\
-%        					& ClustalW2 							& \cite{Chiba:2015ed} \\
-%							& MAFFT 								& \cite{Chiba:2015ed} \\
-%							& MUSCLE 								& \cite{Chiba:2015ed} \\
-%							& PAGAN 								& \cite{Chiba:2015ed} \\
-%        					& PRANK 								& \cite{Chiba:2015ed} \\
+%        AlignBuddy			& Clustal Omega 						&~\cite{Chiba:2015ed} \\
+%        					& ClustalW2 							&~\cite{Chiba:2015ed} \\
+%							& MAFFT 								&~\cite{Chiba:2015ed} \\
+%							& MUSCLE 								&~\cite{Chiba:2015ed} \\
+%							& PAGAN 								&~\cite{Chiba:2015ed} \\
+%        					& PRANK 								&~\cite{Chiba:2015ed} \\
 %        \hline
-%        PhyloBuddy			& FastTree 								& \cite{Chiba:2015ed} \\
-%        					& RAxML 								& \cite{Chiba:2015ed} \\
-%        					& PhyML 								& \cite{Chiba:2015ed} \\
+%        PhyloBuddy			& FastTree 								&~\cite{Chiba:2015ed} \\
+%        					& RAxML 								&~\cite{Chiba:2015ed} \\
+%        					& PhyML 								&~\cite{Chiba:2015ed} \\
 %        \hline
 %      \end{tabular}
 %\label{table:software}
