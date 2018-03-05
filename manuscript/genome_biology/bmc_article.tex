@@ -262,11 +262,17 @@ this can lead to considerable uncertainty or error, especially for less well-stu
 Finally, pairwise similarity graph clustering methods leverage graph theory to rapidly identify groups of related sequences.
 InParanoid~\cite{OBrien:2005cy}, EggNOG~\cite{Jensen:2007cc}, and OMA~\cite{Roth:2009iu} are popular tools for assigning sequences to orthogroups using a `best-hit clique' approach, where closed best-hit sub-graphs are identified in the dataset.
 These methods can be fast and accurate for detecting one-to-one orthologs, but they suffer diminishing recall rates when in-paralogs are present among the species under study~\cite{Dalquen:2013fz} (`in-paralog' describes homologs derived from genetic duplication \textit{after} speciation~\cite{Sonnhammer:2002vm,Tekaia:2016ga}).
-In contrast, Markov clustering (MCL) can efficiently isolate more inclusive sub-graphs~\cite{VanDongen:kJZ890qx,Enright:2002uq}, although the trade-off can be a reduction in precision (too many in-paralogs may be placed into orthogroups).
-OrthoMCL~\cite{Li:2003en}, OrthoFinder~\cite{Emms:2015ig}, and ProteinOrtho~\cite{Lechner:2011jk} are popular MCL-based ortholog prediction methods.
+In contrast, Markov clustering (MCL) can efficiently isolate more inclusive sub-graphs~\cite{VanDongen:kJZ890qx,Enright:2002uq}, although the trade-off is generally a reduction in precision;
+it is often very difficult to separate closely related orthogroups within a given gene family.
+Indeed, the major challenge facing those wishing to analyze a defined gene family is \textit{resolution}, because the popular MCL-based ortholog prediction methods, such as OrthoMCL~\cite{Li:2003en}, OrthoFinder~\cite{Emms:2015ig}, and ProteinOrtho~\cite{Lechner:2011jk}, are targeted towards genomic-scale analyses.
+While computationally efficient, these resources are simply not designed for fine-grained processing of related orthogroups separated by a wide range of evolutionary timeframes.
 
-In this current study we strive to further refine the precision of pairwise similarity graph orthogroup prediction.
-Specifically, we introduce Recursive Dynamic Markov Clustering (RD-MCL), a new method that improves upon the BLASTP-based pairwise similarity metrics currently in popular use, uses an optimization algorithm to dynamically select MCL parameters, recursively subdivides overly inclusive orthogroups, and implements a number of final `polishing' steps to maximize overall accuracy.
+Here, we introduce Recursive Dynamic Markov Clustering (RD-MCL), a new method that refines the precision of pairwise similarity graph orthogroup prediction to high resolution, allowing us to effectively apply it to individual gene families.
+Specifically, RD-MCL significantly improves upon the BLASTP-based pairwise similarity metrics currently in popular use, applies an optimization algorithm to dynamically select MCL parameters, recursively subdivides overly inclusive orthogroups, and implements a number of final polishing steps to maximize overall accuracy.
+Given sufficient taxonomic coverage, RD-MCL is robust against missing or poorly assembled sequence data, and we illustrate how the protein sequences currently available in the RefSeq database provide an excellent input for the complete analyses of Chordate gene families.
+Such analyses often reveal a considerable number of sequences that have been mis-assembled, mis-annotated, or are part of undescribed orthogroups.
+We also demonstrate how a starting set of high quality orthogroups can be leveraged to analyze homologous sequences from clades less well sampled than the chordates, allowing for detailed phylogenetic placement of new homologs within a gene family in a way that is not possible with simple best-hit database queries.
+The software is open-source (https://research.nhgri.nih.gov/software/RD-MCL/) and distributed as part of a suite of tools to facilitate all of the downstream analyses reported.
 
 
 
