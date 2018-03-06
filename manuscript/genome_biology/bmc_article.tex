@@ -263,27 +263,26 @@ Tree-based approaches (e.g., Ensembl Compara~\cite{Vilella:2009ju}, LOFT~\cite{v
 The accuracy of tree-based orthology prediction methods is tied closely to the accuracy of the species trees they rely on;
 this can lead to considerable uncertainty or error, especially for less well-studied taxonomic groups~\cite{Xu:2016ek}.
 
-Finally, pairwise similarity graph clustering methods leverage graph theory to rapidly identify groups of related sequences.
+Finally, pairwise similarity methods leverage graph theory to rapidly identify groups of related sequences.
 InParanoid~\cite{OBrien:2005cy}, EggNOG~\cite{Jensen:2007cc}, and OMA~\cite{Roth:2009iu} are popular tools for assigning sequences to orthogroups using a `best-hit clique' approach, where closed best-hit sub-graphs are identified in the dataset.
 These methods can be fast and accurate for detecting one-to-one orthologs, but they suffer diminishing recall rates when in-paralogs are present among the species under study~\cite{Dalquen:2013fz} (`in-paralog' describes homologs derived from genetic duplication \textit{after} speciation~\cite{Sonnhammer:2002vm,Tekaia:2016ga}).
 In contrast, Markov clustering (MCL) can efficiently isolate more inclusive sub-graphs~\cite{VanDongen:kJZ890qx,Enright:2002uq}, although the trade-off is generally a reduction in precision;
 it is often difficult to separate closely related orthogroups within a given gene family.
 Indeed, the major challenge facing those wishing to analyze a defined gene family is \textit{resolution}, because the popular MCL-based ortholog prediction methods, such as OrthoMCL~\cite{Li:2003en}, OrthoFinder~\cite{Emms:2015ig}, and ProteinOrtho~\cite{Lechner:2011jk}, are targeted towards coarse-grained clustering of all protein models derived from whole-genome data.
-While computationally efficient, these resources are not well suited for fine-grained processing of individual gene families, where all input sequences are homologous.
-
-Here, we introduce Recursive Dynamic Markov Clustering (RD-MCL), a new method that refines the precision of pairwise similarity graph orthogroup prediction to high resolution, making it appropriate for the analysis of individual gene families.
-Specifically, RD-MCL significantly improves upon the BLASTP-based pairwise similarity metrics currently in popular use, applies an optimization algorithm to dynamically select MCL parameters, recursively subdivides overly inclusive orthogroups, and implements final polishing steps to maximize overall accuracy.
-Given sufficient taxonomic coverage, RD-MCL is robust against missing or poorly assembled sequence data, and we illustrate how the protein sequences currently available in the RefSeq database, curated by NCBI, allow for the complete analyses of chordate gene families.
-Such analyses often reveal mis-assembled or mis-annotated sequences, as well as orthogroups that have been previously undescribed.
-We also demonstrate how a starting set of high quality orthogroups from one phylum can be leveraged to analyze homologous sequences from clades that are less well sampled, allowing for detailed phylogenetic placement of new homologs within a gene family in a way that is not possible with simple best-hit database queries.
-The software is open-source (https://research.nhgri.nih.gov/software/RD-MCL/) and distributed as part of a suite of tools to facilitate all of the downstream analyses reported.
-
+While computationally efficient, these resources are not well suited for fine-grained processing of individual gene families where all input sequences are homologous.
+This leaves a gap in our ability to easily discern evolutionary patterns at this scale and has inevitably exacerbated the propagation of annotation errors in our public databases~\cite{Schnoes:2009gb}, which still relies heavily on annotation transfer following inference of homology against a limited number of reference species~\cite{Aken:2016dl, Mi:2016bw, OLeary:2016cm}.
+Here we present a method that overcomes these challenges, along with a suite of tools to assist with detailed downstream analysis.
 
 
 \section{Results and Discussion}\label{sec:resultsAndDiscussion}
-\subsection{Description of the RD-MCL algorithm and software}\label{subsec:descriptionOfTheRd-mclAlgorithmAndSoftware}
-The impetus for developing RD-MCL was to predict high-quality fine-grained orthogroups among any collection of homologous protein sequence.
+Recursive Dynamic Markov Clustering (RD-MCL) is a new pairwise similarity graph-based orthogroup prediction method that achieves high precision within the context of a gene family.
+Specifically, RD-MCL significantly improves upon the BLASTP-based pairwise similarity metrics currently in popular use, applies an optimization algorithm to dynamically select MCL parameters, recursively subdivides overly inclusive orthogroups, and implements final polishing steps to maximize overall accuracy.
+Given sufficient taxonomic coverage, RD-MCL clearly reveals mis-assembled or mis-annotated sequences, as well as orthogroups that have been previously undescribed.
+Furthermore, a starting set of high quality orthogroups from a well-sampled taxonomic group can be leveraged to analyze homologous sequences from clades that are less well sampled, allowing for detailed phylogenetic placement of new sequences into a gene family with greater precision than is possible with simple best-hit database queries.
+The software is open-source (https://research.nhgri.nih.gov/software/RD-MCL/) and distributed as part of a suite of tools to facilitate all of the downstream analyses reported.
 
+
+\subsection{Implementation}\label{subsec:implementation}
 \lipsum[3]
 
 \subsection{BLASTP scores reduce overall resolving power of MCL when sequences are too similar or too dissimilar}\label{subsec:blastpScoresReduceOverallResolvingPowerOfMclWhenSequencesAreTooSimilarOrTooDissimilar}
