@@ -51,8 +51,11 @@ import numpy as np
 # import statsmodels.stats.api as sms
 import scipy.stats
 from Bio.SubsMat import SeqMat, MatrixInfo
+from buddysuite import SeqBuddy as Sb
+from buddysuite import AlignBuddy as Alb
+from buddysuite import buddy_resources as br
 
-# My packages
+# Other RD-MCL modules
 try:
     import mcmcmc
     import helpers as hlp
@@ -62,11 +65,8 @@ except ImportError:
     from . import helpers as hlp
     from .install import setup
 
-from buddysuite import SeqBuddy as Sb
-from buddysuite import AlignBuddy as Alb
-from buddysuite import buddy_resources as br
 
-# Globals
+# Globals (I apologize to all of you cringing over this...)
 SCRIPT_PATH = hlp.SCRIPT_PATH
 VERSION = hlp.VERSION
 VERSION.name = "rdmcl"
@@ -119,7 +119,7 @@ for aa in ambiguous_X:
     pair = tuple(pair)
     BLOSUM62[pair] = ambiguous_X[aa]
 
-# Set global precision levels
+# Set global precision levels to prevent weird rounding on different architectures
 np.set_printoptions(precision=12)
 pd.set_option("display.precision", 12)
 
@@ -387,6 +387,7 @@ class Cluster(object):
                 else:
                     subclusters.append([taxon])
 
+        dim_ret_base_score = self.get_dim_ret_base_score()
         score = 0
         for indx, subcluster in enumerate(subclusters):
             subscore = 0
@@ -400,7 +401,7 @@ class Cluster(object):
             subscore *= len(subcluster) / len(base_cluster.taxa) + 1
 
             # Reduce subscores as we encounter replicate taxa
-            subscore *= self.get_dim_ret_base_score() ** indx
+            subscore *= dim_ret_base_score ** indx
             score += subscore
 
         self.cluster_score = score
@@ -2290,11 +2291,11 @@ def argparse_init():
   Differences in evolutionary rates between orthogroups is accounted
   for  by  recursively  decomposing  large clusters  where possible.
 
-  \033[1m\033[91mAll  sequences  must  be  homologous! RD-MCL  is \033[4mNOT\033[24m  intended for
+  \033[1m\033[91mAll  input sequences  should  be  homologous! RD-MCL  is \033[4mNOT\033[24m  intended for
   identifying  orthogroups  from  whole  genome/transcriptome  data.\033[m
 
 \033[1mUsage\033[m:
-  rdmcl "/path/to/sequence_file" [outdir] [-options]
+  rdmcl "/path/to/sequence_file" [-options]
 ''')
 
     parser.register('action', 'setup', _SetupAction)
@@ -2354,14 +2355,14 @@ def argparse_init():
     dev_flags = parser.add_argument_group(title="\033[1mDeveloper commands (Caution!)\033[m")
     dev_flags.add_argument("-spc", "--suppress_paralog_collapse", action="store_true",
                            help="Do not merge best hit paralogs")
-    dev_flags.add_argument("-sr", "--suppress_recursion", action="store_true",
-                           help="Stop after a single round of MCL")
-    dev_flags.add_argument("-scc", "--suppress_clique_check", action="store_true",
-                           help="Do not check for or break up cliques")
+    # dev_flags.add_argument("-sr", "--suppress_recursion", action="store_true",
+    #                       help="Stop after a single round of MCL")
+    # dev_flags.add_argument("-scc", "--suppress_clique_check", action="store_true",
+    #                       help="Do not check for or break up cliques")
     dev_flags.add_argument("-ssf", "--suppress_singlet_folding", action="store_true",
                            help="Do not check for or merge singlets")
-    dev_flags.add_argument("-sit", "--suppress_iteration", action="store_true",
-                           help="Only check for cliques and orphans once")
+    # dev_flags.add_argument("-sit", "--suppress_iteration", action="store_true",
+    #                       help="Only check for cliques and orphans once")
     dev_flags.add_argument("-trm", "--trimal", action="append", nargs="+", metavar="threshold",
                            help="Specify a list of trimal thresholds to apply (move from more strict to less)")
 
