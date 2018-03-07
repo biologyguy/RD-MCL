@@ -277,23 +277,11 @@ Here we present a method that overcomes these challenges, along with a suite of 
 
 \section{Results and Discussion}\label{sec:resultsAndDiscussion}
 Recursive Dynamic Markov Clustering (RD-MCL) is a new pairwise similarity graph-based orthogroup prediction heuristic that achieves high precision within the context of a gene family.
-Specifically, RD-MCL significantly improves upon the BLASTP-based pairwise similarity metrics currently in popular use, applies an optimization algorithm to dynamically select MCL parameters, recursively subdivides overly inclusive orthogroups, and implements final polishing steps to maximize overall accuracy.
+Specifically, RD-MCL significantly improves upon the BLASTP-based pairwise similarity metrics currently in popular use, applies an optimization algorithm to dynamically select MCL parameters, recursively subdivides overly inclusive orthogroups, and implements final polishing steps to maximize overall accuracy (Figure~\ref{fig:pipeline}).
+The entire workflow has been encapsulated in a single executable, which can be run from the command line and minimally requires a sequence file as input.
 Given sufficient taxonomic coverage, RD-MCL clearly reveals mis-assembled or mis-annotated sequences, as well as orthogroups that have been previously undescribed.
 Furthermore, a set of high quality orthogroups from a well-sampled taxonomic group can be leveraged to analyze sequences from clades that are less well sampled, allowing for detailed phylogenetic placement of new sequences into a gene family with greater precision than is possible with simple best-hit database queries.
 The software is open-source (https://research.nhgri.nih.gov/software/RD-MCL/) and distributed as part of a suite of tools to facilitate all of the downstream analyses reported here.
-
-
-\subsection{Architecture}\label{subsec:implementation}
-RD-MCL has been implemented in Python and  including flexible sequence format
-
-Python is not generally well adapted for distributing complex operations across a cluster environment, but creating all-by-all similarity graphs is an O\textsuperscript{2} hard problem that makes RD-MCL run times prohibitive when analyzing more than a few hundred sequences on a single machine.
-To overcome this challenge, similarity graph creation can be passed off to worker processes which control other nodes on a cluster.
-This dynamic is achieved by writing job information to a SQLite database that is monitored by the worker nodes, which then further subdivide the work if a graph is large, and return the results to the same SQLite database for retrieval by the master process.
-By distributing the work in this fashion, an arbitrary number of RD-MCL runs can all access the same pool of worker nodes, and the size of the worker pool can be modified on the fly.
-
-Sequence handling is achieved with BuddySuite~\cite{Bond:2017bj}, so the user
-
-The pipeline can be separated into five distinct components\textemdash{}
 
 \begin{figure*}[t]
   \begin{center}
@@ -303,7 +291,8 @@ The pipeline can be separated into five distinct components\textemdash{}
 \label{fig:pipeline}
 \end{figure*}
 
-\subsection{BLASTP scores reduce overall resolving power of MCL when sequences are too similar or too dissimilar}\label{subsec:blastpScoresReduceOverallResolvingPowerOfMclWhenSequencesAreTooSimilarOrTooDissimilar}
+\subsection{Overcoming BLAST-based similarity metric limitations}\label{subsec:overcomingBlast-basedSimilarityMetricLimitations}
+BLASTP scores reduce overall resolving power of MCL when sequences are too similar or too dissimilar.
 BLAST scores (bit or e-value) have a strong length bias when calculating orthogroups, but this can be corrected for by creating a linear model from the top 5\% of matches between two species and scaling all other matches according to that model~\cite{Emms:2015ig}.
 OrthoFinder also uses a static inflation/edge similarity threshold for MCL~\cite{Emms:2015ig}
 
@@ -393,6 +382,16 @@ Used the human refseq caspase-2 (NP\_116764.2) CASc domain as seed sequence for 
 \subsubsection{Secondary placement of new genes into pre-calculated orthogroups}
 \lipsum[1]
 
+\subsection{Implementation}\label{subsec:implementation}
+RD-MCL has been implemented in Python with a command-line interface
+
+Python is not generally well adapted for distributing complex operations across a cluster environment, but creating all-by-all similarity graphs is an O\textsuperscript{2} hard problem that makes RD-MCL run times prohibitive when analyzing more than a few hundred sequences on a single machine.
+To overcome this challenge, similarity graph creation can be passed off to worker processes which control other nodes on a cluster.
+This dynamic is achieved by writing job information to a SQLite database that is monitored by the worker nodes, which then further subdivide the work if a graph is large, and return the results to the same SQLite database for retrieval by the master process.
+By distributing the work in this fashion, an arbitrary number of RD-MCL runs can all access the same pool of worker nodes, and the size of the worker pool can be modified on the fly.
+
+Sequence handling is achieved with BuddySuite~\cite{Bond:2017bj}.
+
 \section{Conclusions}\label{sec:conclusions}
 It is important to remember that there is nothing intrinsically special about true orthologs, and that while there may be a strong tendency to retain function due to evolutionary pressures, the fate of any given gene is still at the mercy of the biological context it finds itself in and the stochastic nature of inheritance.
 In light of this uncertainty it is almost certainly more useful, from a biological and functional perspective, to focus more on hierarchical similarity among proteins than on the actual genealogy.
@@ -414,7 +413,7 @@ Where TP is True Positive, FP is False Positives, and FN is False Negatives.
 \subsection{RD-MCL fitness function}\label{subsec:rd-mclFitnessFunction}
 Putative orthogroups were assigned a score based on the size and composition of the cluster, as well as the entire population of sequences available.
 
-Let each sequence $s$ be an element of a set $T$ where all sequences come from the same taxa $j$.
+Let each sequence $s$ be an element of a set $T$ where all sequences come from the same taxon $j$.
 
 \[
 T_j = \{s:s \text{ is a gene in } j\}
@@ -431,7 +430,7 @@ All sequences are assigned a score $S$, which is scaled against the largest set 
 Doing so gives greater weight to those species which have not experienced additional gene expansion, thus allowing greater inclusion of paralogs from those species where gene expansion has been more common.
 
 To penalize the inclusion of paralogs in a putative orthogroup $O$, a diminishing returns algorithm was implemented.
-Sequences in the cluster are first sorted into the fewest number of subsets, of largest possible size, where each taxa is represented only once.
+Sequences in the cluster are first sorted into the fewest number of subsets, of largest possible size, where each taxon is represented only once.
 This can be expressed as a matrix of size $X \times Y$, where $X$ is the total number of unique taxa and $Y$ is the largest number of sequences derived from a single taxon in the given set.
 Each column therefore represents a taxon and is filled from the top down with $S_j$ for each gene it contains, followed by zeros.
 For example:
@@ -521,7 +520,10 @@ S_O = \sum_{Y} S_Y
   The authors declare that they have no competing interests.
 
 \section*{Author's contributions}
-  SRB is the lead developer of RD-MCL and wrote the manuscript, KEK contributed significantly to the code base, and ADB was involved in the design and coordination of the project.
+  SRB is the lead developer of RD-MCL, performed all analyses unless otherwise stated, and wrote the manuscript;
+  PG performed the WNT analysis;
+  KEK contributed to the code base;
+  and ADB was involved in the design and coordination of the project.
   All authors read and approved the final manuscript.
 
 \section*{Acknowledgements}
