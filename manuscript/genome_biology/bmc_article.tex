@@ -393,8 +393,9 @@ By distributing the work in this fashion, an arbitrary number of RD-MCL runs can
 Sequence handling is achieved with BuddySuite~\cite{Bond:2017bj}.
 
 \section{Conclusions}\label{sec:conclusions}
-It is important to remember that there is nothing intrinsically special about true orthologs, and that while there may be a strong tendency to retain function due to evolutionary pressures, the fate of any given gene is still at the mercy of the biological context it finds itself in and the stochastic nature of inheritance.
-In light of this uncertainty it is almost certainly more useful, from a biological and functional perspective, to focus more on hierarchical similarity among proteins than on the actual genealogy.
+It is important to remember that true orthologs are not intrinsically special.
+While there is a strong tendency to retain function among orthologs, due to evolutionary pressures, the fate of any given gene is still at the mercy of biological context and the stochastic nature of inheritance.
+In light of this uncertainty it can be more useful, from a biological and functional perspective, to focus on hierarchical similarity among proteins than on the actual genealogy.
 
 \section{Methods}\label{sec:methods}
 \subsection{Simulation data}\label{subsec:simulationData}
@@ -409,6 +410,13 @@ The performance of each tool was assessed by calculating the precision and recal
 \end{gather*}
 
 Where TP is True Positive, FP is False Positives, and FN is False Negatives.
+
+\subsection{Caspase and WNT sequence data}\label{subsec:caspaseAndWntSequenceData}
+The CASc domain from human caspase-2 (NCBI accession NP_116764.2) and the wnt domain from mouse Wnt-6 (UniProt accession AAA40569.1) were each used as the starting sequence for a three-iteration PSI-BLAST search of the RefSeq database, limiting the results to metazoans (taxid: 33208), an expectation threshold of 0.01, and allowing for the return of up to 20,000 target sequences.
+Accession numbers for all target sequences were downloaded directly from the PSI-BLAST results page and DatabaseBuddy~\cite{Bond:2017bj} was used to filter out isoforms and sequences marked as low-quality or partial before fetching the GenBank records.
+Given the current depth of species-level coverage in RefSeq, five taxonomic ranges were identified as most appropriate for input into RD-MCL: \textit{Actinopterygii}, \textit{Achelosauria}, \textit{Mammalia}, \textit{Diptera}, and \textit{Hymenoptera}.
+The transcriptomes of 25 cnidarian species~\cite{Zapata:2015cc}, assembled using TransDecoder.LongOrfs V.3.0.1, were also queried for WNT sequences using BLASTP\@.
+These sequences were combined with those cnidarian sequences identified in RefSeq for \textit{Cnidaria}-specific RD-MCL analysis.
 
 \subsection{RD-MCL fitness function}\label{subsec:rd-mclFitnessFunction}
 Putative orthogroups were assigned a score based on the size and composition of the cluster, as well as the entire population of sequences available.
