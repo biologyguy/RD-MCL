@@ -13,6 +13,7 @@ from time import time, sleep
 from copy import copy
 from hashlib import md5
 from collections import OrderedDict
+from random import random
 from multiprocessing import SimpleQueue, Process, Pipe
 from subprocess import PIPE, check_output, CalledProcessError
 
@@ -256,6 +257,58 @@ class Timer(object):
 
     def total_elapsed(self, prefix="", postfix=""):
         return "%s%s%s" % (prefix, br.pretty_time(round(time()) - self.start), postfix)
+
+
+class KellysColors(object):
+    # https://eleanormaclure.files.wordpress.com/2011/03/colour-coding.pdf
+    def __init__(self):
+        self.kelly_colors = OrderedDict(deep_yellowish_brown=(89, 51, 21),
+                                        strong_reddish_brown=(127, 24, 13),
+                                        strong_purplish_red=(179, 40, 81),
+                                        strong_purplish_pink=(246, 118, 142),
+                                        vivid_red=(193, 0, 32),
+                                        vivid_reddish_orange=(241, 58, 19),
+                                        vivid_orange=(255, 104, 0),
+                                        strong_yellowish_pink=(255, 122, 92),
+                                        vivid_orange_yellow=(255, 142, 0),
+                                        vivid_yellow=(255, 179, 0),
+                                        vivid_greenish_yellow=(244, 200, 0),
+                                        grayish_yellow=(206, 162, 98),
+                                        vivid_yellowish_green=(147, 170, 0),
+                                        vivid_green=(0, 125, 52),
+                                        dark_olive_green=(35, 44, 22),
+                                        very_light_blue=(166, 189, 215),
+                                        strong_blue=(0, 83, 138),
+                                        strong_violet=(83, 55, 122),
+                                        strong_purple=(128, 62, 117),
+                                        medium_gray=(129, 112, 102))
+
+    def color_iter(self):
+        degree = 0
+        while True:
+            for color, rgb in self.kelly_colors.items():
+                rgb = purturb_rgb(rgb, degree)
+                yield rgb
+            degree += 10
+
+
+def purturb_rgb(rgb, degree=10):
+    new_rgb = []
+    for code in rgb:
+        degree = round(random() * degree)
+        degree = degree * -1 if random() < 0.5 else degree
+        while degree != 0:
+            code += degree
+            if code > 255:
+                degree = 255 - code
+                code = 255
+            elif code < 0:
+                degree = abs(code)
+                code = 0
+            else:
+                degree = 0
+        new_rgb.append(code)
+    return new_rgb[0], new_rgb[1], new_rgb[2]
 
 
 def mean(series):

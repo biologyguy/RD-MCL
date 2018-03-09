@@ -68,7 +68,7 @@ def argparse_init():
   alignments, consensus sequences, or lists of metadata.
 
 \033[1mUsage\033[m:
-  group_by_cluster "rdmcl_dir" [mode] [-options]
+  group_by_cluster "rdmcl_dir" [-options]
 ''')
 
     # Positional

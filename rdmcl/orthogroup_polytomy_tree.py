@@ -3,18 +3,15 @@
 # Created on: May 30 2015 
 
 """
-Convert the output from orthogroup_caller into an SVG tree of polytomies
+Convert the output from RD-MCL final_clusters into an SVG tree of polytomies
 """
 try:
     from . import helpers as hlp
 except ImportError:
     import helpers as hlp
 
-from collections import OrderedDict
-from random import random
-
 VERSION = hlp.VERSION
-VERSION.name = "homolog_tree_builder"
+VERSION.name = "orthgroup_polytomy_tree"
 
 
 class Nexus(object):
@@ -116,58 +113,6 @@ def hex_string(value):
     return output[2:]
 
 
-def purturb_rgb(rgb, degree=10):
-    new_rgb = []
-    for code in rgb:
-        degree = round(random() * degree)
-        degree = degree * -1 if random() < 0.5 else degree
-        while degree != 0:
-            code += degree
-            if code > 255:
-                degree = 255 - code
-                code = 255
-            elif code < 0:
-                degree = abs(code)
-                code = 0
-            else:
-                degree = 0
-        new_rgb.append(code)
-    return new_rgb[0], new_rgb[1], new_rgb[2]
-
-
-class KellysColors(object):
-    # https://eleanormaclure.files.wordpress.com/2011/03/colour-coding.pdf
-    def __init__(self):
-        self.kelly_colors = OrderedDict(deep_yellowish_brown=(89, 51, 21),
-                                        strong_reddish_brown=(127, 24, 13),
-                                        strong_purplish_red=(179, 40, 81),
-                                        strong_purplish_pink=(246, 118, 142),
-                                        vivid_red=(193, 0, 32),
-                                        vivid_reddish_orange=(241, 58, 19),
-                                        vivid_orange=(255, 104, 0),
-                                        strong_yellowish_pink=(255, 122, 92),
-                                        vivid_orange_yellow=(255, 142, 0),
-                                        vivid_yellow=(255, 179, 0),
-                                        vivid_greenish_yellow=(244, 200, 0),
-                                        grayish_yellow=(206, 162, 98),
-                                        vivid_yellowish_green=(147, 170, 0),
-                                        vivid_green=(0, 125, 52),
-                                        dark_olive_green=(35, 44, 22),
-                                        very_light_blue=(166, 189, 215),
-                                        strong_blue=(0, 83, 138),
-                                        strong_violet=(83, 55, 122),
-                                        strong_purple=(128, 62, 117),
-                                        medium_gray=(129, 112, 102))
-
-    def color_iter(self):
-        degree = 0
-        while True:
-            for color, rgb in self.kelly_colors.items():
-                rgb = purturb_rgb(rgb, degree)
-                yield rgb
-            degree += 10
-
-
 class CtenoColors(object):
     def __init__(self):
         panx1 = ["Bab-PanxαC", "Bch-PanxαD", "Bfo-PanxαC", "Bfr-PanxαB", "BOL-PanxαE", "Cfu-PanxαA", "Cfu-PanxαB",
@@ -228,14 +173,14 @@ def main():
 
     parser = argparse.ArgumentParser(prog="homolog_tree_builder", formatter_class=fmt, add_help=False,
                                      usage=argparse.SUPPRESS, description='''\
-\033[1mHomolog Tree Builder\033[m
+\033[1mOrthogroup Polytomy Tree Builder\033[m
   An RD-MCL output visualization tool
-     
+
   Pass in a file containing orthogroups and it will be converted
   into an hierarchical tree!
   
 \033[1mUsage\033[m:
-  homolog_tree_builder "/path/to/clusters" [-options]
+  orthogroup_polytomy_tree.py "/path/to/clusters" [-options]
 ''')
 
     # Positional
@@ -263,7 +208,7 @@ def main():
     ctenos = CtenoColors()
     cluster_file = hlp.prepare_clusters(in_args.cluster_file, hierarchy=True)
 
-    colors = KellysColors().color_iter()
+    colors = hlp.KellysColors().color_iter()
     color_map = {}
 
     if in_args.color_species:
