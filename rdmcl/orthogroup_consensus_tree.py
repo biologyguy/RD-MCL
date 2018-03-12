@@ -242,6 +242,14 @@ def main():
 
         all_clusters.append(clusters)
 
+    clust_check = {}
+    for clust in [c for clusts in all_clusters for c in clusts]:
+        if clust in clust_check:
+            sys.stderr.write("Error: Duplicate cluster detected --> '%s'.\n" % clust)
+            sys.exit()
+        else:
+            clust_check[clust] = None
+
     # Merge all of the various collections of sequences/clusters
     all_clusters = {clust: rec_ids for clusts in all_clusters for clust, rec_ids in clusts.items()}
     orig_fasta = Sb.SeqBuddy([rec for sb in orig_fasta for rec in sb.records], out_format="fasta")
