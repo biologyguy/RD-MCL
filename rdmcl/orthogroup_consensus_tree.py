@@ -55,8 +55,8 @@ def mc_bootstrap(_, args):
     tree = Alb.generate_msa(tree, "clustalo", quiet=True)
     tree = trimal(orig_genbank, ["gappyout", 0.5, 0.75, 0.9, 0.95, "clean"], tree)
     tree = Pb.generate_tree(tree, "fasttree", quiet=True)
-    clean_tree = re.sub(":[0-9]+\.[0-9]+", "", str(tree))
-    clean_tree = re.sub(":[0-9]e-[0-9]+", "", clean_tree)
+    clean_tree = re.sub(":[0-9]e-[0-9]+", "", str(tree))
+    clean_tree = re.sub(":[0-9]+\.[0-9]+", "", clean_tree)
     clean_tree = re.sub("\)[0-9]+\.[0-9]+", ")", clean_tree)
     clean_tree = re.sub("'", "", clean_tree)
     with LOCK:
