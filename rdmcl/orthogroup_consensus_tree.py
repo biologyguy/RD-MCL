@@ -113,8 +113,10 @@ def argparse_init():
                               help="Specify a multiple sequence alignment program")
     parser_flags.add_argument("--bootstraps", "-b", action="store", type=int, default=100,
                               help="How many bootstraps do you want calculated?")
-    parser_flags.add_argument("--groups", "-g", action="append", nargs="+", metavar="group",
-                              help="List the specific groups to process")
+    parser_flags.add_argument("--incl_groups", "-ig", action="append", nargs="+", metavar="group",
+                              help="List specific groups to process")
+    parser_flags.add_argument("--excl_groups", "-eg", action="append", nargs="+", metavar="group",
+                              help="List specific groups to exclude")
     # parser_flags.add_argument("--include_count", "-ic", action="store_true",
     #                          help="Add the size of each orthogroup as part of the group names")
     parser_flags.add_argument("--max_size", "-max", action="store", type=int, metavar="",
@@ -252,6 +254,11 @@ def main():
     recs_delete = []
 
     for clust, rec_ids in all_clusters.items():
+        if in_args.excl_groups and clust in in_args.excl_groups[0]:
+            group_delete.append(clust)
+            recs_delete += rec_ids
+            continue
+
         if in_args.min_size and len(rec_ids) < in_args.min_size:
             group_delete.append(clust)
             recs_delete += rec_ids
@@ -262,8 +269,8 @@ def main():
             recs_delete += rec_ids
             continue
 
-        if in_args.groups:
-            if clust not in in_args.groups[0]:
+        if in_args.incl_groups:
+            if clust not in in_args.incl_groups[0]:
                 group_delete.append(clust)
                 recs_delete += rec_ids
 
