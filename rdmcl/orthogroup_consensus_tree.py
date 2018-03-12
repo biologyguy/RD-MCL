@@ -117,8 +117,8 @@ def argparse_init():
                               help="List specific groups to process")
     parser_flags.add_argument("--excl_groups", "-eg", action="append", nargs="+", metavar="group",
                               help="List specific groups to exclude")
-    # parser_flags.add_argument("--include_count", "-ic", action="store_true",
-    #                          help="Add the size of each orthogroup as part of the group names")
+    parser_flags.add_argument("--include_count", "-ic", action="store_true",
+                              help="Add the size of each orthogroup as part of the group names")
     parser_flags.add_argument("--max_size", "-max", action="store", type=int, metavar="",
                               help="Max cluster size to process")
     parser_flags.add_argument("--min_size", "-min", action="store", type=int, metavar="",
@@ -255,7 +255,7 @@ def main():
     orig_fasta = Sb.SeqBuddy([rec for sb in orig_fasta for rec in sb.records], out_format="fasta")
     orig_genbank = Sb.SeqBuddy([rec for sb in orig_genbank for rec in sb.records], out_format="gb")
     consensus_fasta = Sb.SeqBuddy([rec for sb in consensus_fasta for rec in sb.records], out_format="fasta")
-    consensus_gb = Sb.SeqBuddy([rec for sb in consensus_gb for rec in sb.records], out_format="fasta")
+    consensus_gb = Sb.SeqBuddy([rec for sb in consensus_gb for rec in sb.records], out_format="gb")
 
     # Restrict analysis to specified clusters
     group_delete = []
@@ -288,10 +288,19 @@ def main():
         group_delete = "^%s$" % "$|^".join(group_delete)
         Sb.delete_records(consensus_fasta, group_delete)
         Sb.delete_records(consensus_gb, group_delete)
+
     if recs_delete:
         recs_delete = "^%s$" % "$|^".join(recs_delete)
         Sb.delete_records(orig_fasta, recs_delete)
         Sb.delete_records(orig_genbank, recs_delete)
+
+    if in_args.include_count:
+        new_all_clusters = {}
+        for clust, rec_ids in all_clusters.items():
+            new_all_clusters["%s~count~%s" % (clust, len(rec_ids))] = rec_ids
+            Sb.rename(consensus_gb, "^%s$" % clust, "%s~count~%s" % (clust, len(rec_ids)))
+
+        all_clusters = new_all_clusters
 
     # Get all features
     features = list_features(consensus_gb)
@@ -314,6 +323,12 @@ def main():
 
     support_tree.write(join(outdir, "consensus_with_support.nwk"))
 
+    for next_file in ["consensus_tree.nwk", "bootstraps.nwk", "consensus_with_support.nwk",
+                      "consensus_aln.gb", "raw_bootstraps.nwk"]:
+        with open(join(outdir, next_file), "r") as ifile:
+            data = re.sub(r'~count~([0-9]+)', r'(\1)', ifile.read())
+        with open(join(outdir, next_file), "w") as ofile:
+            ofile.write(data)
 
 if __name__ == '__main__':
     main()
