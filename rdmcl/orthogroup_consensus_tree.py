@@ -37,8 +37,8 @@ def list_features(seqbuddy):
         else:
             for feat in rec.features:
                 for key, qual in feat.qualifiers.items():
-                    if qual not in features:
-                        features.append(qual)
+                    if qual[0] not in features:
+                        features.append(qual[0])
     return features
 
 
@@ -52,8 +52,8 @@ def mc_bootstrap(_, args):
         Sb.rename(rec, "^%s$" % rec.records[0].id, clust)
         recs.append(rec.records[0])
     tree = Sb.SeqBuddy(recs, out_format="fasta")
-    tree = Alb.generate_msa(tree, "clustalo", quiet=True)
-    tree = trimal(orig_genbank, ["gappyout", 0.5, 0.75, 0.9, 0.95, "clean"], tree)
+    tree = create_feature_alignment(tree)
+    # tree = trimal(orig_genbank, ["gappyout", 0.5, 0.75, 0.9, 0.95, "clean"], tree)
     tree = Pb.generate_tree(tree, "fasttree", quiet=True)
     clean_tree = re.sub(":[0-9]e-[0-9]+", "", str(tree))
     clean_tree = re.sub(":[0-9]+\.[0-9]+", "", clean_tree)
@@ -68,12 +68,36 @@ def mc_bootstrap(_, args):
             ofile.write("%s\n" % "\t".join(sorted(seq_names)))
 
 
+def create_feature_alignment(alignment):
+    features = list_features(alignment)
+    feature_alignments = []
+
+    for feature in features:
+        recs_with_feat = Sb.pull_recs_with_feature(Sb.make_copy(alignment), feature)
+        recs_with_feat = Sb.extract_feature_sequences(recs_with_feat, feature)
+        if len(recs_with_feat) == 1:
+            recs_with_feat = Alb.AlignBuddy(str(recs_with_feat), out_format="embl")
+        else:
+            recs_with_feat = Alb.generate_msa(recs_with_feat, "clustalo", quiet=True)
+        aln_len = len(recs_with_feat.records()[0].seq)
+
+        recs_without_feats = Sb.delete_recs_with_feature(Sb.make_copy(alignment), feature)
+        for rec in recs_without_feats.records:
+            rec.seq = Sb.Seq("-" * aln_len, rec.seq.alphabet)
+            recs_with_feat.alignments[0].append(rec)
+        feature_alignments.append(recs_with_feat.alignments[0])
+
+    feature_alignments = Alb.AlignBuddy(feature_alignments, out_format="embl")
+    Alb.concat_alignments(feature_alignments, group_pattern=".*")
+    return feature_alignments
+
+
 def trimal(seqbuddy, trimal_modes, alignment):
         # Only remove columns up to a 50% reduction in average seq length and only if all sequences are retained
         ave_seq_length = Sb.ave_seq_length(seqbuddy)
         for threshold in trimal_modes:
             align_copy = Alb.trimal(Alb.make_copy(alignment), threshold=threshold)
-            cleaned_seqs = Sb.clean_seq(Sb.SeqBuddy(str(align_copy)))
+            cleaned_seqs = Sb.clean_seq(Sb.SeqBuddy(str(align_copy), out_format="embl"))
             cleaned_seqs = Sb.delete_small(cleaned_seqs, 1)
             # Structured this way for unit test purposes
             if len(alignment.records()) != len(cleaned_seqs):
@@ -140,9 +164,9 @@ def main():
 
     all_clusters = []
     orig_fasta = []
-    orig_genbank = []
+    orig_embl = []
     consensus_fasta = []
-    consensus_gb = []
+    consensus_embl = []
 
     # Create output directory
     if in_args.outdir:
@@ -173,23 +197,23 @@ def main():
 
         orig_fasta.append(Sb.SeqBuddy(join(rdmcl_dir, "input_seqs.fa")))
 
-        if os.path.isfile(join(rdmcl_dir, "input_seqs_psc.gb")):
-            orig_genbank.append(Sb.SeqBuddy(join(rdmcl_dir, "input_seqs_psc.gb")))
+        if os.path.isfile(join(rdmcl_dir, "input_seqs_psc.embl")):
+            orig_embl.append(Sb.SeqBuddy(join(rdmcl_dir, "input_seqs_psc.embl")))
             psc_records = Sb.delete_records(Sb.make_copy(orig_fasta[-1]),
-                                            ["^%s$" % rec.id for rec in orig_genbank[-1].records]).records
+                                            ["^%s$" % rec.id for rec in orig_embl[-1].records]).records
         else:
-            orig_genbank.append(None)
+            orig_embl.append(None)
             psc_records = orig_fasta[-1].records
 
         # Get Prosite Scan results if necessary
         if psc_records:
             prosite_scan = Sb.PrositeScan(Sb.SeqBuddy(psc_records))
             prosite_scan.run()
-            if orig_genbank[-1] is None:
-                orig_genbank[-1] = prosite_scan.seqbuddy
+            if orig_embl[-1] is None:
+                orig_embl[-1] = prosite_scan.seqbuddy
             else:
-                orig_genbank[-1].records += prosite_scan.seqbuddy.records
-            orig_genbank[-1].write(join(rdmcl_dir, "input_seqs_psc.gb"))
+                orig_embl[-1].records += prosite_scan.seqbuddy.records
+            orig_embl[-1].write(join(rdmcl_dir, "input_seqs_psc.embl"), out_format="embl")
 
         clusters = hlp.prepare_clusters(join(rdmcl_dir, "final_clusters.txt"), hierarchy=True)
 
@@ -223,22 +247,22 @@ def main():
 
         consensus_fasta[-1].write(join(rdmcl_dir, "consensus_seqs.fa"))
 
-        if os.path.isfile(join(rdmcl_dir, "consensus_psc.gb")):
-            consensus_gb.append(Sb.SeqBuddy(join(rdmcl_dir, "consensus_psc.gb")))
-            psc_records = Sb.delete_records(Sb.make_copy(consensus_gb[-1]),
+        if os.path.isfile(join(rdmcl_dir, "consensus_psc.embl")):
+            consensus_embl.append(Sb.SeqBuddy(join(rdmcl_dir, "consensus_psc.embl")))
+            psc_records = Sb.delete_records(Sb.make_copy(consensus_embl[-1]),
                                             ["^%s$" % rec.id for rec in consensus_fasta[-1].records]).records
         else:
-            consensus_gb.append(None)
+            consensus_embl.append(None)
             psc_records = consensus_fasta[-1].records
 
         if psc_records:
             prosite_scan = Sb.PrositeScan(Sb.SeqBuddy(psc_records))
             prosite_scan.run()
-            if consensus_gb[-1] is None:
-                consensus_gb[-1] = prosite_scan.seqbuddy
+            if consensus_embl[-1] is None:
+                consensus_embl[-1] = prosite_scan.seqbuddy
             else:
-                consensus_gb[-1].records += prosite_scan.seqbuddy.records
-            consensus_gb[-1].write(join(rdmcl_dir, "consensus_psc.gb"))
+                consensus_embl[-1].records += prosite_scan.seqbuddy.records
+            consensus_embl[-1].write(join(rdmcl_dir, "consensus_psc.embl"), out_format="embl")
 
         all_clusters.append(clusters)
 
@@ -253,9 +277,9 @@ def main():
     # Merge all of the various collections of sequences/clusters
     all_clusters = {clust: rec_ids for clusts in all_clusters for clust, rec_ids in clusts.items()}
     orig_fasta = Sb.SeqBuddy([rec for sb in orig_fasta for rec in sb.records], out_format="fasta")
-    orig_genbank = Sb.SeqBuddy([rec for sb in orig_genbank for rec in sb.records], out_format="gb")
+    orig_embl = Sb.SeqBuddy([rec for sb in orig_embl for rec in sb.records], out_format="embl")
     consensus_fasta = Sb.SeqBuddy([rec for sb in consensus_fasta for rec in sb.records], out_format="fasta")
-    consensus_gb = Sb.SeqBuddy([rec for sb in consensus_gb for rec in sb.records], out_format="gb")
+    consensus_embl = Sb.SeqBuddy([rec for sb in consensus_embl for rec in sb.records], out_format="embl")
 
     # Restrict analysis to specified clusters
     group_delete = []
@@ -287,35 +311,31 @@ def main():
             del all_clusters[clust]
         group_delete = "^%s$" % "$|^".join(group_delete)
         Sb.delete_records(consensus_fasta, group_delete)
-        Sb.delete_records(consensus_gb, group_delete)
+        Sb.delete_records(consensus_embl, group_delete)
 
     if recs_delete:
         recs_delete = "^%s$" % "$|^".join(recs_delete)
         Sb.delete_records(orig_fasta, recs_delete)
-        Sb.delete_records(orig_genbank, recs_delete)
+        Sb.delete_records(orig_embl, recs_delete)
 
     if in_args.include_count:
         new_all_clusters = {}
         for clust, rec_ids in all_clusters.items():
             new_all_clusters["%s~count~%s" % (clust, len(rec_ids))] = rec_ids
-            Sb.rename(consensus_gb, "^%s$" % clust, "%s~count~%s" % (clust, len(rec_ids)))
+            Sb.rename(consensus_embl, "^%s$" % clust, "%s~count~%s" % (clust, len(rec_ids)))
 
         all_clusters = new_all_clusters
 
-    # Get all features
-    features = list_features(consensus_gb)
-    feature_alignments = []
-
     # Infer consensus tree with RAxML
-    cons_alignment = Alb.generate_msa(consensus_gb, "clustalo")
-    Alb.trimal(cons_alignment, threshold="gappyout")
-    cons_alignment.write(join(outdir, "consensus_aln.gb"))
+    cons_alignment = create_feature_alignment(consensus_embl)
+    #Alb.trimal(cons_alignment, threshold="gappyout")
+    cons_alignment.write(join(outdir, "consensus_aln.embl"), out_format="embl")
 
-    cons_tree = Pb.generate_tree(cons_alignment, "raxml", quiet=True)
+    cons_tree = Pb.generate_tree(cons_alignment, "fasttree", quiet=True)
     with open(join(outdir, "consensus_tree.nwk"), "w") as ofile:
         ofile.write(re.sub("'", "", str(cons_tree)))
 
-    br.run_multicore_function(range(in_args.bootstraps), mc_bootstrap, func_args=[all_clusters, orig_genbank, outdir])
+    br.run_multicore_function(range(in_args.bootstraps), mc_bootstrap, func_args=[all_clusters, orig_embl, outdir])
 
     support_tree = Pb.generate_tree(cons_alignment, "raxml",
                                     params="-f b -p 1234 -t %s -z %s" % (join(outdir, "consensus_tree.nwk"),
@@ -324,11 +344,12 @@ def main():
     support_tree.write(join(outdir, "consensus_with_support.nwk"))
 
     for next_file in ["consensus_tree.nwk", "bootstraps.nwk", "consensus_with_support.nwk",
-                      "consensus_aln.gb", "raw_bootstraps.nwk"]:
+                      "consensus_aln.embl", "raw_bootstraps.nwk"]:
         with open(join(outdir, next_file), "r") as ifile:
-            data = re.sub(r'~count~([0-9]+)', r'(\1)', ifile.read())
+            data = re.sub(r'~count~([0-9]+)', r'[\1]', ifile.read())
         with open(join(outdir, next_file), "w") as ofile:
             ofile.write(data)
+
 
 if __name__ == '__main__':
     main()
