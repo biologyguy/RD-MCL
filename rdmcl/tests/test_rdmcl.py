@@ -1231,6 +1231,26 @@ def test_set_final_sim_scores(hf):
 9  Hca-PanxαG   Mle-Panxα9  0.483807414359  0.580623914006  0.449716964507  0.512852364253""", print(sim_scores)
 
 
+def test_mc_create_sequence_hmms(hf):
+    broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
+    broker.start_broker()
+    parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
+
+    tmpdir = br.TempDir()
+    hmm_dir = tmpdir.subdir("hmm")
+    with open(join(hmm_dir, "Bab-PanxαA.hmm"), "w") as ofile:
+        ofile.write("Testing testing, 1, 2, 3...")
+
+    for rec in parent_sb.records[:2]:
+        rdmcl.mc_create_sequence_hmms(rec, [tmpdir.path])
+    assert sorted(os.listdir(hmm_dir)) == ['BOL-PanxαB.hmm', 'Bab-PanxαA.hmm']
+    with open(join(hmm_dir, "Bab-PanxαA.hmm"), "r") as ifile:
+        assert ifile.read() == "Testing testing, 1, 2, 3..."
+    with open(join(hmm_dir, "BOL-PanxαB.hmm"), "r") as ifile:
+        assert "HMM          A        C        D        E        F        G        H        I        K" in ifile.read()
+    broker.close()
+
+
 def test_workerjob_init(hf, monkeypatch):
     monkeypatch.setattr(rdmcl, "HeartBeat", MockHeartBeat)
     seqbuddy = hf.get_data("cteno_panxs")
@@ -1740,27 +1760,6 @@ Bab-PanxαA
 """, print(temp_log_output.read())
 
 
-def test_create_hmms_for_every_rec(hf):
-    broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
-    broker.start_broker()
-    parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
-    clusters = hf.get_test_clusters(broker, parent_sb, rdmcl)
-
-    tmpdir = br.TempDir()
-    hmm_dir = tmpdir.subdir("hmm")
-    with open(join(hmm_dir, "Bab-PanxαA.hmm"), "w") as ofile:
-        ofile.write("Testing testing, 1, 2, 3...")
-    seq2clust_obj = rdmcl.Seqs2Clusters(clusters, 3, parent_sb, tmpdir.path)
-    seq2clust_obj.seqbuddy.records = seq2clust_obj.seqbuddy.records[0:2]
-    seq2clust_obj.create_hmms_for_every_rec()
-    assert sorted(os.listdir(join(seq2clust_obj.outdir, "hmm"))) == ['BOL-PanxαB.hmm', 'Bab-PanxαA.hmm']
-    with open(join(hmm_dir, "Bab-PanxαA.hmm"), "r") as ifile:
-        assert ifile.read() == "Testing testing, 1, 2, 3..."
-    with open(join(hmm_dir, "BOL-PanxαB.hmm"), "r") as ifile:
-        assert "HMM          A        C        D        E        F        G        H        I        K" in ifile.read()
-    broker.close()
-
-
 def test_mc_fwd_back_run(hf):
     parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
     records = ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE']
@@ -1798,8 +1797,6 @@ def test_create_hmm_fwd_score_df(hf, monkeypatch):
     seq2clust_obj = rdmcl.Seqs2Clusters([], 3, parent_sb, tmp_dir.path)
 
     monkeypatch.setattr(rdmcl.Seqs2Clusters, "_separate_large_small", lambda *_: True)
-    monkeypatch.setattr(rdmcl.Seqs2Clusters, "create_hmms_for_every_rec",
-                        lambda *_: join(hf.resource_path, "hmms"))
     hmm_fwd_scores = seq2clust_obj.create_hmm_fwd_score_df()
     hmm_fwd_scores = hmm_fwd_scores.sort_values('fwd_raw').reset_index(drop=True)
     # hmm_fwd_scores.to_csv("tests/unit_test_resources/hmms/fwd_df.csv")
@@ -1869,7 +1866,7 @@ def test_place_seqs_in_clusts(hf, monkeypatch):
     subset_ids = [seq for clust in clusters for seq in clust.seq_ids]
     parent_sb.records = [rec for rec in parent_sb.records if rec.id in subset_ids]
     tmpdir = br.TempDir()
-    tmpdir.subdir("hmm")
+    shutil.copytree(join(hf.resource_path, "hmms"), join(tmpdir.path, "hmm"))
     seq2clust_obj = rdmcl.Seqs2Clusters(clusters, 3, parent_sb, tmpdir.path)
 
     hmm_fwd_scores = pd.read_csv(join(hf.resource_path, "hmms", "full_r2.csv"), index_col=0)

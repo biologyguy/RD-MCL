@@ -1250,6 +1250,18 @@ def set_final_sim_scores(sim_scores):
     return sim_scores
 
 
+def mc_create_sequence_hmms(record, args):
+    outdir = args[0]
+    # First check to see if they already exist
+    hmm_dir = join(outdir, "hmm")
+    if not os.path.isfile(join(hmm_dir, "%s.hmm" % record.id)):
+        align = Alb.AlignBuddy(record.format("fasta"))
+        align = Alb.generate_hmm(align, HMMBUILD)
+        with open(join(hmm_dir, "%s.hmm" % record.id), "w") as _ofile:
+            _ofile.write(align.alignments[0].hmm)
+    return
+
+
 class WorkerJob(object):
     def __init__(self, seqbuddy, sql_broker):
         self.seqbuddy = seqbuddy
@@ -1899,20 +1911,8 @@ class Seqs2Clusters(object):
                 ofile.write(hmm_fwd_scores)
         return
 
-    def create_hmms_for_every_rec(self):
-        # First check to see if they already exist
-        hmm_dir = join(self.outdir, "hmm")
-        for rec in self.seqbuddy.records:
-            if not os.path.isfile(join(hmm_dir, "%s.hmm" % rec.id)):
-                align = Alb.AlignBuddy(rec.format("fasta"))
-                align = Alb.generate_hmm(align, HMMBUILD)
-                with open(join(hmm_dir, "%s.hmm" % rec.id), "w") as _ofile:
-                    _ofile.write(align.alignments[0].hmm)
-        return hmm_dir
-
     def create_hmm_fwd_score_df(self):
         # Create HMM forward-score dataframe from initial input --> p(seq|hmm)
-        self.create_hmms_for_every_rec()
         self.seqbuddy.write(join(self.tmp_dir.path, self.tmp_dir.subfiles[0]), out_format="fasta")
         hmm_scores_file = br.TempFile()
         br.run_multicore_function(self.seqbuddy.records, self._mc_fwd_back_run, [hmm_scores_file.path],
@@ -2618,6 +2618,11 @@ Continue? y/[n] """ % len(sequences)
         psi_pred_files.append((record.id, join(in_args.psipred_dir, "%s.ss2" % record.id)))
 
     psi_pred_files = OrderedDict(psi_pred_files)
+
+    # Sequence HMMs
+    logging.warning("\n** Creating Sequence-level HMMs **")
+    br.run_multicore_function(sequences.records, mc_create_sequence_hmms, [in_args.outdir],
+                              max_processes=CPUS, quiet=in_args.quiet)
 
     # Initial alignment
     logging.warning("\n** All-by-all graph **")
