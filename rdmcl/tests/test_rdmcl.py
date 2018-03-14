@@ -1666,8 +1666,8 @@ def test_mc_build_cluster_nulls(hf):
     clusters = hf.get_test_clusters(broker, parent_sb, rdmcl)
     broker.close()
     clusters[0].seq_ids = sorted(clusters[0].seq_ids)[:3]
-    rsquare_vals_df = rsquare_vals_df.loc[(-rsquare_vals_df["rec_id1"].isin(clusters[1].seq_ids)) &
-                                          (-rsquare_vals_df["rec_id2"].isin(clusters[1].seq_ids))]
+    rsquare_vals_df = rsquare_vals_df.loc[(-rsquare_vals_df["seq1"].isin(clusters[1].seq_ids)) &
+                                          (-rsquare_vals_df["seq2"].isin(clusters[1].seq_ids))]
     parent_sb.records = [rec for rec in parent_sb.records if rec.id not in clusters[1].seq_ids]
 
     del clusters[1]
@@ -2026,7 +2026,7 @@ def test_create_fwd_score_rsquared_matrix(hf, monkeypatch):
 
     fwd_score_obj = rdmcl.FwdScoreCorrelations(parent_sb, tmp_dir.path)
     assert str(fwd_score_obj.rsquare_vals_df) == """\
-      rec_id1     rec_id2        r_square
+         seq1        seq2        r_square
 0  BOL-PanxαB  BOL-PanxαB  1.000000000000
 1  BOL-PanxαB  Bab-PanxαA  0.016894041431
 2  BOL-PanxαB  Bch-PanxαA  0.087311057754
@@ -2040,7 +2040,7 @@ def test_create_fwd_score_rsquared_matrix(hf, monkeypatch):
 
     rsquare_vals_df = fwd_score_obj.create_fwd_score_rsquared_matrix()
     assert str(rsquare_vals_df) == """\
-      rec_id1     rec_id2        r_square
+         seq1        seq2        r_square
 0  BOL-PanxαB  BOL-PanxαB  1.000000000000
 1  BOL-PanxαB  Bab-PanxαA  0.016894041431
 2  BOL-PanxαB  Bch-PanxαA  0.087311057754

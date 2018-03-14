@@ -58,13 +58,13 @@ class Check(object):
     def _prepare_within_group_r2_df(self, force=False):
         if not os.path.isfile(join(self.rdmcl_dir, "hmm", "within_group_rsquares.csv")) or force:
             sys.stderr.write("Preparing hmm/within_group_rsquares.csv...\n")
-            within_group_rsquares = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
+            within_group_rsquares = pd.DataFrame(columns=["seq1", "seq2", "r_square"])
             for g, seqs in self.clusters.items():
                 if len(seqs) < 2:
                     continue
-                clust_rsquares = self.r_squares.loc[(self.r_squares["rec_id1"].isin(seqs)) &
-                                                    (self.r_squares["rec_id2"].isin(seqs)) &
-                                                    (self.r_squares["rec_id1"] != self.r_squares["rec_id2"])].copy()
+                clust_rsquares = self.r_squares.loc[(self.r_squares["seq1"].isin(seqs)) &
+                                                    (self.r_squares["seq2"].isin(seqs)) &
+                                                    (self.r_squares["rec_id1"] != self.r_squares["seq2"])].copy()
                 within_group_rsquares = within_group_rsquares.append(clust_rsquares, ignore_index=True)
             within_group_rsquares.to_csv(join(self.rdmcl_dir, "hmm", "within_group_rsquares.csv"))
         else:
@@ -89,7 +89,7 @@ class Check(object):
     def _prepare_between_group_r2_df(self, force=False):
         if not os.path.isfile(join(self.rdmcl_dir, "hmm", "between_group_rsquares.csv")) or force:
             sys.stderr.write("Preparing hmm/between_group_rsquares.csv...\n")
-            between_group_rsquares = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
+            between_group_rsquares = pd.DataFrame(columns=["seq1", "seq2", "r_square"])
             i = 0
             for g1, seqs1 in self.clusters.items():
                 i += 1
@@ -98,11 +98,11 @@ class Check(object):
                 for g2, seqs2 in list(self.clusters.items())[i:]:
                     if len(seqs2) < 2:
                         continue
-                    clust_rsquares = self.r_squares.loc[((self.r_squares["rec_id1"].isin(seqs1)) &
-                                                         (self.r_squares["rec_id2"].isin(seqs2))) |
-                                                        ((self.r_squares["rec_id1"].isin(seqs2)) &
-                                                         (self.r_squares["rec_id2"].isin(seqs1))) &
-                                                        (self.r_squares["rec_id1"] != self.r_squares["rec_id2"])].copy()
+                    clust_rsquares = self.r_squares.loc[((self.r_squares["seq1"].isin(seqs1)) &
+                                                         (self.r_squares["seq2"].isin(seqs2))) |
+                                                        ((self.r_squares["seq1"].isin(seqs2)) &
+                                                         (self.r_squares["seq2"].isin(seqs1))) &
+                                                        (self.r_squares["seq1"] != self.r_squares["seq2"])].copy()
                     between_group_rsquares = between_group_rsquares.append(clust_rsquares, ignore_index=True)
             between_group_rsquares.to_csv(join(self.rdmcl_dir, "hmm", "between_group_rsquares.csv"))
         else:
@@ -145,11 +145,11 @@ class Check(object):
         for g, seqs in self.clusters.items():
             if g == group_name or len(seqs) < len(query):
                 continue
-            compare = self.r_squares.loc[((self.r_squares["rec_id1"].isin(query)) &
-                                          (self.r_squares["rec_id2"].isin(seqs))) |
-                                         ((self.r_squares["rec_id1"].isin(seqs)) &
-                                          (self.r_squares["rec_id2"].isin(query))) &
-                                         (self.r_squares["rec_id1"] != self.r_squares["rec_id2"])].copy()
+            compare = self.r_squares.loc[((self.r_squares["seq1"].isin(query)) &
+                                          (self.r_squares["seq2"].isin(seqs))) |
+                                         ((self.r_squares["seq1"].isin(seqs)) &
+                                          (self.r_squares["seq2"].isin(query))) &
+                                         (self.r_squares["seq1"] != self.r_squares["seq2"])].copy()
 
             ave, std = hlp.mean(compare.r_square), hlp.std(compare.r_square)
             upper2 = ave + (std * 2)
@@ -212,14 +212,14 @@ class Check(object):
     def _mc_r_squares(seq_chunks, args):
         try:
             rec, hmm_fwd_scores, output_path = args
-            comparisons = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
+            comparisons = pd.DataFrame(columns=["seq1", "seq2", "r_square"])
 
             for seq in seq_chunks:
                 fwd1 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == seq.id].sort_values(by="hmm_id")
                 fwd2 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec.id].sort_values(by="hmm_id")
                 corr = scipy.stats.pearsonr(fwd1.fwd_raw, fwd2.fwd_raw)
                 comparisons = comparisons.append(pd.DataFrame(data=[[seq.id, rec.id, corr[0]**2]],
-                                                 columns=["rec_id1", "rec_id2", "r_square"]), ignore_index=True)
+                                                 columns=["seq1", "seq2", "r_square"]), ignore_index=True)
             comparisons = comparisons.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
             with LOCK:
                 with open(output_path, "a") as ofile:
@@ -234,11 +234,11 @@ class Check(object):
             rec, hmm_fwd_scores, output_file = args
 
             # Calculate R² 95% conf interval first
-            compare = self.r_squares.loc[((self.r_squares["rec_id1"] == rec.id) &
-                                          (self.r_squares["rec_id2"].isin(seqs))) |
-                                         ((self.r_squares["rec_id1"].isin(seqs)) &
-                                          (self.r_squares["rec_id2"] == rec.id)) &
-                                         (self.r_squares["rec_id1"] != self.r_squares["rec_id2"])].copy()
+            compare = self.r_squares.loc[((self.r_squares["seq1"] == rec.id) &
+                                          (self.r_squares["seq2"].isin(seqs))) |
+                                         ((self.r_squares["seq1"].isin(seqs)) &
+                                          (self.r_squares["seq2"] == rec.id)) &
+                                         (self.r_squares["seq1"] != self.r_squares["seq2"])].copy()
 
             ave, std = hlp.mean(compare.r_square), hlp.std(compare.r_square)
             upper2 = ave + (std * 2)
@@ -293,7 +293,7 @@ class Check(object):
         output_file = br.TempFile()
         br.run_multicore_function(seq_chuncks, self._mc_r_squares, [rec, fwd_scores_df, output_file.path], quiet=True)
         comparison = pd.read_csv(output_file.path, header=None)
-        comparison.columns = ["rec_id1", "rec_id2", "r_square"]
+        comparison.columns = ["seq1", "seq2", "r_square"]
         self.r_squares = self.r_squares.append(comparison, ignore_index=True)
 
         self.output = []

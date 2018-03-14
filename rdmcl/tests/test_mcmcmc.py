@@ -369,7 +369,7 @@ def test_chain_get_ice_walker():
 
 def test_chain_get_results():
     tmp_file = br.TempFile()
-    tmp_file.write("""rec_id1,rec_id2,r_square
+    tmp_file.write("""seq1,seq2,r_square
 BOL-PanxαB,Bab-PanxαA,0.016894041431
 BOL-PanxαB,Bch-PanxαA,0.087311057754
 BOL-PanxαB,Bfo-PanxαE,0.274041115357""")
@@ -377,7 +377,7 @@ BOL-PanxαB,Bfo-PanxαE,0.274041115357""")
     chain = SimpleNamespace(outfile=tmp_file.path, get_results=mcmcmc._Chain.get_results)
     assert type(chain.get_results(chain)) == pd.DataFrame
     assert str(chain.get_results(chain)) == """\
-      rec_id1     rec_id2        r_square
+         seq1        seq2        r_square
 0  BOL-PanxαB  Bab-PanxαA  0.016894041431
 1  BOL-PanxαB  Bch-PanxαA  0.087311057754
 2  BOL-PanxαB  Bfo-PanxαE  0.274041115357""", print(chain.get_results(chain))

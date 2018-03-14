@@ -126,7 +126,8 @@ pd.set_option("display.precision", 12)
 
 # ToDo: Maybe remove support for taxa_sep. It's complicating my life, so just impose the '-' on users?
 class Cluster(object):
-    def __init__(self, seq_ids, sim_scores, taxa_sep="-", group_prefix="group", parent=None, collapse=False, r_seed=None):
+    def __init__(self, seq_ids, sim_scores, taxa_sep="-", group_prefix="group",
+                 parent=None, collapse=False, r_seed=None, fwd_scores=None):
         """
         - Note that reciprocal best hits between paralogs are collapsed when instantiating group_0, so
           no problem strongly penalizing all paralogs in the scoring algorithm
@@ -170,6 +171,7 @@ class Cluster(object):
         self.cluster_score = None
         self.collapsed_genes = OrderedDict()  # If paralogs are reciprocal best hits, collapse them
         self.rand_gen = Random(r_seed)
+        self.fwd_scores = fwd_scores
         self._name = None
         self.taxa = OrderedDict()  # key = taxa id. value = list of genes coming fom that taxa.
 
@@ -1810,11 +1812,11 @@ class Seqs2Clusters(object):
         rsquare_vals_df, global_null_file, cluster_nulls_file, out_of_cluster_file, temp_log_output = args
 
         log_output = "%s\n" % clust.name()
-        clust_null_df = rsquare_vals_df.loc[(rsquare_vals_df["rec_id1"].isin(clust.seq_ids)) &
-                                            (rsquare_vals_df["rec_id2"].isin(clust.seq_ids))].copy()
+        clust_null_df = rsquare_vals_df.loc[(rsquare_vals_df["seq1"].isin(clust.seq_ids)) &
+                                            (rsquare_vals_df["seq2"].isin(clust.seq_ids))].copy()
         global_null_output = clust_null_df.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
         cluster_nulls_output = ""
-        clust_null_df = clust_null_df.loc[clust_null_df.rec_id1 != clust_null_df.rec_id2].reset_index(drop=True)
+        clust_null_df = clust_null_df.loc[clust_null_df.seq1 != clust_null_df.seq2].reset_index(drop=True)
 
         out_of_cluster_output = ""
         if len(clust_null_df) > 1:
@@ -1829,10 +1831,10 @@ class Seqs2Clusters(object):
             log_output += "\tStd: Null\n\n"
 
         if clust.name() in self.large_clusters:
-            clust_null_df = rsquare_vals_df.loc[((rsquare_vals_df["rec_id1"].isin(clust.seq_ids)) &
-                                                 (-rsquare_vals_df["rec_id2"].isin(clust.seq_ids))) |
-                                                ((-rsquare_vals_df["rec_id1"].isin(clust.seq_ids)) &
-                                                 (rsquare_vals_df["rec_id2"].isin(clust.seq_ids)))].copy()
+            clust_null_df = rsquare_vals_df.loc[((rsquare_vals_df["seq1"].isin(clust.seq_ids)) &
+                                                 (-rsquare_vals_df["seq2"].isin(clust.seq_ids))) |
+                                                ((-rsquare_vals_df["seq1"].isin(clust.seq_ids)) &
+                                                 (rsquare_vals_df["seq2"].isin(clust.seq_ids)))].copy()
             out_of_cluster_output += clust_null_df.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
 
         with LOCK:
@@ -1859,11 +1861,11 @@ class Seqs2Clusters(object):
             seq_ids = set([i for i in clust.seq_ids if i != seq_id])
 
             # Pull out dataframe rows where current sequence is paired with a sequence from the current cluster
-            df = rsquare_vals_df.loc[((rsquare_vals_df["rec_id1"].isin(seq_ids)) |
-                                      (rsquare_vals_df["rec_id2"].isin(seq_ids))) &
-                                     ((rsquare_vals_df["rec_id1"] == seq_id) |
-                                      (rsquare_vals_df["rec_id2"] == seq_id)) &
-                                     (rsquare_vals_df["rec_id1"] != rsquare_vals_df["rec_id2"])].copy()
+            df = rsquare_vals_df.loc[((rsquare_vals_df["seq1"].isin(seq_ids)) |
+                                      (rsquare_vals_df["seq2"].isin(seq_ids))) &
+                                     ((rsquare_vals_df["seq1"] == seq_id) |
+                                      (rsquare_vals_df["seq2"] == seq_id)) &
+                                     (rsquare_vals_df["seq1"] != rsquare_vals_df["seq2"])].copy()
             if df.empty:
                 test_mean = 0
             else:
@@ -1973,10 +1975,10 @@ class Seqs2Clusters(object):
 
             # Create a distribution from all R² values between records in each pre-called large cluster
             global_null_file = br.TempFile()
-            global_null_file.write("rec_id1,rec_id2,r_square\n")
+            global_null_file.write("seq1,seq2,r_square\n")
 
             out_of_cluster_file = br.TempFile()
-            out_of_cluster_file.write("rec_id1,rec_id2,r_square\n")
+            out_of_cluster_file.write("seq1,seq2,r_square\n")
 
             # Also calculate sub-distributions from within each pre-called cluster, creating a cluster null
             log_output.write("# Cluster R² distribution statistics #\n")
@@ -2002,7 +2004,7 @@ class Seqs2Clusters(object):
             temp_log_output.clear()
 
             # H₀: R² between two sequences is drawn from the same distribution as pre-called cluster pairs
-            global_null_df = global_null_df.loc[global_null_df.rec_id1 != global_null_df.rec_id2].reset_index(drop=True)
+            global_null_df = global_null_df.loc[global_null_df.seq1 != global_null_df.seq2].reset_index(drop=True)
             log_output.write("# Global null R² distribution statistics #\n")
             log_output.write("\tN: %s\n" % len(global_null_df))
             log_output.write("\tMean: %s\n" % hlp.mean(global_null_df.r_square))
@@ -2105,11 +2107,11 @@ class Seqs2Clusters(object):
                             # Update against old cluster
                             seq_ids = new_groups[orig_clust]
                             for si in sort_order:
-                                df = rsquare_vals_df.loc[((rsquare_vals_df["rec_id1"].isin(seq_ids)) |
-                                                          (rsquare_vals_df["rec_id2"].isin(seq_ids))) &
-                                                         ((rsquare_vals_df["rec_id1"] == si) |
-                                                          (rsquare_vals_df["rec_id2"] == si)) &
-                                                         (rsquare_vals_df["rec_id1"] != rsquare_vals_df["rec_id2"])]
+                                df = rsquare_vals_df.loc[((rsquare_vals_df["seq1"].isin(seq_ids)) |
+                                                          (rsquare_vals_df["seq2"].isin(seq_ids))) &
+                                                         ((rsquare_vals_df["seq1"] == si) |
+                                                          (rsquare_vals_df["seq2"] == si)) &
+                                                         (rsquare_vals_df["seq1"] != rsquare_vals_df["seq2"])]
                                 df = df.copy()
 
                                 if df.empty:
@@ -2121,11 +2123,11 @@ class Seqs2Clusters(object):
                         # Update against new cluster
                         seq_ids = new_groups[group_id]
                         for si in sort_order:
-                            df = rsquare_vals_df.loc[((rsquare_vals_df["rec_id1"].isin(seq_ids)) |
-                                                      (rsquare_vals_df["rec_id2"].isin(seq_ids))) &
-                                                     ((rsquare_vals_df["rec_id1"] == si) |
-                                                      (rsquare_vals_df["rec_id2"] == si)) &
-                                                     (rsquare_vals_df["rec_id1"] != rsquare_vals_df["rec_id2"])].copy()
+                            df = rsquare_vals_df.loc[((rsquare_vals_df["seq1"].isin(seq_ids)) |
+                                                      (rsquare_vals_df["seq2"].isin(seq_ids))) &
+                                                     ((rsquare_vals_df["seq1"] == si) |
+                                                      (rsquare_vals_df["seq2"] == si)) &
+                                                     (rsquare_vals_df["seq1"] != rsquare_vals_df["seq2"])].copy()
                             if df.empty:
                                 test_mean = 0
                             else:
@@ -2255,16 +2257,16 @@ class FwdScoreCorrelations(object):
     def _mc_rsquare_vals(recs, args):
         rec1, sub_recs = recs
         hmm_fwd_scores, tmp_rsquares_file = args
-        rsquare_vals_df = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
+        rsquare_vals_df = pd.DataFrame(columns=["seq1", "seq2", "r_square"])
         for rec2 in sub_recs:
             fwd1 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec1.id].sort_values(by="hmm_id").fwd_raw
             fwd2 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec2.id].sort_values(by="hmm_id").fwd_raw
             corr = scipy.stats.pearsonr(fwd1, fwd2)
             comparison = pd.DataFrame(data=[[rec1.id, rec2.id, corr[0]**2]],
-                                      columns=["rec_id1", "rec_id2", "r_square"])
+                                      columns=["seq1", "seq2", "r_square"])
             rsquare_vals_df = rsquare_vals_df.append(comparison, ignore_index=True)
         rsquare_vals_df = rsquare_vals_df.append(pd.DataFrame(data=[[rec1.id, rec1.id, 1.0]],
-                                                 columns=["rec_id1", "rec_id2", "r_square"]), ignore_index=True)
+                                                 columns=["seq1", "seq2", "r_square"]), ignore_index=True)
 
         rsquare_vals_df = rsquare_vals_df.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
         with LOCK:
@@ -2286,8 +2288,8 @@ class FwdScoreCorrelations(object):
                                   max_processes=CPUS)
 
         self.rsquare_vals_df = pd.read_csv(tmp_rsquares_file.path, header=None)
-        self.rsquare_vals_df.columns = ["rec_id1", "rec_id2", "r_square"]
-        self.rsquare_vals_df = self.rsquare_vals_df.sort_values(by=["rec_id1", "rec_id2"]).reset_index(drop=True)
+        self.rsquare_vals_df.columns = ["seq1", "seq2", "r_square"]
+        self.rsquare_vals_df = self.rsquare_vals_df.sort_values(by=["seq1", "seq2"]).reset_index(drop=True)
         self.rsquare_vals_df.to_csv(self.rsquares_df_path, index=False)
         return self.rsquare_vals_df
 
@@ -2647,7 +2649,7 @@ Continue? y/[n] """ % len(sequences)
                               max_processes=CPUS, quiet=in_args.quiet)
 
     logging.warning("\n** Compile HMM forward-score correlation matrix **")
-    fwd_scores = FwdScoreCorrelations(sequences, in_args.outdir)
+    fwd_scores_obj = FwdScoreCorrelations(sequences, in_args.outdir)
 
     # Initial alignment
     logging.warning("\n** All-by-all graph **")
@@ -2672,7 +2674,8 @@ Continue? y/[n] """ % len(sequences)
     # Then prepare the 'real' group_0 cluster
     if not in_args.suppress_paralog_collapse:
         group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data, taxa_sep=in_args.taxa_sep,
-                                  group_prefix=in_args.group_name, collapse=True, r_seed=in_args.r_seed)
+                                  group_prefix=in_args.group_name, collapse=True, r_seed=in_args.r_seed,
+                                  fwd_scores=fwd_scores_obj)
     else:
         group_0_cluster = uncollapsed_group_0
 
