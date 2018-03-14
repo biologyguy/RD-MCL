@@ -160,7 +160,7 @@ def test_cluster_reset_seq_ids(hf):
 def test_cluster_collapse(hf):
     cluster = rdmcl.Cluster(*hf.base_cluster_args())
     assert not cluster.collapsed_genes
-    cluster.collapse()
+    cluster.collapse("raw_score")
     assert cluster.collapsed_genes == OrderedDict([('Hvu-PanxβI', ['Hvu-PanxβM', 'Hvu-PanxβD', 'Hvu-PanxβC',
                                                                    'Hvu-PanxβE', 'Hvu-PanxβF', 'Hvu-PanxβH',
                                                                    'Hvu-PanxβG', 'Hvu-PanxβK', 'Hvu-PanxβO',
@@ -215,14 +215,14 @@ def test_cluster_compare(hf, capsys):
 
 def test_cluster_get_best_hits(hf):
     cluster = rdmcl.Cluster(*hf.base_cluster_args())
-    best_hit = cluster.get_best_hits("Bab-PanxαA")
+    best_hit = cluster.get_best_hits("Bab-PanxαA", "raw_score")
     assert best_hit.iloc[0].seq2 == "Lcr-PanxαG"
 
 
 def test_cluster_recursive_best_hits(hf):
     cluster = rdmcl.Cluster(*hf.base_cluster_args())
     global_best_hits = pd.DataFrame(columns=["seq1", "seq2", "score"])
-    best_hits = cluster.recursive_best_hits('Bab-PanxαB', global_best_hits, ['Bab-PanxαB'])
+    best_hits = cluster.recursive_best_hits('Bab-PanxαB', global_best_hits, ['Bab-PanxαB'], "raw_score")
     assert best_hits.to_csv() == """\
 ,psi,raw_score,score,seq1,seq2,subsmat
 0,0.9841450231425388,0.9710485816574068,0.9776353490763704,Bab-PanxαB,Vpa-PanxαB,0.9748454887622982

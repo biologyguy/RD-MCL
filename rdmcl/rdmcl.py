@@ -192,7 +192,8 @@ class Cluster(object):
             self._name = "%s_0" % group_prefix
             # This next bit can collapse all paralog reciprocal best-hit cliques so they don't gum up MCL
             if collapse:
-                self.collapse()
+                column = "r_square" if "r_square" in self.sim_scores.columns else "raw_score"
+                self.collapse(column)
 
         self.seq_ids_str = str(", ".join(sorted(self.seq_ids)))
         self.seq_id_hash = hlp.md5_hash(self.seq_ids_str)
@@ -209,7 +210,7 @@ class Cluster(object):
             self.taxa.setdefault(taxa, [])
             self.taxa[taxa].append(next_seq_id)
 
-    def collapse(self):
+    def collapse(self, column):
         breakout = False
         seq_ids = sorted(self.seq_ids)
         while not breakout:
@@ -217,12 +218,12 @@ class Cluster(object):
             for seq1_id in seq_ids:
                 seq1_taxa = seq1_id.split(self.taxa_sep)[0]
                 paralog_best_hits = []
-                for best_hits_seq1 in self.get_best_hits(seq1_id).itertuples():  # This grabs the best hit for seq1
+                for best_hits_seq1 in self.get_best_hits(seq1_id, column).itertuples():  # grab best hit for seq1
                     seq2_id = best_hits_seq1.seq1 if best_hits_seq1.seq1 != seq1_id else best_hits_seq1.seq2
                     if seq2_id.split(self.taxa_sep)[0] != seq1_taxa:
                         paralog_best_hits = []
                         break
-                    for best_hits_seq2 in self.get_best_hits(seq2_id).itertuples():  # Confirm best hit is reciprocal
+                    for best_hits_seq2 in self.get_best_hits(seq2_id, column).itertuples():  # Confirm reciprocal
                         if seq1_id in [best_hits_seq2.seq1, best_hits_seq2.seq2]:
                             paralog_best_hits.append(seq2_id)
                             break
@@ -282,21 +283,22 @@ class Cluster(object):
         print("name: %s, matches: %s, weighted_match: %s" % (self.name(), len(matches), weighted_match))
         return weighted_match
 
-    def get_best_hits(self, gene):
+    def get_best_hits(self, gene, column):
         """
         Search through the sim scores data frame to find the gene(s) with the highest similarity to the query
         :param gene: Query gene name
         :type gene: str
+        :param column: Which column in self.sim_scores are we assessing?
         :return: The best hit(s). Multiple matches will all have the same similarity score.
         :rtype: pd.DataFrame
         """
         best_hits = self.sim_scores[(self.sim_scores.seq1 == gene) | (self.sim_scores.seq2 == gene)]
         if not best_hits.empty:
-            best_hits = best_hits.loc[best_hits.raw_score == max(best_hits.raw_score)].values
+            best_hits = best_hits.loc[best_hits[column] == max(best_hits[column])].values
             best_hits = pd.DataFrame(best_hits, columns=list(self.sim_scores.columns.values))
         return best_hits
 
-    def recursive_best_hits(self, gene, global_best_hits, tested_ids):
+    def recursive_best_hits(self, gene, global_best_hits, tested_ids, column):
         """
         Compile a best-hit clique.
         The best hit for a given gene may not have the query gene as its reciprocal best hit, so find the actual best
@@ -309,18 +311,19 @@ class Cluster(object):
         :type global_best_hits: pd.DataFrame
         :param tested_ids: Growing list of ids that have already been tested, so not repeating the same work
         :type tested_ids: list
+        :param column: Which column in self.sim_scores are we assessing?
         :return: The final clique
         :rtype: pd.DataFrame
         """
-        best_hits = self.get_best_hits(gene)
+        best_hits = self.get_best_hits(gene, column)
         global_best_hits = global_best_hits.append(best_hits, ignore_index=True)
         for _edge in best_hits.itertuples():
             if _edge.seq1 not in tested_ids:
                 tested_ids.append(_edge.seq1)
-                global_best_hits = self.recursive_best_hits(_edge.seq1, global_best_hits, tested_ids)
+                global_best_hits = self.recursive_best_hits(_edge.seq1, global_best_hits, tested_ids, column)
             if _edge.seq2 not in tested_ids:
                 tested_ids.append(_edge.seq2)
-                global_best_hits = self.recursive_best_hits(_edge.seq2, global_best_hits, tested_ids)
+                global_best_hits = self.recursive_best_hits(_edge.seq2, global_best_hits, tested_ids, column)
         return global_best_hits.drop_duplicates()
 
     def perturb(self, scores, col_name="score"):
@@ -491,7 +494,7 @@ class Cluster(object):
                 for gene in group:
                     rbhc = self.recursive_best_hits(gene,
                                                     pd.DataFrame(columns=list(self.sim_scores.columns.values)),
-                                                    [gene])
+                                                    [gene], "raw_score")
                     # If ANY clique encompasses the entire cluster, we're done
                     if len(set(list(rbhc.seq1.values) + list(rbhc.seq2.values))) == len(self):
                         log_file.write("\tTERMINATED: Entire cluster pulled into clique on %s." % taxa_id)
