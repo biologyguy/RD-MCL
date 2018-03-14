@@ -1794,7 +1794,6 @@ class Seqs2Clusters(object):
         self.outdir = outdir
         self.tmp_file = br.TempFile()
         self.tmp_dir = br.TempDir()
-        self.tmp_dir.subfile("seqs.fa")
         self.small_clusters = OrderedDict()
         self.large_clusters = OrderedDict()
         self._separate_large_small()
@@ -1889,76 +1888,6 @@ class Seqs2Clusters(object):
                 ofile.write(log_output)
         return
 
-    def _mc_fwd_back_run(self, rec, args):
-        hmm_scores_file = args[0]
-        hmm_path = join(self.outdir, "hmm", "%s.hmm" % rec.id)
-
-        fwdback_output = Popen("%s %s %s" % (HMM_FWD_BACK, hmm_path, join(self.tmp_dir.path, self.tmp_dir.subfiles[0])),
-                               shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
-
-        fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
-                                    header=None, comment="#", index_col=False)
-
-        fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
-        fwd_scores_df["hmm_id"] = rec.id
-
-        hmm_fwd_scores = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
-        hmm_fwd_scores = hmm_fwd_scores.append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
-                                               ignore_index=True)
-        hmm_fwd_scores = hmm_fwd_scores.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
-        with LOCK:
-            with open(hmm_scores_file, "a") as ofile:
-                ofile.write(hmm_fwd_scores)
-        return
-
-    def create_hmm_fwd_score_df(self):
-        # Create HMM forward-score dataframe from initial input --> p(seq|hmm)
-        self.seqbuddy.write(join(self.tmp_dir.path, self.tmp_dir.subfiles[0]), out_format="fasta")
-        hmm_scores_file = br.TempFile()
-        br.run_multicore_function(self.seqbuddy.records, self._mc_fwd_back_run, [hmm_scores_file.path],
-                                  max_processes=CPUS, quiet=True)
-        hmm_fwd_scores = pd.read_csv(hmm_scores_file.path, header=None)
-        hmm_fwd_scores.columns = ["hmm_id", "rec_id", "fwd_raw"]
-        return hmm_fwd_scores
-
-    @staticmethod
-    def _mc_rsquare_vals(recs, args):
-        rec1, sub_recs = recs
-        hmm_fwd_scores, tmp_rsquares_file = args
-        rsquare_vals_df = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
-        for rec2 in sub_recs:
-            fwd1 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec1.id].sort_values(by="hmm_id").fwd_raw
-            fwd2 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec2.id].sort_values(by="hmm_id").fwd_raw
-            corr = scipy.stats.pearsonr(fwd1, fwd2)
-            comparison = pd.DataFrame(data=[[rec1.id, rec2.id, corr[0]**2]],
-                                      columns=["rec_id1", "rec_id2", "r_square"])
-            rsquare_vals_df = rsquare_vals_df.append(comparison, ignore_index=True)
-        rsquare_vals_df = rsquare_vals_df.append(pd.DataFrame(data=[[rec1.id, rec1.id, 1.0]],
-                                                 columns=["rec_id1", "rec_id2", "r_square"]), ignore_index=True)
-
-        rsquare_vals_df = rsquare_vals_df.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
-        with LOCK:
-            with open(tmp_rsquares_file, "a") as ofile:
-                ofile.write(rsquare_vals_df)
-
-    def create_fwd_score_rsquared_matrix(self):
-        # Calculate all-by-all matrix of correlation coefficients on fwd scores among all sequences
-        hmm_fwd_scores = self.create_hmm_fwd_score_df()
-        hmm_fwd_scores.to_csv(join(self.outdir, "hmm", "hmm_fwd_scores.csv"), index=False)
-        sub_recs = list(self.seqbuddy.records[1:])
-        multicore_data = [None for _ in range(len(self.seqbuddy))]
-        tmp_rsquares_file = br.TempFile()
-        for indx, rec1 in enumerate(self.seqbuddy.records):
-            multicore_data[indx] = (rec1, sub_recs)
-            sub_recs = sub_recs[1:]
-        br.run_multicore_function(multicore_data, self._mc_rsquare_vals, [hmm_fwd_scores, tmp_rsquares_file.path],
-                                  max_processes=CPUS, quiet=True)
-
-        rsquare_vals_df = pd.read_csv(tmp_rsquares_file.path, header=None)
-        rsquare_vals_df.columns = ["rec_id1", "rec_id2", "r_square"]
-        rsquare_vals_df = rsquare_vals_df.sort_values(by=["rec_id1", "rec_id2"]).reset_index(drop=True)
-        return rsquare_vals_df
-
     @staticmethod
     def _create_truncnorm(mu, sigma, lower=0, upper=1):
         sigma = sigma if sigma > 0.001 else 0.001  # This prevents unrealistically small differences and DivBy0 errors
@@ -2002,6 +1931,9 @@ class Seqs2Clusters(object):
         # and then calculate correlation coefficients between every pair of sequences (i.e., make an all-by-all matrix)
         log_output = br.TempFile()
         log_output.write("# HMM forward scores all-by-all R² dataframe #\n")
+        fwd_scores = FwdScoreCorrelations(self.seqbuddy, self.outdir)
+        rsquare_vals_df = fwd_scores.rsquare_vals_df
+        '''
         rsquares_df_path = join(self.outdir, "hmm", "rsquares_matrix.csv")
         if os.path.isfile(rsquares_df_path):
             log_output.write("\tRead from %s\n\n" % rsquares_df_path)
@@ -2015,7 +1947,7 @@ class Seqs2Clusters(object):
         if not os.path.isfile(hmm_fwd_scores_path):
             hmm_fwd_scores = self.create_hmm_fwd_score_df()
             hmm_fwd_scores.to_csv(hmm_fwd_scores_path, index=False)
-
+        '''
         valve = br.SafetyValve(round(len(self.clusters[0].get_base_cluster().seq_ids) * 1.2))
         placed = []
 
@@ -2268,6 +2200,96 @@ class Seqs2Clusters(object):
         with LOCK:
             self.tmp_file.write(log_output.read())
         return
+
+
+class FwdScoreCorrelations(object):
+    def __init__(self, seqbuddy, outdir):
+        self.seqbuddy = seqbuddy
+        self.outdir = outdir
+        self.tmp_dir = br.TempDir()
+        self.tmp_dir.subfile("seqs.fa")
+
+        self.hmm_fwd_scores_path = join(self.outdir, "hmm", "hmm_fwd_scores.csv")
+        self.hmm_fwd_scores = self.create_hmm_fwd_score_df()
+
+        self.rsquares_df_path = join(self.outdir, "hmm", "rsquares_matrix.csv")
+        self.rsquare_vals_df = self.create_fwd_score_rsquared_matrix()
+
+    def _mc_fwd_back_run(self, rec, args):
+        hmm_scores_file = args[0]
+        hmm_path = join(self.outdir, "hmm", "%s.hmm" % rec.id)
+
+        fwdback_output = Popen("%s %s %s" % (HMM_FWD_BACK, hmm_path, join(self.tmp_dir.path, self.tmp_dir.subfiles[0])),
+                               shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
+
+        fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
+                                    header=None, comment="#", index_col=False)
+
+        fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
+        fwd_scores_df["hmm_id"] = rec.id
+
+        hmm_fwd_scores = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
+        hmm_fwd_scores = hmm_fwd_scores.append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
+                                               ignore_index=True)
+        hmm_fwd_scores = hmm_fwd_scores.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
+        with LOCK:
+            with open(hmm_scores_file, "a") as ofile:
+                ofile.write(hmm_fwd_scores)
+        return
+
+    def create_hmm_fwd_score_df(self, force=False):
+        # Create HMM forward-score dataframe from initial input --> p(seq|hmm)
+        if os.path.isfile(self.hmm_fwd_scores_path) and not force:
+            return pd.read_csv(self.hmm_fwd_scores_path)
+
+        self.seqbuddy.write(join(self.tmp_dir.path, self.tmp_dir.subfiles[0]), out_format="fasta")
+        hmm_scores_file = br.TempFile()
+        br.run_multicore_function(self.seqbuddy.records, self._mc_fwd_back_run, [hmm_scores_file.path],
+                                  max_processes=CPUS, quiet=True)
+        self.hmm_fwd_scores = pd.read_csv(hmm_scores_file.path, header=None)
+        self.hmm_fwd_scores.columns = ["hmm_id", "rec_id", "fwd_raw"]
+        self.hmm_fwd_scores.to_csv(self.hmm_fwd_scores_path, index=False)
+        return self.hmm_fwd_scores
+
+    @staticmethod
+    def _mc_rsquare_vals(recs, args):
+        rec1, sub_recs = recs
+        hmm_fwd_scores, tmp_rsquares_file = args
+        rsquare_vals_df = pd.DataFrame(columns=["rec_id1", "rec_id2", "r_square"])
+        for rec2 in sub_recs:
+            fwd1 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec1.id].sort_values(by="hmm_id").fwd_raw
+            fwd2 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec2.id].sort_values(by="hmm_id").fwd_raw
+            corr = scipy.stats.pearsonr(fwd1, fwd2)
+            comparison = pd.DataFrame(data=[[rec1.id, rec2.id, corr[0]**2]],
+                                      columns=["rec_id1", "rec_id2", "r_square"])
+            rsquare_vals_df = rsquare_vals_df.append(comparison, ignore_index=True)
+        rsquare_vals_df = rsquare_vals_df.append(pd.DataFrame(data=[[rec1.id, rec1.id, 1.0]],
+                                                 columns=["rec_id1", "rec_id2", "r_square"]), ignore_index=True)
+
+        rsquare_vals_df = rsquare_vals_df.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
+        with LOCK:
+            with open(tmp_rsquares_file, "a") as ofile:
+                ofile.write(rsquare_vals_df)
+
+    def create_fwd_score_rsquared_matrix(self, force=False):
+        # Calculate all-by-all matrix of correlation coefficients on fwd scores among all sequences
+        if os.path.isfile(self.rsquares_df_path) and not force:
+            return pd.read_csv(self.rsquares_df_path)
+
+        sub_recs = list(self.seqbuddy.records[1:])
+        multicore_data = [None for _ in range(len(self.seqbuddy))]
+        tmp_rsquares_file = br.TempFile()
+        for indx, rec1 in enumerate(self.seqbuddy.records):
+            multicore_data[indx] = (rec1, sub_recs)
+            sub_recs = sub_recs[1:]
+        br.run_multicore_function(multicore_data, self._mc_rsquare_vals, [self.hmm_fwd_scores, tmp_rsquares_file.path],
+                                  max_processes=CPUS)
+
+        self.rsquare_vals_df = pd.read_csv(tmp_rsquares_file.path, header=None)
+        self.rsquare_vals_df.columns = ["rec_id1", "rec_id2", "r_square"]
+        self.rsquare_vals_df = self.rsquare_vals_df.sort_values(by=["rec_id1", "rec_id2"]).reset_index(drop=True)
+        self.rsquare_vals_df.to_csv(self.rsquares_df_path, index=False)
+        return self.rsquare_vals_df
 
 
 def argparse_init():
@@ -2623,6 +2645,9 @@ Continue? y/[n] """ % len(sequences)
     logging.warning("\n** Creating Sequence-level HMMs **")
     br.run_multicore_function(sequences.records, mc_create_sequence_hmms, [in_args.outdir],
                               max_processes=CPUS, quiet=in_args.quiet)
+
+    logging.warning("\n** Compile HMM forward-score correlation matrix **")
+    fwd_scores = FwdScoreCorrelations(sequences, in_args.outdir)
 
     # Initial alignment
     logging.warning("\n** All-by-all graph **")

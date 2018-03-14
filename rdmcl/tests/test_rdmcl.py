@@ -1641,7 +1641,6 @@ def test_instantiate_seqs2clusters(hf):
     assert seq2clust_obj.outdir == tmpdir.path
     assert type(seq2clust_obj.tmp_file) == br.TempFile
     assert type(seq2clust_obj.tmp_dir) == br.TempDir
-    assert seq2clust_obj.tmp_dir.subfiles == ["seqs.fa"]
     assert type(seq2clust_obj.small_clusters) == OrderedDict
     assert list(seq2clust_obj.small_clusters.keys()) == ['group_0_2', 'group_0_3', 'group_0_4']
     assert type(seq2clust_obj.large_clusters) == OrderedDict
@@ -1760,97 +1759,6 @@ Bab-PanxαA
 """, print(temp_log_output.read())
 
 
-def test_mc_fwd_back_run(hf):
-    parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
-    records = ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE']
-    parent_sb.records = [rec for rec in parent_sb.records if rec.id in records]
-    
-    tmp_dir = br.TempDir()
-    hmm_dir = tmp_dir.subdir("hmm")
-    for seq_id in records:
-        shutil.copyfile(join(hf.resource_path, "hmms", "%s.hmm" % seq_id), join(hmm_dir, "%s.hmm" % seq_id))
-    
-    seq2clust_obj = rdmcl.Seqs2Clusters([], 3, parent_sb, tmp_dir.path)
-    parent_sb.write(join(seq2clust_obj.tmp_dir.path, "seqs.fa"))
-
-    hmm_scores_file = br.TempFile()
-    seq2clust_obj._mc_fwd_back_run(parent_sb.records[0], [hmm_scores_file.path])
-    with open(hmm_scores_file.path, "r") as ifile:
-        assert ifile.read() == """\
-BOL-PanxαB,BOL-PanxαB,702.0341
-BOL-PanxαB,Bab-PanxαA,641.091
-BOL-PanxαB,Bch-PanxαA,626.8386
-BOL-PanxαB,Bfo-PanxαE,619.856
-"""
-
-
-def test_create_hmm_fwd_score_df(hf, monkeypatch):
-    parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
-    records = ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE']
-    parent_sb.records = [rec for rec in parent_sb.records if rec.id in records]
-
-    tmp_dir = br.TempDir()
-    hmm_dir = tmp_dir.subdir("hmm")
-    for seq_id in records:
-        shutil.copyfile(join(hf.resource_path, "hmms", "%s.hmm" % seq_id), join(hmm_dir, "%s.hmm" % seq_id))
-
-    seq2clust_obj = rdmcl.Seqs2Clusters([], 3, parent_sb, tmp_dir.path)
-
-    monkeypatch.setattr(rdmcl.Seqs2Clusters, "_separate_large_small", lambda *_: True)
-    hmm_fwd_scores = seq2clust_obj.create_hmm_fwd_score_df()
-    hmm_fwd_scores = hmm_fwd_scores.sort_values('fwd_raw').reset_index(drop=True)
-    # hmm_fwd_scores.to_csv("tests/unit_test_resources/hmms/fwd_df.csv")
-    assert str(hmm_fwd_scores) == """\
-        hmm_id      rec_id   fwd_raw
-0   Bfo-PanxαE  Bch-PanxαA  615.3356
-1   Bfo-PanxαE  BOL-PanxαB  615.9315
-2   Bch-PanxαA  Bfo-PanxαE  619.3785
-3   BOL-PanxαB  Bfo-PanxαE  619.8560
-4   Bab-PanxαA  Bfo-PanxαE  623.7233
-5   Bfo-PanxαE  Bab-PanxαA  624.0910
-6   BOL-PanxαB  Bch-PanxαA  626.8386
-7   Bch-PanxαA  BOL-PanxαB  627.4737
-8   Bab-PanxαA  BOL-PanxαB  636.7927
-9   BOL-PanxαB  Bab-PanxαA  641.0910
-10  Bab-PanxαA  Bch-PanxαA  663.5856
-11  Bch-PanxαA  Bab-PanxαA  668.5334
-12  Bab-PanxαA  Bab-PanxαA  696.4839
-13  BOL-PanxαB  BOL-PanxαB  702.0341
-14  Bfo-PanxαE  Bfo-PanxαE  702.2801
-15  Bch-PanxαA  Bch-PanxαA  702.3412""", print(str(hmm_fwd_scores))
-
-
-def test_create_fwd_score_rsquared_matrix(hf, monkeypatch):
-    # Note that this calls _mc_rsquare_vals(), so the two are bundled in one test
-    parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
-    parent_sb.records = [rec for rec in parent_sb.records if rec.id in
-                         ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE']]
-    tmp_dir = br.TempDir()
-    tmp_dir.subdir("hmm")
-
-    seq2clust_obj = rdmcl.Seqs2Clusters([], 3, parent_sb, tmp_dir.path)
-    hmm_fwd_scores = pd.read_csv(join(hf.resource_path, "hmms", "fwd_df.csv"), index_col=0)
-
-    monkeypatch.setattr(rdmcl.Seqs2Clusters, "_separate_large_small", lambda *_: True)
-    monkeypatch.setattr(rdmcl.Seqs2Clusters, "create_hmm_fwd_score_df",
-                        lambda *_: hmm_fwd_scores)
-
-    rsquare_vals_df = seq2clust_obj.create_fwd_score_rsquared_matrix()
-
-    assert str(rsquare_vals_df) == """\
-      rec_id1     rec_id2        r_square
-0  BOL-PanxαB  BOL-PanxαB  1.000000000000
-1  BOL-PanxαB  Bab-PanxαA  0.016894041431
-2  BOL-PanxαB  Bch-PanxαA  0.087311057754
-3  BOL-PanxαB  Bfo-PanxαE  0.274041115357
-4  Bab-PanxαA  Bab-PanxαA  1.000000000000
-5  Bab-PanxαA  Bch-PanxαA  0.497451379268
-6  Bab-PanxαA  Bfo-PanxαE  0.453877689738
-7  Bch-PanxαA  Bch-PanxαA  1.000000000000
-8  Bch-PanxαA  Bfo-PanxαE  0.390838714109
-9  Bfo-PanxαE  Bfo-PanxαE  1.000000000000""", print(rsquare_vals_df)
-
-
 def test_create_truncnorm(hf):
     hmm_fwd_scores = pd.read_csv(join(hf.resource_path, "hmms", "fwd_r2.csv"), index_col=0)
     truncnorm = rdmcl.Seqs2Clusters._create_truncnorm(helpers.mean(hmm_fwd_scores.r_square),
@@ -1870,7 +1778,9 @@ def test_place_seqs_in_clusts(hf, monkeypatch):
     seq2clust_obj = rdmcl.Seqs2Clusters(clusters, 3, parent_sb, tmpdir.path)
 
     hmm_fwd_scores = pd.read_csv(join(hf.resource_path, "hmms", "full_r2.csv"), index_col=0)
-    monkeypatch.setattr(rdmcl.Seqs2Clusters, "create_fwd_score_rsquared_matrix",
+    monkeypatch.setattr(rdmcl.FwdScoreCorrelations, "create_hmm_fwd_score_df",
+                        lambda *_: True)
+    monkeypatch.setattr(rdmcl.FwdScoreCorrelations, "create_fwd_score_rsquared_matrix",
                         lambda *_: hmm_fwd_scores)
 
     seq2clust_obj.place_seqs_in_clusts()
@@ -1995,6 +1905,152 @@ group_0_3\tgroup_0_0\t0.0174886528987
     orphans = rdmcl.Orphans(parent_sb, clusters[:2], broker, hf.get_data("ss2_paths"), br.TempDir().path)
     assert not orphans.place_orphans()
     assert len(orphans.clusters) == 2
+
+
+def test_instantiate_fwdscorecorrelations(hf, monkeypatch):
+    # Get starting graph from pre-computed database
+    parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
+
+    tmpdir = br.TempDir()
+    monkeypatch.setattr(rdmcl.FwdScoreCorrelations, "create_hmm_fwd_score_df", lambda *_: True)
+    monkeypatch.setattr(rdmcl.FwdScoreCorrelations, "create_fwd_score_rsquared_matrix", lambda *_: True)
+    fwd_score_obj = rdmcl.FwdScoreCorrelations(parent_sb, tmpdir.path)
+
+    assert fwd_score_obj.seqbuddy == parent_sb
+    assert fwd_score_obj.outdir == tmpdir.path
+    assert type(fwd_score_obj.tmp_dir) == br.TempDir
+    assert fwd_score_obj.tmp_dir.subfiles == ["seqs.fa"]
+
+
+def test_mc_fwd_back_run(hf, monkeypatch):
+    parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
+    records = ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE']
+    parent_sb.records = [rec for rec in parent_sb.records if rec.id in records]
+
+    tmp_dir = br.TempDir()
+    hmm_dir = tmp_dir.subdir("hmm")
+    for seq_id in records:
+        shutil.copyfile(join(hf.resource_path, "hmms", "%s.hmm" % seq_id), join(hmm_dir, "%s.hmm" % seq_id))
+
+    monkeypatch.setattr(rdmcl.FwdScoreCorrelations, "create_hmm_fwd_score_df", lambda *_: True)
+    monkeypatch.setattr(rdmcl.FwdScoreCorrelations, "create_fwd_score_rsquared_matrix", lambda *_: True)
+
+    fwd_score_obj = rdmcl.FwdScoreCorrelations(parent_sb, tmp_dir.path)
+    parent_sb.write(join(fwd_score_obj.tmp_dir.path, "seqs.fa"))
+
+    hmm_scores_file = br.TempFile()
+    fwd_score_obj._mc_fwd_back_run(parent_sb.records[0], [hmm_scores_file.path])
+    with open(hmm_scores_file.path, "r") as ifile:
+        assert ifile.read() == """\
+BOL-PanxαB,BOL-PanxαB,702.0341
+BOL-PanxαB,Bab-PanxαA,641.091
+BOL-PanxαB,Bch-PanxαA,626.8386
+BOL-PanxαB,Bfo-PanxαE,619.856
+"""
+
+
+def test_create_hmm_fwd_score_df(hf, monkeypatch):
+    parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
+    records = ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE']
+    parent_sb.records = [rec for rec in parent_sb.records if rec.id in records]
+
+    tmp_dir = br.TempDir()
+    hmm_dir = tmp_dir.subdir("hmm")
+    for seq_id in records:
+        shutil.copyfile(join(hf.resource_path, "hmms", "%s.hmm" % seq_id), join(hmm_dir, "%s.hmm" % seq_id))
+
+    tmp_file = br.TempFile()
+    with open(join(hf.resource_path, "hmms", "fwd_df.csv"), "r") as ifile:
+        tmp_file.write(ifile.read())
+
+    monkeypatch.setattr(br, "TempFile", lambda: tmp_file)
+    monkeypatch.setattr(rdmcl.FwdScoreCorrelations, "_mc_fwd_back_run", lambda *_: True)
+    monkeypatch.setattr(rdmcl.FwdScoreCorrelations, "create_fwd_score_rsquared_matrix", lambda *_: True)
+
+    fwd_score_obj = rdmcl.FwdScoreCorrelations(parent_sb, tmp_dir.path)
+    fwd_score_obj.hmm_fwd_scores = fwd_score_obj.hmm_fwd_scores.sort_values('fwd_raw').reset_index(drop=True)
+    assert str(fwd_score_obj.hmm_fwd_scores) == """\
+        hmm_id      rec_id   fwd_raw
+0   Bfo-PanxαE  Bch-PanxαA  615.3356
+1   Bfo-PanxαE  BOL-PanxαB  615.9315
+2   Bch-PanxαA  Bfo-PanxαE  619.3785
+3   BOL-PanxαB  Bfo-PanxαE  619.8560
+4   Bab-PanxαA  Bfo-PanxαE  623.7233
+5   Bfo-PanxαE  Bab-PanxαA  624.0910
+6   BOL-PanxαB  Bch-PanxαA  626.8386
+7   Bch-PanxαA  BOL-PanxαB  627.4737
+8   Bab-PanxαA  BOL-PanxαB  636.7927
+9   BOL-PanxαB  Bab-PanxαA  641.0910
+10  Bab-PanxαA  Bch-PanxαA  663.5856
+11  Bch-PanxαA  Bab-PanxαA  668.5334
+12  Bab-PanxαA  Bab-PanxαA  696.4839
+13  BOL-PanxαB  BOL-PanxαB  702.0341
+14  Bfo-PanxαE  Bfo-PanxαE  702.2801
+15  Bch-PanxαA  Bch-PanxαA  702.3412"""
+
+    hmm_fwd_scores = fwd_score_obj.create_hmm_fwd_score_df()  # Read from file
+    hmm_fwd_scores = hmm_fwd_scores.sort_values('fwd_raw').reset_index(drop=True)
+    # hmm_fwd_scores.to_csv("tests/unit_test_resources/hmms/fwd_df.csv")
+    assert str(hmm_fwd_scores) == """\
+        hmm_id      rec_id   fwd_raw
+0   Bfo-PanxαE  Bch-PanxαA  615.3356
+1   Bfo-PanxαE  BOL-PanxαB  615.9315
+2   Bch-PanxαA  Bfo-PanxαE  619.3785
+3   BOL-PanxαB  Bfo-PanxαE  619.8560
+4   Bab-PanxαA  Bfo-PanxαE  623.7233
+5   Bfo-PanxαE  Bab-PanxαA  624.0910
+6   BOL-PanxαB  Bch-PanxαA  626.8386
+7   Bch-PanxαA  BOL-PanxαB  627.4737
+8   Bab-PanxαA  BOL-PanxαB  636.7927
+9   BOL-PanxαB  Bab-PanxαA  641.0910
+10  Bab-PanxαA  Bch-PanxαA  663.5856
+11  Bch-PanxαA  Bab-PanxαA  668.5334
+12  Bab-PanxαA  Bab-PanxαA  696.4839
+13  BOL-PanxαB  BOL-PanxαB  702.0341
+14  Bfo-PanxαE  Bfo-PanxαE  702.2801
+15  Bch-PanxαA  Bch-PanxαA  702.3412""", print(str(hmm_fwd_scores))
+
+
+def test_create_fwd_score_rsquared_matrix(hf, monkeypatch):
+    # Note that this calls _mc_rsquare_vals(), so the two are bundled in one test
+    parent_sb = rdmcl.Sb.SeqBuddy("%sCteno_pannexins_subset.fa" % hf.resource_path)
+    parent_sb.records = [rec for rec in parent_sb.records if rec.id in
+                         ['BOL-PanxαB', 'Bab-PanxαA', 'Bch-PanxαA', 'Bfo-PanxαE']]
+    tmp_dir = br.TempDir()
+    tmp_dir.subdir("hmm")
+
+    hmm_fwd_scores = pd.read_csv(join(hf.resource_path, "hmms", "fwd_df.csv"), header=None)
+    hmm_fwd_scores.columns = ["hmm_id", "rec_id", "fwd_raw"]
+    monkeypatch.setattr(rdmcl.FwdScoreCorrelations, "create_hmm_fwd_score_df",
+                        lambda *_: hmm_fwd_scores)
+
+    fwd_score_obj = rdmcl.FwdScoreCorrelations(parent_sb, tmp_dir.path)
+    assert str(fwd_score_obj.rsquare_vals_df) == """\
+      rec_id1     rec_id2        r_square
+0  BOL-PanxαB  BOL-PanxαB  1.000000000000
+1  BOL-PanxαB  Bab-PanxαA  0.016894041431
+2  BOL-PanxαB  Bch-PanxαA  0.087311057754
+3  BOL-PanxαB  Bfo-PanxαE  0.274041115357
+4  Bab-PanxαA  Bab-PanxαA  1.000000000000
+5  Bab-PanxαA  Bch-PanxαA  0.497451379268
+6  Bab-PanxαA  Bfo-PanxαE  0.453877689738
+7  Bch-PanxαA  Bch-PanxαA  1.000000000000
+8  Bch-PanxαA  Bfo-PanxαE  0.390838714109
+9  Bfo-PanxαE  Bfo-PanxαE  1.000000000000"""
+
+    rsquare_vals_df = fwd_score_obj.create_fwd_score_rsquared_matrix()
+    assert str(rsquare_vals_df) == """\
+      rec_id1     rec_id2        r_square
+0  BOL-PanxαB  BOL-PanxαB  1.000000000000
+1  BOL-PanxαB  Bab-PanxαA  0.016894041431
+2  BOL-PanxαB  Bch-PanxαA  0.087311057754
+3  BOL-PanxαB  Bfo-PanxαE  0.274041115357
+4  Bab-PanxαA  Bab-PanxαA  1.000000000000
+5  Bab-PanxαA  Bch-PanxαA  0.497451379268
+6  Bab-PanxαA  Bfo-PanxαE  0.453877689738
+7  Bch-PanxαA  Bch-PanxαA  1.000000000000
+8  Bch-PanxαA  Bfo-PanxαE  0.390838714109
+9  Bfo-PanxαE  Bfo-PanxαE  1.000000000000""", print(rsquare_vals_df)
 
 
 # #########  User Interface  ########## #
