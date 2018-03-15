@@ -386,14 +386,20 @@ Domain shuffling can cause different regions within a gene to have very differen
 \lipsum[1]
 
 \subsection{Implementation}\label{subsec:implementation}
-RD-MCL has been implemented in Python with a command-line interface
+The entire RD-MCL pipeline has been implemented in Python and can be executed from a command-line interface that comes bundled with the software.
+While Python is generally OS-agnostic, several of the non-Python third-party programs that RD-MCL depends upon are not compatible with Windows-based systems, so at the time of this writing the RD-MCL package is only supported on Mac OSX and Linux-based systems.
+Installation is easily achieved through the Python Package Index (PyPI) using the package manager 'pip' or by downloading the software from GitHub and running the included setup.py script.
+More detailed installation instructions and dependency details will be kept up to date in the online documentation (https://github.com/biologyguy/RD-MCL/wiki/Installation-Guide).
 
-Python is not generally well adapted for distributing complex operations across a cluster environment, but creating all-by-all similarity graphs is an O\textsuperscript{2} hard problem that makes RD-MCL run times prohibitive when analyzing more than a few hundred sequences on a single machine.
-To overcome this challenge, similarity graph creation can be passed off to worker processes which control other nodes on a cluster.
-This dynamic is achieved by writing job information to a SQLite database that is monitored by the worker nodes, which then further subdivide the work if a graph is large, and return the results to the same SQLite database for retrieval by the master process.
-By distributing the work in this fashion, an arbitrary number of RD-MCL runs can all access the same pool of worker nodes, and the size of the worker pool can be modified on the fly.
+Creating all-by-all similarity graphs is an O(n\textsuperscript{2}) hard problem, with RD-MCL run times becoming prohibitive when analyzing more than a few hundred sequences on a single machine.
+Unfortunately, Python is not generally well adapted for distributing complex operations across a cluster environment through shared memory.
+To overcome this challenge, similarity graph creation can be passed off to worker processes controlling completely independent nodes.
+This dynamic is achieved by writing job information to an SQLite database.
+Worker nodes retrieve this information, further subdivide the job if appropriate, process the graph, and then return the output to the SQLite database where it is picked back up by the master process.
+Distributing the work in this fashion allows an arbitrary number of RD-MCL runs to access a common pool of worker nodes, and the size of that worker pool can be reduced or expanded on the fly as demand fluctuates.
 
-Sequence handling is achieved with BuddySuite~\cite{Bond:2017bj}.
+To assist in further analysis, a suite of command-line tools are also included with RD-MCL\@.
+These programs allow the user to easily visualize and manipulate the inferred clusters, which includes the ability to group the original input sequences by cluster, rename or merge clusters, and create orthogroup `gene trees' from cluster consensus sequences.
 
 \section{Conclusions}\label{sec:conclusions}
 It is important to remember that true orthologs are not intrinsically special.
