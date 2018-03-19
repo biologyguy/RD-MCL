@@ -1933,6 +1933,10 @@ class Seqs2Clusters(object):
         Create null distributions for each existing group, then check all sequences against all groups
         :return:
         """
+        # If there is only a single cluster, then no further polishing is appropriate
+        if len(self.clusters) == 1:
+            return
+
         # Calculate HMMs from every sequence, calculate the forward probability for every sequences against every HMM,
         # and then calculate correlation coefficients between every pair of sequences (i.e., make an all-by-all matrix)
         log_output = br.TempFile()
