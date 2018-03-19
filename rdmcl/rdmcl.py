@@ -127,7 +127,7 @@ pd.set_option("display.precision", 12)
 # ToDo: Maybe remove support for taxa_sep. It's complicating my life, so just impose the '-' on users?
 class Cluster(object):
     def __init__(self, seq_ids, sim_scores, taxa_sep="-", group_prefix="group",
-                 parent=None, collapse=False, r_seed=None, fwd_scores=None):
+                 parent=None, collapse=False, r_seed=None):
         """
         - Note that reciprocal best hits between paralogs are collapsed when instantiating group_0, so
           no problem strongly penalizing all paralogs in the scoring algorithm
@@ -171,7 +171,6 @@ class Cluster(object):
         self.cluster_score = None
         self.collapsed_genes = OrderedDict()  # If paralogs are reciprocal best hits, collapse them
         self.rand_gen = Random(r_seed)
-        self.fwd_scores = fwd_scores
         self._name = None
         self.taxa = OrderedDict()  # key = taxa id. value = list of genes coming fom that taxa.
 
@@ -192,8 +191,7 @@ class Cluster(object):
             self._name = "%s_0" % group_prefix
             # This next bit can collapse all paralog reciprocal best-hit cliques so they don't gum up MCL
             if collapse:
-                column = "r_square" if "r_square" in self.sim_scores.columns else "raw_score"
-                self.collapse(column)
+                self.collapse()
 
         self.seq_ids_str = str(", ".join(sorted(self.seq_ids)))
         self.seq_id_hash = hlp.md5_hash(self.seq_ids_str)
@@ -210,7 +208,7 @@ class Cluster(object):
             self.taxa.setdefault(taxa, [])
             self.taxa[taxa].append(next_seq_id)
 
-    def collapse(self, column):
+    def collapse(self):
         breakout = False
         seq_ids = sorted(self.seq_ids)
         while not breakout:
@@ -218,12 +216,12 @@ class Cluster(object):
             for seq1_id in seq_ids:
                 seq1_taxa = seq1_id.split(self.taxa_sep)[0]
                 paralog_best_hits = []
-                for best_hits_seq1 in self.get_best_hits(seq1_id, column).itertuples():  # grab best hit for seq1
+                for best_hits_seq1 in self.get_best_hits(seq1_id, "raw_score").itertuples():  # grab best hit for seq1
                     seq2_id = best_hits_seq1.seq1 if best_hits_seq1.seq1 != seq1_id else best_hits_seq1.seq2
                     if seq2_id.split(self.taxa_sep)[0] != seq1_taxa:
                         paralog_best_hits = []
                         break
-                    for best_hits_seq2 in self.get_best_hits(seq2_id, column).itertuples():  # Confirm reciprocal
+                    for best_hits_seq2 in self.get_best_hits(seq2_id, "raw_score").itertuples():  # Confirm reciprocal
                         if seq1_id in [best_hits_seq2.seq1, best_hits_seq2.seq2]:
                             paralog_best_hits.append(seq2_id)
                             break
@@ -1833,11 +1831,14 @@ class Seqs2Clusters(object):
             log_output += "\tMean: Null\n"
             log_output += "\tStd: Null\n\n"
 
+        collapsed_genes = [seq_id for seq_ids in clust.collapsed_genes for seq_id in seq_ids]
         if clust.name() in self.large_clusters:
             clust_null_df = rsquare_vals_df.loc[((rsquare_vals_df["seq1"].isin(clust.seq_ids)) &
                                                  (-rsquare_vals_df["seq2"].isin(clust.seq_ids))) |
                                                 ((-rsquare_vals_df["seq1"].isin(clust.seq_ids)) &
-                                                 (rsquare_vals_df["seq2"].isin(clust.seq_ids)))].copy()
+                                                 (rsquare_vals_df["seq2"].isin(clust.seq_ids))) &
+                                                (-rsquare_vals_df["seq1"].isin(collapsed_genes)) &
+                                                (-rsquare_vals_df["seq2"].isin(collapsed_genes))].copy()
             out_of_cluster_output += clust_null_df.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
 
         with LOCK:
@@ -1938,21 +1939,6 @@ class Seqs2Clusters(object):
         log_output.write("# HMM forward scores all-by-all R² dataframe #\n")
         fwd_scores = FwdScoreCorrelations(self.seqbuddy, self.outdir)
         rsquare_vals_df = fwd_scores.rsquare_vals_df
-        '''
-        rsquares_df_path = join(self.outdir, "hmm", "rsquares_matrix.csv")
-        if os.path.isfile(rsquares_df_path):
-            log_output.write("\tRead from %s\n\n" % rsquares_df_path)
-            rsquare_vals_df = pd.read_csv(rsquares_df_path)
-        else:
-            log_output.write("\tCalculated new and written to %s\n\n" % rsquares_df_path)
-            rsquare_vals_df = self.create_fwd_score_rsquared_matrix()
-            rsquare_vals_df.to_csv(rsquares_df_path, index=False)
-
-        hmm_fwd_scores_path = join(self.outdir, "hmm", "hmm_fwd_scores.csv")
-        if not os.path.isfile(hmm_fwd_scores_path):
-            hmm_fwd_scores = self.create_hmm_fwd_score_df()
-            hmm_fwd_scores.to_csv(hmm_fwd_scores_path, index=False)
-        '''
         valve = br.SafetyValve(round(len(self.clusters[0].get_base_cluster().seq_ids) * 1.2))
         placed = []
 
@@ -2652,7 +2638,7 @@ Continue? y/[n] """ % len(sequences)
                               max_processes=CPUS, quiet=in_args.quiet)
 
     logging.warning("\n** Compile HMM forward-score correlation matrix **")
-    fwd_scores_obj = FwdScoreCorrelations(sequences, in_args.outdir)
+    FwdScoreCorrelations(sequences, in_args.outdir)
 
     # Initial alignment
     logging.warning("\n** All-by-all graph **")
@@ -2677,8 +2663,7 @@ Continue? y/[n] """ % len(sequences)
     # Then prepare the 'real' group_0 cluster
     if not in_args.suppress_paralog_collapse:
         group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data, taxa_sep=in_args.taxa_sep,
-                                  group_prefix=in_args.group_name, collapse=True, r_seed=in_args.r_seed,
-                                  fwd_scores=fwd_scores_obj)
+                                  group_prefix=in_args.group_name, collapse=True, r_seed=in_args.r_seed)
     else:
         group_0_cluster = uncollapsed_group_0
 

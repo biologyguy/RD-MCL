@@ -160,7 +160,7 @@ def test_cluster_reset_seq_ids(hf):
 def test_cluster_collapse(hf):
     cluster = rdmcl.Cluster(*hf.base_cluster_args())
     assert not cluster.collapsed_genes
-    cluster.collapse("raw_score")
+    cluster.collapse()
     assert cluster.collapsed_genes == OrderedDict([('Hvu-PanxβI', ['Hvu-PanxβM', 'Hvu-PanxβD', 'Hvu-PanxβC',
                                                                    'Hvu-PanxβE', 'Hvu-PanxβF', 'Hvu-PanxβH',
                                                                    'Hvu-PanxβG', 'Hvu-PanxβK', 'Hvu-PanxβO',
