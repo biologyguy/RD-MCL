@@ -32,13 +32,10 @@ VERSION.name = "orthogroup_consensus_tree"
 def list_features(seqbuddy):
     features = []
     for rec in seqbuddy.records:
-        if not rec.features:
-            raise ValueError("No features detected in %s." % rec.id)
-        else:
-            for feat in rec.features:
-                for key, qual in feat.qualifiers.items():
-                    if qual[0] not in features:
-                        features.append(qual[0])
+        for feat in rec.features:
+            for key, qual in feat.qualifiers.items():
+                if qual[0] not in features:
+                    features.append(qual[0])
     return features
 
 
@@ -110,6 +107,48 @@ def trimal(seqbuddy, trimal_modes, alignment):
         return alignment
 
 
+def get_features(orig_sb, psc_file):
+    recs_with_features = {}
+    recs_without_features = {}
+
+    if os.path.isfile(psc_file):
+        psc_records = Sb.SeqBuddy(psc_file)
+        for rec in psc_records.records:
+            if rec.features:
+                recs_with_features[rec.id] = rec
+            else:
+                recs_without_features[rec.id] = rec
+        for rec in orig_sb.records:
+            if rec.id not in recs_with_features and rec.id not in recs_without_features:
+                recs_without_features[rec.id] = rec
+    else:
+        recs_without_features = {rec.id: rec for rec in orig_sb.records}
+
+    # Get Prosite Scan results up to three times in case InterPro fails to return results for some (this can happen)
+    for _ in range(3):
+        if not recs_without_features:
+            break
+
+        prosite_scan = Sb.PrositeScan(Sb.SeqBuddy([rec for rec_id, rec in recs_without_features.items()]))
+        prosite_scan.run()
+
+        for rec in prosite_scan.seqbuddy.records:
+            if rec.features:
+                recs_with_features[rec.id] = rec
+                del recs_without_features[rec.id]
+
+    output = Sb.SeqBuddy([rec for rec_id, rec in recs_with_features.items()] +
+                         [rec for rec_id, rec in recs_without_features.items()],
+                         out_format="embl")
+
+    if recs_without_features:
+        sys.stderr.write("WARNING -- The following records do not have any recognized features:\n")
+        for rec in recs_without_features:
+            sys.stderr.write("%s\n" % rec)
+        sys.stderr.write("\n")
+    return output
+
+
 def argparse_init():
     def fmt(prog):
         return br.CustomHelpFormatter(prog)
@@ -137,10 +176,10 @@ def argparse_init():
                               help="Specify a multiple sequence alignment program")
     parser_flags.add_argument("--bootstraps", "-b", action="store", type=int, default=100,
                               help="How many bootstraps do you want calculated?")
-    parser_flags.add_argument("--incl_groups", "-ig", action="append", nargs="+", metavar="group",
-                              help="List specific groups to process")
     parser_flags.add_argument("--excl_groups", "-eg", action="append", nargs="+", metavar="group",
                               help="List specific groups to exclude")
+    parser_flags.add_argument("--incl_groups", "-ig", action="append", nargs="+", metavar="group",
+                              help="List specific groups to process")
     parser_flags.add_argument("--include_count", "-ic", action="store_true",
                               help="Add the size of each orthogroup as part of the group names")
     parser_flags.add_argument("--max_size", "-max", action="store", type=int, metavar="",
@@ -196,24 +235,9 @@ def main():
             sys.exit()
 
         orig_fasta.append(Sb.SeqBuddy(join(rdmcl_dir, "input_seqs.fa")))
+        orig_embl.append(get_features(orig_fasta[-1], join(rdmcl_dir, "input_seqs_psc.embl")))
 
-        if os.path.isfile(join(rdmcl_dir, "input_seqs_psc.embl")):
-            orig_embl.append(Sb.SeqBuddy(join(rdmcl_dir, "input_seqs_psc.embl")))
-            psc_records = Sb.delete_records(Sb.make_copy(orig_fasta[-1]),
-                                            ["^%s$" % rec.id for rec in orig_embl[-1].records]).records
-        else:
-            orig_embl.append(None)
-            psc_records = orig_fasta[-1].records
-
-        # Get Prosite Scan results if necessary
-        if psc_records:
-            prosite_scan = Sb.PrositeScan(Sb.SeqBuddy(psc_records))
-            prosite_scan.run()
-            if orig_embl[-1] is None:
-                orig_embl[-1] = prosite_scan.seqbuddy
-            else:
-                orig_embl[-1].records += prosite_scan.seqbuddy.records
-            orig_embl[-1].write(join(rdmcl_dir, "input_seqs_psc.embl"), out_format="embl")
+        orig_embl[-1].write(join(rdmcl_dir, "input_seqs_psc.embl"))
 
         clusters = hlp.prepare_clusters(join(rdmcl_dir, "final_clusters.txt"), hierarchy=True)
 
@@ -247,22 +271,8 @@ def main():
 
         consensus_fasta[-1].write(join(rdmcl_dir, "consensus_seqs.fa"))
 
-        if os.path.isfile(join(rdmcl_dir, "consensus_psc.embl")):
-            consensus_embl.append(Sb.SeqBuddy(join(rdmcl_dir, "consensus_psc.embl")))
-            psc_records = Sb.delete_records(Sb.make_copy(consensus_embl[-1]),
-                                            ["^%s$" % rec.id for rec in consensus_fasta[-1].records]).records
-        else:
-            consensus_embl.append(None)
-            psc_records = consensus_fasta[-1].records
-
-        if psc_records:
-            prosite_scan = Sb.PrositeScan(Sb.SeqBuddy(psc_records))
-            prosite_scan.run()
-            if consensus_embl[-1] is None:
-                consensus_embl[-1] = prosite_scan.seqbuddy
-            else:
-                consensus_embl[-1].records += prosite_scan.seqbuddy.records
-            consensus_embl[-1].write(join(rdmcl_dir, "consensus_psc.embl"), out_format="embl")
+        consensus_embl.append(get_features(consensus_fasta[-1], join(rdmcl_dir, "consensus_psc.embl")))
+        consensus_embl[-1].write(join(rdmcl_dir, "consensus_psc.embl"))
 
         all_clusters.append(clusters)
 
@@ -328,7 +338,7 @@ def main():
 
     # Infer consensus tree with RAxML
     cons_alignment = create_feature_alignment(consensus_embl)
-    #Alb.trimal(cons_alignment, threshold="gappyout")
+
     cons_alignment.write(join(outdir, "consensus_aln.embl"), out_format="embl")
 
     cons_tree = Pb.generate_tree(cons_alignment, "fasttree", quiet=True)
