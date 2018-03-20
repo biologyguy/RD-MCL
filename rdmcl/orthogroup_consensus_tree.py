@@ -40,7 +40,7 @@ def list_features(seqbuddy):
 
 
 def mc_bootstrap(_, args):
-    all_clusters, orig_genbank, outdir = args
+    all_clusters, orig_genbank, outdir, feature_align = args
     seq_names = []
     recs = []
     for clust, rec_ids in all_clusters.items():
@@ -49,7 +49,10 @@ def mc_bootstrap(_, args):
         Sb.rename(rec, "^%s$" % rec.records[0].id, clust)
         recs.append(rec.records[0])
     tree = Sb.SeqBuddy(recs, out_format="fasta")
-    tree = create_feature_alignment(tree)
+    if feature_align:
+        tree = create_feature_alignment(tree)
+    else:
+        tree = Alb.generate_msa(tree, "clustalo", quiet=True)
     # tree = trimal(orig_genbank, ["gappyout", 0.5, 0.75, 0.9, 0.95, "clean"], tree)
     tree = Pb.generate_tree(tree, "fasttree", quiet=True)
     clean_tree = re.sub(":[0-9]e-[0-9]+", "", str(tree))
@@ -176,6 +179,8 @@ def argparse_init():
                               help="Specify a multiple sequence alignment program")
     parser_flags.add_argument("--bootstraps", "-b", action="store", type=int, default=100,
                               help="How many bootstraps do you want calculated?")
+    parser_flags.add_argument("--domain_partitions", "-dp", action="store_true",
+                              help="Force alignments to PrositeScan domains")
     parser_flags.add_argument("--excl_groups", "-eg", action="append", nargs="+", metavar="group",
                               help="List specific groups to exclude")
     parser_flags.add_argument("--incl_groups", "-ig", action="append", nargs="+", metavar="group",
@@ -235,7 +240,11 @@ def main():
             sys.exit()
 
         orig_fasta.append(Sb.SeqBuddy(join(rdmcl_dir, "input_seqs.fa")))
-        orig_embl.append(get_features(orig_fasta[-1], join(rdmcl_dir, "input_seqs_psc.embl")))
+        if in_args.domain_partitions:
+            orig_embl.append(get_features(orig_fasta[-1], join(rdmcl_dir, "input_seqs_psc.embl")))
+        else:
+            orig_embl.append(Sb.make_copy(orig_fasta[-1]))
+            orig_embl[-1].out_format = "embl"
 
         orig_embl[-1].write(join(rdmcl_dir, "input_seqs_psc.embl"))
 
@@ -271,7 +280,12 @@ def main():
 
         consensus_fasta[-1].write(join(rdmcl_dir, "consensus_seqs.fa"))
 
-        consensus_embl.append(get_features(consensus_fasta[-1], join(rdmcl_dir, "consensus_psc.embl")))
+        if in_args.domain_partitions:
+            consensus_embl.append(get_features(consensus_fasta[-1], join(rdmcl_dir, "consensus_psc.embl")))
+        else:
+            consensus_embl.append(Sb.make_copy(consensus_fasta[-1]))
+            consensus_embl[-1].out_format = "embl"
+
         consensus_embl[-1].write(join(rdmcl_dir, "consensus_psc.embl"))
 
         all_clusters.append(clusters)
@@ -337,7 +351,10 @@ def main():
         all_clusters = new_all_clusters
 
     # Infer consensus tree with RAxML
-    cons_alignment = create_feature_alignment(consensus_embl)
+    if in_args.domain_partitions:
+        cons_alignment = create_feature_alignment(consensus_embl)
+    else:
+        cons_alignment = Alb.generate_msa(consensus_embl, "clustalo", quiet=True)
 
     cons_alignment.write(join(outdir, "consensus_aln.embl"), out_format="embl")
 
@@ -345,7 +362,8 @@ def main():
     with open(join(outdir, "consensus_tree.nwk"), "w") as ofile:
         ofile.write(re.sub("'", "", str(cons_tree)))
 
-    br.run_multicore_function(range(in_args.bootstraps), mc_bootstrap, func_args=[all_clusters, orig_embl, outdir])
+    br.run_multicore_function(range(in_args.bootstraps), mc_bootstrap, func_args=[all_clusters, orig_embl,
+                                                                                  outdir, in_args.domain_partitions])
 
     support_tree = Pb.generate_tree(cons_alignment, "raxml",
                                     params="-f b -p 1234 -t %s -z %s" % (join(outdir, "consensus_tree.nwk"),
