@@ -185,6 +185,8 @@ def argparse_init():
                               help="Add any extra parameters to feed into alignment program")
     parser_flags.add_argument("--bootstraps", "-b", action="store", type=int, default=100,
                               help="How many bootstraps do you want calculated?")
+    parser_flags.add_argument("--cpus", "-c", action="store", type=int, default=br.usable_cpu_count(),
+                              help="Specify max CPUS")
     parser_flags.add_argument("--domain_partitions", "-dp", action="store_true",
                               help="Force alignments to PrositeScan domains")
     parser_flags.add_argument("--excl_groups", "-eg", action="append", nargs="+", metavar="group",
@@ -384,8 +386,7 @@ Phylogenetic inference (%s bootstraps):
     func_args = [all_clusters, orig_embl, outdir, in_args.domain_partitions,
                  in_args.aligner, in_args.align_params, in_args.tree_prog, in_args.tree_prog_params]
 
-    br.run_multicore_function(range(in_args.bootstraps), mc_bootstrap,
-                              func_args=func_args)
+    br.run_multicore_function(range(in_args.bootstraps), mc_bootstrap, func_args=func_args, max_processes=in_args.cpus)
 
     support_tree = Pb.generate_tree(cons_alignment, "raxml",
                                     params="-f b -p 1234 -t %s -z %s" % (join(outdir, "consensus_tree.nwk"),
