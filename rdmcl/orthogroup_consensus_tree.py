@@ -40,7 +40,7 @@ def list_features(seqbuddy):
 
 
 def mc_bootstrap(_, args):
-    all_clusters, orig_genbank, outdir, feature_align, aligner = args
+    all_clusters, orig_genbank, outdir, feature_align, aligner, tree_prog, tree_params = args
     seq_names = []
     recs = []
     for clust, rec_ids in all_clusters.items():
@@ -59,7 +59,7 @@ def mc_bootstrap(_, args):
     else:
         tree = Alb.generate_msa(tree, aligner, quiet=True)
     # tree = trimal(orig_genbank, ["gappyout", 0.5, 0.75, 0.9, 0.95, "clean"], tree)
-    tree = Pb.generate_tree(tree, "fasttree", quiet=True)
+    tree = Pb.generate_tree(tree, tree_prog, params=tree_params, quiet=True)
     clean_tree = re.sub(":[0-9]e-[0-9]+", "", str(tree))
     clean_tree = re.sub(":[0-9]+\.[0-9]+", "", clean_tree)
     clean_tree = re.sub("\)[0-9]+\.[0-9]+", ")", clean_tree)
@@ -182,6 +182,8 @@ def argparse_init():
     parser_flags = parser.add_argument_group(title="\033[1mAvailable commands\033[m")
     parser_flags.add_argument("--aligner", "-a", action="store", default="clustalo", metavar="",
                               help="Specify a multiple sequence alignment program")
+    parser_flags.add_argument("--align_params", "-ap", action="store", default="", metavar="",
+                              help="Add any extra parameters to feed into alignment program")
     parser_flags.add_argument("--bootstraps", "-b", action="store", type=int, default=100,
                               help="How many bootstraps do you want calculated?")
     parser_flags.add_argument("--domain_partitions", "-dp", action="store_true",
@@ -198,6 +200,10 @@ def argparse_init():
                               help="Min cluster size to process")
     parser_flags.add_argument("--outdir", "-o", action="store", metavar="",
                               help="Specify directory to write output files to.")
+    parser_flags.add_argument("--tree_prog", "-t", action="store", default="raxml", metavar="",
+                              help="Specify a phylogenetic inference program")
+    parser_flags.add_argument("--tree_prog_params", "-tp", action="store", default="", metavar="",
+                              help="Add any extra parameters to feed into tree inference program")
 
     # Misc
     misc = parser.add_argument_group(title="\033[1mMisc options\033[m")
@@ -363,12 +369,24 @@ def main():
 
     cons_alignment.write(join(outdir, "consensus_aln.embl"), out_format="embl")
 
-    cons_tree = Pb.generate_tree(cons_alignment, "fasttree", quiet=True)
+    sys.stderr.write("""
+Multiple sequence Alignement:
+    $: %s %s
+
+Phylogenetic inference (%s bootstraps):
+    $: %s %s
+
+""" % (in_args.aligner, in_args.align_params, in_args.bootstraps, in_args.tree_prog, in_args.tree_prog_params))
+
+    cons_tree = Pb.generate_tree(cons_alignment, in_args.tree_prog, params=in_args.tree_prog_params, quiet=True)
     with open(join(outdir, "consensus_tree.nwk"), "w") as ofile:
         ofile.write(re.sub("'", "", str(cons_tree)))
 
+    func_args = [all_clusters, orig_embl, outdir, in_args.domain_partitions,
+                 in_args.aligner, in_args.tree_prog, in_args.tree_prog_params]
+
     br.run_multicore_function(range(in_args.bootstraps), mc_bootstrap,
-                              func_args=[all_clusters, orig_embl, outdir, in_args.domain_partitions, in_args.aligner])
+                              func_args=func_args)
 
     support_tree = Pb.generate_tree(cons_alignment, "raxml",
                                     params="-f b -p 1234 -t %s -z %s" % (join(outdir, "consensus_tree.nwk"),
