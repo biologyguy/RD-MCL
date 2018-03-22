@@ -40,12 +40,12 @@ def list_features(seqbuddy):
 
 
 def mc_bootstrap(_, args):
-    all_clusters, orig_genbank, outdir, feature_align, aligner, tree_prog, tree_params = args
+    all_clusters, orig_embl, outdir, feature_align, aligner, align_params, tree_prog, tree_params = args
     seq_names = []
     recs = []
     for clust, rec_ids in all_clusters.items():
         seq_names.append(random.choice(rec_ids))
-        rec = Sb.pull_recs(Sb.make_copy(orig_genbank), "^%s$" % seq_names[-1])
+        rec = Sb.pull_recs(Sb.make_copy(orig_embl), "^%s$" % seq_names[-1])
         try:
             Sb.rename(rec, "^%s$" % rec.records[0].id, clust)
             recs.append(rec.records[0])
@@ -55,10 +55,9 @@ def mc_bootstrap(_, args):
 
     tree = Sb.SeqBuddy(recs, out_format="fasta")
     if feature_align:
-        tree = create_feature_alignment(tree)
+        tree = create_feature_alignment(tree, aligner, align_params)
     else:
-        tree = Alb.generate_msa(tree, aligner, quiet=True)
-    # tree = trimal(orig_genbank, ["gappyout", 0.5, 0.75, 0.9, 0.95, "clean"], tree)
+        tree = Alb.generate_msa(tree, aligner, params=align_params, quiet=True)
     tree = Pb.generate_tree(tree, tree_prog, params=tree_params, quiet=True)
     clean_tree = re.sub(":[0-9]e-[0-9]+", "", str(tree))
     clean_tree = re.sub(":[0-9]+\.[0-9]+", "", clean_tree)
@@ -73,7 +72,7 @@ def mc_bootstrap(_, args):
             ofile.write("%s\n" % "\t".join(sorted(seq_names)))
 
 
-def create_feature_alignment(alignment):
+def create_feature_alignment(alignment, aligner, align_params):
     features = list_features(alignment)
     feature_alignments = []
 
@@ -83,7 +82,7 @@ def create_feature_alignment(alignment):
         if len(recs_with_feat) == 1:
             recs_with_feat = Alb.AlignBuddy(str(recs_with_feat), out_format="embl")
         else:
-            recs_with_feat = Alb.generate_msa(recs_with_feat, "clustalo", quiet=True)
+            recs_with_feat = Alb.generate_msa(recs_with_feat, aligner, params=align_params, quiet=True)
         aln_len = len(recs_with_feat.records()[0].seq)
 
         recs_without_feats = Sb.delete_recs_with_feature(Sb.make_copy(alignment), feature)
@@ -363,9 +362,9 @@ def main():
 
     # Infer consensus tree with RAxML
     if in_args.domain_partitions:
-        cons_alignment = create_feature_alignment(consensus_embl)
+        cons_alignment = create_feature_alignment(consensus_embl, in_args.aligner, in_args.align_params)
     else:
-        cons_alignment = Alb.generate_msa(consensus_embl, "clustalo", quiet=True)
+        cons_alignment = Alb.generate_msa(consensus_embl, "clustalo", params=in_args.align_params, quiet=True)
 
     cons_alignment.write(join(outdir, "consensus_aln.embl"), out_format="embl")
 
@@ -383,7 +382,7 @@ Phylogenetic inference (%s bootstraps):
         ofile.write(re.sub("'", "", str(cons_tree)))
 
     func_args = [all_clusters, orig_embl, outdir, in_args.domain_partitions,
-                 in_args.aligner, in_args.tree_prog, in_args.tree_prog_params]
+                 in_args.aligner, in_args.align_params, in_args.tree_prog, in_args.tree_prog_params]
 
     br.run_multicore_function(range(in_args.bootstraps), mc_bootstrap,
                               func_args=func_args)
