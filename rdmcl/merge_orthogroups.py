@@ -64,7 +64,7 @@ class Check(object):
                     continue
                 clust_rsquares = self.r_squares.loc[(self.r_squares["seq1"].isin(seqs)) &
                                                     (self.r_squares["seq2"].isin(seqs)) &
-                                                    (self.r_squares["rec_id1"] != self.r_squares["seq2"])].copy()
+                                                    (self.r_squares["seq1"] != self.r_squares["seq2"])].copy()
                 within_group_rsquares = within_group_rsquares.append(clust_rsquares, ignore_index=True)
             within_group_rsquares.to_csv(join(self.rdmcl_dir, "hmm", "within_group_rsquares.csv"))
         else:
@@ -169,21 +169,31 @@ class Check(object):
     def _mc_fwd_back_old_hmms(seq_chunk, args):
         try:
             hmm_scores_file, hmm_dir_path, query_file = args
+            print("hmm_scores_file:", hmm_scores_file, "hmm_dir_path:", hmm_dir_path, "query_file", query_file)
             hmm_fwd_scores = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
             for seq in seq_chunk:
+                print("seq:", seq)
                 next_hmm_path = join(hmm_dir_path, "%s.hmm" % seq.id)
+                print("next_hmm_path", next_hmm_path)
 
                 fwdback_output = Popen("%s %s %s" % (rdmcl.HMM_FWD_BACK, next_hmm_path, query_file),
                                        shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
+                print(rdmcl.HMM_FWD_BACK)
+                print(fwdback_output)
+                print("fwdback_output is allright")
                 fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
                                             header=None, comment="#", index_col=False)
+                print("read csv OK")
+                print(fwd_scores_df)
                 fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
                 fwd_scores_df["hmm_id"] = seq.id
+                print(fwd_scores_df["hmm_id"])
 
                 hmm_fwd_scores = hmm_fwd_scores.append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
                                                        ignore_index=True)
-
+                print("appended fwd_scores:\n", hmm_fwd_scores)
             hmm_fwd_scores = hmm_fwd_scores.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
+            print("sent fwd_scores to csv")
             with LOCK:
                 with open(hmm_scores_file, "a") as ofile:
                     ofile.write(hmm_fwd_scores)

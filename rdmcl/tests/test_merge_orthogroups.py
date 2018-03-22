@@ -182,45 +182,55 @@ def test_prepare_between_group_fwd_df(hf, capsys):
     assert type(merge) is pd.DataFrame
 
 
-
-###########  FIX ISSUE WITH buddy_resources  #############
+######### ASK STEVE ABOUT PROBLEM ####################
 
 #def test_check_existing_group(hf, capsys):
-#    clusters = {1: ["id1", "id2"], 2: ["id3", "id4"], 3: ["id5", "id6", "id7"]}
+#    clusters = {"cluster_01": ["id1", "id2"], "cluster_02": ["id3", "id4"], "cluster_03": ["id5", "id6", "id7"]}
 #    r_squares = pd.read_csv(join(hf.resource_path, "rsquares_matrix.csv"))
-#    group_name = "group_0"
+#    group_name = "cluster_01"
+#PROBLEM   create master_clust which is supposed to be an object of class Cluster
 
-#    check = SimpleNamespace(clusters=clusters, group_name=group_name, r_squares=r_squares)
+#    check = SimpleNamespace(clusters=clusters, group_name=group_name, r_squares=r_squares, master_clust=master_clust)
 #    merge = merge_orthogroups.Check.check_existing_group(check, group_name=group_name)
 
 
 
 
 def test_mc_fwd_back_old_hmms(monkeypatch, capsys, hf):
+    test_dir = br.TempDir()
+    subdir = test_dir.subdir("hmm")
+
+    script_path = hlp.SCRIPT_PATH
+
+    copyfile(join(hf.resource_path, "final_clusters.txt"), join(test_dir.path, "final_clusters.txt"))
+    copyfile(join(hf.resource_path, "rsquares_matrix.csv"), join(subdir, "rsquares_matrix.csv"))
+    copyfile(join(hf.resource_path, "hmm_fwd_scores.csv"), join(subdir, "hmm_fwd_scores.csv"))
+
+
     seqs_file = join(hf.resource_path, "input_seqs.fa")
     sequences = Sb.SeqBuddy(seqs_file)
+    sequences_subset = Sb.pull_recs(Sb.make_copy(sequences), "Bab-PanxαA")
 
+#    search_ids = ["Bab-PanxαA", "Bch-PanxαB"]
+#    sequences_subset = []
+#    for id in search_ids:
+#        sequences_subset += Sb.pull_recs(Sb.make_copy(sequences), id).records
 
-    query_file = br.TempFile()
-    query_file.write(rec.format("fasta"))
-    sequences = Sb.SeqBuddy(seqs_file)
-    seq_chuncks = hlp.chunk_list(sequences.records, br.usable_cpu_count())
+    seq_chunks = hlp.chunk_list(sequences_subset.records, br.usable_cpu_count())
+    seqchunk1 = seq_chunks[0]
 
+    hmm_scores_file = join(test_dir.path, "hmm", "test.scores")
+    hmm_dir_path = join(hf.resource_path, "hmms")
+    query_file = join(hf.resource_path, "Cteno_pannexins.fa")
 
-    seq1 = Sb.
-    seq_chunk = [seq1, seq2, seq3, seq4]
-
-
-
-
-    hmm_scores_file = "a"
-    hmm_dir_path = "b"
-    query_file = "c"
-    y = [hmm_scores_file, hmm_dir_path, query_file]
+    args = [hmm_scores_file, hmm_dir_path, query_file]
 
     check = merge_orthogroups.Check(rdmcl_dir=test_dir.path)
-    merge = merge_orthogroups.Check._mc_fwd_back_old_hmms(seq_chunk, args)
+    merge = merge_orthogroups.Check._mc_fwd_back_old_hmms(seqchunk1, args)
 
+    
+
+    #What can I assert?
 
 
 
