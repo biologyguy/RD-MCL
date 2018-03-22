@@ -40,19 +40,24 @@ def list_features(seqbuddy):
 
 
 def mc_bootstrap(_, args):
-    all_clusters, orig_genbank, outdir, feature_align = args
+    all_clusters, orig_genbank, outdir, feature_align, aligner = args
     seq_names = []
     recs = []
     for clust, rec_ids in all_clusters.items():
         seq_names.append(random.choice(rec_ids))
         rec = Sb.pull_recs(Sb.make_copy(orig_genbank), "^%s$" % seq_names[-1])
-        Sb.rename(rec, "^%s$" % rec.records[0].id, clust)
-        recs.append(rec.records[0])
+        try:
+            Sb.rename(rec, "^%s$" % rec.records[0].id, clust)
+            recs.append(rec.records[0])
+        except IndexError:
+            print("\nError: %s, %s" % (clust, seq_names[-1]))
+            return
+
     tree = Sb.SeqBuddy(recs, out_format="fasta")
     if feature_align:
         tree = create_feature_alignment(tree)
     else:
-        tree = Alb.generate_msa(tree, "clustalo", quiet=True)
+        tree = Alb.generate_msa(tree, aligner, quiet=True)
     # tree = trimal(orig_genbank, ["gappyout", 0.5, 0.75, 0.9, 0.95, "clean"], tree)
     tree = Pb.generate_tree(tree, "fasttree", quiet=True)
     clean_tree = re.sub(":[0-9]e-[0-9]+", "", str(tree))
@@ -362,8 +367,8 @@ def main():
     with open(join(outdir, "consensus_tree.nwk"), "w") as ofile:
         ofile.write(re.sub("'", "", str(cons_tree)))
 
-    br.run_multicore_function(range(in_args.bootstraps), mc_bootstrap, func_args=[all_clusters, orig_embl,
-                                                                                  outdir, in_args.domain_partitions])
+    br.run_multicore_function(range(in_args.bootstraps), mc_bootstrap,
+                              func_args=[all_clusters, orig_embl, outdir, in_args.domain_partitions, in_args.aligner])
 
     support_tree = Pb.generate_tree(cons_alignment, "raxml",
                                     params="-f b -p 1234 -t %s -z %s" % (join(outdir, "consensus_tree.nwk"),
