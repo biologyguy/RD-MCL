@@ -404,13 +404,20 @@ def main():
         Sb.delete_records(orig_fasta, recs_delete)
         Sb.delete_records(orig_embl, recs_delete)
 
-    if in_args.include_count:
-        new_all_clusters = {}
-        for clust, rec_ids in all_clusters.items():
-            new_all_clusters["%s~count~%s" % (clust, len(rec_ids))] = rec_ids
-            Sb.rename(consensus_embl, "^%s$" % clust, "%s~count~%s" % (clust, len(rec_ids)))
+    # Hash cluster names, to prevent any weirdness
+    hash_dict = {}
+    for clust in all_clusters:
+        clust_hash = hlp.md5_hash(clust)
+        hash_dict[clust_hash] = clust
+        consensus_embl = Sb.rename(consensus_embl, "^%s$" % clust, clust_hash)
 
-        all_clusters = new_all_clusters
+    for clust_hash, clust in hash_dict.items():
+        all_clusters[clust_hash] = all_clusters[clust]
+        del all_clusters[clust]
+
+    if in_args.include_count:
+        for clust, rec_ids in all_clusters.items():
+            hash_dict[clust] += "[%s]" % len(rec_ids)
 
     # Infer consensus tree with RAxML
     if in_args.domain_partitions:
@@ -473,10 +480,11 @@ Phylogenetic inference (%s bootstraps):
 
     for next_file in ["consensus_tree.nwk", "bootstraps.nwk", "consensus_with_support.nwk",
                       "consensus_aln.embl", "raw_bootstraps.nwk"]:
-        with open(join(outdir, next_file), "r") as ifile:
-            data = re.sub(r'~count~([0-9]+)', r'[\1]', ifile.read())
-        with open(join(outdir, next_file), "w") as ofile:
-            ofile.write(data)
+        for clust_hash, clust_name in hash_dict.items():
+            with open(join(outdir, next_file), "r") as ifile:
+                data = re.sub(r'%s' % clust_hash, r'%s' % clust_name, ifile.read())
+            with open(join(outdir, next_file), "w") as ofile:
+                ofile.write(data)
 
 
 if __name__ == '__main__':
