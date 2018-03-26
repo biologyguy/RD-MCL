@@ -23,6 +23,7 @@ from os.path import join
 import argparse
 import random
 from multiprocessing import Lock
+from subprocess import Popen, PIPE
 
 LOCK = Lock()
 VERSION = hlp.VERSION
@@ -37,6 +38,42 @@ def list_features(seqbuddy):
                 if qual[0] not in features:
                     features.append(qual[0])
     return features
+
+
+def mc_hmm_bootstraps(_, args):
+    all_clusters, orig_embl, outdir, feature_align, hmm, tree_prog, tree_params = args
+    seq_names = []
+    recs = []
+    for clust, rec_ids in all_clusters.items():
+        seq_names.append(random.choice(rec_ids))
+        rec = Sb.pull_recs(Sb.make_copy(orig_embl), "^%s$" % seq_names[-1])
+        try:
+            Sb.rename(rec, "^%s$" % rec.records[0].id, clust)
+            recs.append(rec.records[0])
+        except IndexError:
+            print("\nError: %s, %s" % (clust, seq_names[-1]))
+            return
+
+    seqbuddy = Sb.SeqBuddy(recs, out_format="fasta")
+    temp_dir = br.TempDir()
+    seqs_file = join(temp_dir.path, "seqs.fa")
+    seqbuddy.write(seqs_file)
+    aln_file = join(temp_dir.path, "aln.stlk")
+    Popen("hmmalign --trim -o %s %s %s" % (aln_file, hmm, seqs_file), shell=True).wait()
+    alignbuddy = Alb.AlignBuddy(aln_file)
+
+    tree = Pb.generate_tree(alignbuddy, tree_prog, params=tree_params, quiet=True)
+    clean_tree = re.sub(":[0-9.]+e-[0-9]+", "", str(tree))
+    clean_tree = re.sub(":[0-9]+\.[0-9]+", "", clean_tree)
+    clean_tree = re.sub("\)[0-9]+\.[0-9]+", ")", clean_tree)
+    clean_tree = re.sub("'", "", clean_tree)
+    with LOCK:
+        with open(join(outdir, "bootstraps.nwk"), "a") as ofile:
+            ofile.write("%s" % clean_tree)
+        with open(join(outdir, "raw_bootstraps.nwk"), "a") as ofile:
+            ofile.write("%s" % tree)
+        with open(join(outdir, "bootstraps.txt"), "a") as ofile:
+            ofile.write("%s\n" % "\t".join(sorted(seq_names)))
 
 
 def mc_bootstrap(_, args):
@@ -59,7 +96,7 @@ def mc_bootstrap(_, args):
     else:
         tree = Alb.generate_msa(tree, aligner, params=align_params, quiet=True)
     tree = Pb.generate_tree(tree, tree_prog, params=tree_params, quiet=True)
-    clean_tree = re.sub(":[0-9]e-[0-9]+", "", str(tree))
+    clean_tree = re.sub(":[0-9.]+e-[0-9]+", "", str(tree))
     clean_tree = re.sub(":[0-9]+\.[0-9]+", "", clean_tree)
     clean_tree = re.sub("\)[0-9]+\.[0-9]+", ")", clean_tree)
     clean_tree = re.sub("'", "", clean_tree)
@@ -191,6 +228,8 @@ def argparse_init():
                               help="Force alignments to PrositeScan domains")
     parser_flags.add_argument("--excl_groups", "-eg", action="append", nargs="+", metavar="group",
                               help="List specific groups to exclude")
+    parser_flags.add_argument("--hmm", "-hmm", action="store", metavar="hmm file(s)",
+                              help="Partition sequences with domain hidden Markov models")
     parser_flags.add_argument("--incl_groups", "-ig", action="append", nargs="+", metavar="group",
                               help="List specific groups to process")
     parser_flags.add_argument("--include_count", "-ic", action="store_true",
@@ -230,6 +269,7 @@ def main():
     else:
         outdir = join(os.getcwd(), "rdmcl_consensus_tree")
     os.makedirs(outdir, exist_ok=True)
+    open(join(outdir, "raw_bootstraps.nwk"), "w").close()
     open(join(outdir, "bootstraps.nwk"), "w").close()
     open(join(outdir, "bootstraps.txt"), "w").close()
 
@@ -365,6 +405,13 @@ def main():
     # Infer consensus tree with RAxML
     if in_args.domain_partitions:
         cons_alignment = create_feature_alignment(consensus_embl, in_args.aligner, in_args.align_params)
+    elif in_args.hmm:
+        temp_dir = br.TempDir()
+        seqs_file = join(temp_dir.path, "seqs.fa")
+        consensus_embl.write(seqs_file, out_format="fasta")
+        aln_file = join(temp_dir.path, "aln.stlk")
+        Popen("hmmalign --trim -o %s %s %s" % (aln_file, in_args.hmm, seqs_file), shell=True).wait()
+        cons_alignment = Alb.AlignBuddy(aln_file)
     else:
         cons_alignment = Alb.generate_msa(consensus_embl, "clustalo", params=in_args.align_params, quiet=True)
 
@@ -383,10 +430,18 @@ Phylogenetic inference (%s bootstraps):
     with open(join(outdir, "consensus_tree.nwk"), "w") as ofile:
         ofile.write(re.sub("'", "", str(cons_tree)))
 
-    func_args = [all_clusters, orig_embl, outdir, in_args.domain_partitions,
-                 in_args.aligner, in_args.align_params, in_args.tree_prog, in_args.tree_prog_params]
+    if in_args.hmm:
+        func_args = [all_clusters, orig_embl, outdir, in_args.domain_partitions, in_args.hmm,
+                     in_args.tree_prog, in_args.tree_prog_params]
 
-    br.run_multicore_function(range(in_args.bootstraps), mc_bootstrap, func_args=func_args, max_processes=in_args.cpus)
+        br.run_multicore_function(range(in_args.bootstraps), mc_hmm_bootstraps,
+                                  func_args=func_args, max_processes=in_args.cpus)
+    else:
+        func_args = [all_clusters, orig_embl, outdir, in_args.domain_partitions,
+                     in_args.aligner, in_args.align_params, in_args.tree_prog, in_args.tree_prog_params]
+
+        br.run_multicore_function(range(in_args.bootstraps), mc_bootstrap,
+                                  func_args=func_args, max_processes=in_args.cpus)
 
     support_tree = Pb.generate_tree(cons_alignment, "raxml",
                                     params="-f b -p 1234 -t %s -z %s" % (join(outdir, "consensus_tree.nwk"),
