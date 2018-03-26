@@ -23,7 +23,7 @@ from os.path import join
 import argparse
 import random
 from multiprocessing import Lock
-from subprocess import Popen, PIPE
+from subprocess import Popen
 
 LOCK = Lock()
 VERSION = hlp.VERSION
@@ -41,7 +41,7 @@ def list_features(seqbuddy):
 
 
 def mc_hmm_bootstraps(_, args):
-    all_clusters, orig_embl, outdir, feature_align, hmm, tree_prog, tree_params = args
+    all_clusters, orig_embl, outdir, feature_align, hmm_files, tree_prog, tree_params = args
     seq_names = []
     recs = []
     for clust, rec_ids in all_clusters.items():
@@ -59,8 +59,13 @@ def mc_hmm_bootstraps(_, args):
     seqs_file = join(temp_dir.path, "seqs.fa")
     seqbuddy.write(seqs_file)
     aln_file = join(temp_dir.path, "aln.stlk")
-    Popen("hmmalign --trim -o %s %s %s" % (aln_file, hmm, seqs_file), shell=True).wait()
-    alignbuddy = Alb.AlignBuddy(aln_file)
+    alignments = []
+    for hmm in hmm_files:
+        Popen("hmmalign --trim --amino -o %s %s %s" % (aln_file, hmm, seqs_file), shell=True).wait()
+        alignments.append(Alb.AlignBuddy(aln_file).alignments[0])
+
+    alignbuddy = Alb.AlignBuddy(alignments)
+    alignbuddy = alignbuddy if len(alignbuddy) == 1 else Alb.concat_alignments(alignbuddy)
 
     tree = Pb.generate_tree(alignbuddy, tree_prog, params=tree_params, quiet=True)
     clean_tree = re.sub(":[0-9.]+e-[0-9]+", "", str(tree))
@@ -95,6 +100,11 @@ def mc_bootstrap(_, args):
         tree = create_feature_alignment(tree, aligner, align_params)
     else:
         tree = Alb.generate_msa(tree, aligner, params=align_params, quiet=True)
+
+    # Unless the user has specified threads, make sure RAxML doesn't try to use more resources than available
+    if "raxml" in tree_prog and "-T" not in tree_params:
+        tree_params += " -T 1"
+
     tree = Pb.generate_tree(tree, tree_prog, params=tree_params, quiet=True)
     clean_tree = re.sub(":[0-9.]+e-[0-9]+", "", str(tree))
     clean_tree = re.sub(":[0-9]+\.[0-9]+", "", clean_tree)
@@ -228,7 +238,7 @@ def argparse_init():
                               help="Force alignments to PrositeScan domains")
     parser_flags.add_argument("--excl_groups", "-eg", action="append", nargs="+", metavar="group",
                               help="List specific groups to exclude")
-    parser_flags.add_argument("--hmm", "-hmm", action="store", metavar="hmm file(s)",
+    parser_flags.add_argument("--hmm", "-hmm", action="append", nargs="+", metavar="hmm file(s)",
                               help="Partition sequences with domain hidden Markov models")
     parser_flags.add_argument("--incl_groups", "-ig", action="append", nargs="+", metavar="group",
                               help="List specific groups to process")
@@ -406,12 +416,24 @@ def main():
     if in_args.domain_partitions:
         cons_alignment = create_feature_alignment(consensus_embl, in_args.aligner, in_args.align_params)
     elif in_args.hmm:
+        hmm_files = in_args.hmm[0]
+        for hmm in hmm_files:
+            if not os.path.isfile(hmm):
+                sys.stderr.write("Error: The provided HMM path '%s' is not a file.\n" % hmm)
+                sys.exit()
+        in_args.hmm = hmm_files
+        in_args.aligner = "hmmalign"
+        in_args.align_params = " --trim --amino"
         temp_dir = br.TempDir()
         seqs_file = join(temp_dir.path, "seqs.fa")
         consensus_embl.write(seqs_file, out_format="fasta")
         aln_file = join(temp_dir.path, "aln.stlk")
-        Popen("hmmalign --trim -o %s %s %s" % (aln_file, in_args.hmm, seqs_file), shell=True).wait()
-        cons_alignment = Alb.AlignBuddy(aln_file)
+        alignments = []
+        for hmm in hmm_files:
+            Popen("hmmalign --trim --amino -o %s %s %s" % (aln_file, hmm, seqs_file), shell=True).wait()
+            alignments.append(Alb.AlignBuddy(aln_file).alignments[0])
+        cons_alignment = Alb.AlignBuddy(alignments)
+        cons_alignment = cons_alignment if len(cons_alignment) == 1 else Alb.concat_alignments(cons_alignment)
     else:
         cons_alignment = Alb.generate_msa(consensus_embl, "clustalo", params=in_args.align_params, quiet=True)
 
