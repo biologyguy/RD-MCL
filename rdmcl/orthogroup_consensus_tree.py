@@ -30,14 +30,12 @@ VERSION = hlp.VERSION
 VERSION.name = "orthogroup_consensus_tree"
 
 
-def list_features(seqbuddy):
-    features = []
-    for rec in seqbuddy.records:
-        for feat in rec.features:
-            for key, qual in feat.qualifiers.items():
-                if qual[0] not in features:
-                    features.append(qual[0])
-    return features
+def clean_tree(tree):
+    tree = re.sub(":[0-9.]+e-[0-9]+", "", str(tree))
+    tree = re.sub(":[0-9]+\.[0-9]+", "", tree)
+    tree = re.sub("\)[0-9]+\.[0-9]+", ")", tree)
+    tree = re.sub("'", "", tree)
+    return tree
 
 
 def mc_hmm_bootstraps(_, args):
@@ -65,18 +63,14 @@ def mc_hmm_bootstraps(_, args):
         alignments.append(Alb.AlignBuddy(aln_file).alignments[0])
 
     alignbuddy = Alb.AlignBuddy(alignments)
-    alignbuddy = alignbuddy if len(alignbuddy) == 1 else Alb.concat_alignments(alignbuddy)
+    alignbuddy = alignbuddy if len(alignbuddy) == 1 else Alb.concat_alignments(alignbuddy, group_pattern=".*")
 
     tree = Pb.generate_tree(alignbuddy, tree_prog, params=tree_params, quiet=True)
-    clean_tree = re.sub(":[0-9.]+e-[0-9]+", "", str(tree))
-    clean_tree = re.sub(":[0-9]+\.[0-9]+", "", clean_tree)
-    clean_tree = re.sub("\)[0-9]+\.[0-9]+", ")", clean_tree)
-    clean_tree = re.sub("'", "", clean_tree)
     with LOCK:
-        with open(join(outdir, "bootstraps.nwk"), "a") as ofile:
-            ofile.write("%s" % clean_tree)
         with open(join(outdir, "raw_bootstraps.nwk"), "a") as ofile:
             ofile.write("%s" % tree)
+        with open(join(outdir, "bootstraps.nwk"), "a") as ofile:
+            ofile.write("%s" % clean_tree(tree))
         with open(join(outdir, "bootstraps.txt"), "a") as ofile:
             ofile.write("%s\n" % "\t".join(sorted(seq_names)))
 
@@ -106,59 +100,13 @@ def mc_bootstrap(_, args):
         tree_params += " -T 1"
 
     tree = Pb.generate_tree(tree, tree_prog, params=tree_params, quiet=True)
-    clean_tree = re.sub(":[0-9.]+e-[0-9]+", "", str(tree))
-    clean_tree = re.sub(":[0-9]+\.[0-9]+", "", clean_tree)
-    clean_tree = re.sub("\)[0-9]+\.[0-9]+", ")", clean_tree)
-    clean_tree = re.sub("'", "", clean_tree)
     with LOCK:
-        with open(join(outdir, "bootstraps.nwk"), "a") as ofile:
-            ofile.write("%s" % clean_tree)
         with open(join(outdir, "raw_bootstraps.nwk"), "a") as ofile:
             ofile.write("%s" % tree)
+        with open(join(outdir, "bootstraps.nwk"), "a") as ofile:
+            ofile.write("%s" % clean_tree(tree))
         with open(join(outdir, "bootstraps.txt"), "a") as ofile:
             ofile.write("%s\n" % "\t".join(sorted(seq_names)))
-
-
-def create_feature_alignment(alignment, aligner, align_params):
-    features = list_features(alignment)
-    feature_alignments = []
-
-    for feature in features:
-        recs_with_feat = Sb.pull_recs_with_feature(Sb.make_copy(alignment), feature)
-        recs_with_feat = Sb.extract_feature_sequences(recs_with_feat, feature)
-        if len(recs_with_feat) == 1:
-            recs_with_feat = Alb.AlignBuddy(str(recs_with_feat), out_format="embl")
-        else:
-            recs_with_feat = Alb.generate_msa(recs_with_feat, aligner, params=align_params, quiet=True)
-        aln_len = len(recs_with_feat.records()[0].seq)
-
-        recs_without_feats = Sb.delete_recs_with_feature(Sb.make_copy(alignment), feature)
-        for rec in recs_without_feats.records:
-            rec.seq = Sb.Seq("-" * aln_len, rec.seq.alphabet)
-            recs_with_feat.alignments[0].append(rec)
-        feature_alignments.append(recs_with_feat.alignments[0])
-
-    feature_alignments = Alb.AlignBuddy(feature_alignments, out_format="embl")
-    Alb.concat_alignments(feature_alignments, group_pattern=".*")
-    return feature_alignments
-
-
-def trimal(seqbuddy, trimal_modes, alignment):
-        # Only remove columns up to a 50% reduction in average seq length and only if all sequences are retained
-        ave_seq_length = Sb.ave_seq_length(seqbuddy)
-        for threshold in trimal_modes:
-            align_copy = Alb.trimal(Alb.make_copy(alignment), threshold=threshold)
-            cleaned_seqs = Sb.clean_seq(Sb.SeqBuddy(str(align_copy), out_format="embl"))
-            cleaned_seqs = Sb.delete_small(cleaned_seqs, 1)
-            # Structured this way for unit test purposes
-            if len(alignment.records()) != len(cleaned_seqs):
-                continue
-            elif Sb.ave_seq_length(cleaned_seqs) / ave_seq_length < 0.5:
-                continue
-            else:
-                alignment = align_copy
-                break
-        return alignment
 
 
 def get_features(orig_sb, psc_file):
@@ -201,6 +149,59 @@ def get_features(orig_sb, psc_file):
             sys.stderr.write("%s\n" % rec)
         sys.stderr.write("\n")
     return output
+
+
+# I think that the rest of this stuff is going to be depricated and removed
+def list_features(seqbuddy):
+    features = []
+    for rec in seqbuddy.records:
+        for feat in rec.features:
+            for key, qual in feat.qualifiers.items():
+                if qual[0] not in features:
+                    features.append(qual[0])
+    return features
+
+
+def create_feature_alignment(alignment, aligner, align_params):
+    features = list_features(alignment)
+    feature_alignments = []
+
+    for feature in features:
+        recs_with_feat = Sb.pull_recs_with_feature(Sb.make_copy(alignment), feature)
+        recs_with_feat = Sb.extract_feature_sequences(recs_with_feat, feature)
+        if len(recs_with_feat) == 1:
+            recs_with_feat = Alb.AlignBuddy(str(recs_with_feat), out_format="embl")
+        else:
+            recs_with_feat = Alb.generate_msa(recs_with_feat, aligner, params=align_params, quiet=True)
+        aln_len = len(recs_with_feat.records()[0].seq)
+
+        recs_without_feats = Sb.delete_recs_with_feature(Sb.make_copy(alignment), feature)
+        for rec in recs_without_feats.records:
+            rec.seq = Sb.Seq("-" * aln_len, rec.seq.alphabet)
+            recs_with_feat.alignments[0].append(rec)
+        feature_alignments.append(recs_with_feat.alignments[0])
+
+    feature_alignments = Alb.AlignBuddy(feature_alignments, out_format="embl")
+    Alb.concat_alignments(feature_alignments, group_pattern=".*")
+    return feature_alignments
+
+
+def trimal(seqbuddy, trimal_modes, alignment):
+        # Only remove columns up to a 50% reduction in average seq length and only if all sequences are retained
+        ave_seq_length = Sb.ave_seq_length(seqbuddy)
+        for threshold in trimal_modes:
+            align_copy = Alb.trimal(Alb.make_copy(alignment), threshold=threshold)
+            cleaned_seqs = Sb.clean_seq(Sb.SeqBuddy(str(align_copy), out_format="embl"))
+            cleaned_seqs = Sb.delete_small(cleaned_seqs, 1)
+            # Structured this way for unit test purposes
+            if len(alignment.records()) != len(cleaned_seqs):
+                continue
+            elif Sb.ave_seq_length(cleaned_seqs) / ave_seq_length < 0.5:
+                continue
+            else:
+                alignment = align_copy
+                break
+        return alignment
 
 
 def argparse_init():
@@ -264,6 +265,74 @@ def argparse_init():
     return in_args
 
 
+def _prepare_rdmcl_dir(in_args, rdmcl_dir, orig_fasta, orig_embl, consensus_fasta, consensus_embl):
+    rdmcl_dir = os.path.abspath(rdmcl_dir)
+
+    if not os.path.isdir(rdmcl_dir):
+        sys.stderr.write("Error: The provided RD-MCL output directory does not exist.\n")
+        sys.exit()
+
+    if not os.path.isfile(join(rdmcl_dir, "final_clusters.txt")):
+        sys.stderr.write("Error: The provided RD-MCL output directory '%s' does not "
+                         "contain the necessary file 'final_clusters.txt'.\n" % rdmcl_dir)
+        sys.exit()
+
+    if not os.path.isfile(join(rdmcl_dir, "input_seqs.fa")):
+        sys.stderr.write("Error: The provided RD-MCL output directory '%s' does not "
+                         "contain the necessary file 'input_seqs.fa'.\n" % rdmcl_dir)
+        sys.exit()
+
+    orig_fasta.append(Sb.SeqBuddy(join(rdmcl_dir, "input_seqs.fa")))
+    if in_args.domain_partitions:
+        orig_embl.append(get_features(orig_fasta[-1], join(rdmcl_dir, "input_seqs_psc.embl")))
+    else:
+        orig_embl.append(Sb.make_copy(orig_fasta[-1]))
+        orig_embl[-1].out_format = "embl"
+
+    orig_embl[-1].write(join(rdmcl_dir, "input_seqs_psc.embl"))
+
+    clusters = hlp.prepare_clusters(join(rdmcl_dir, "final_clusters.txt"), hierarchy=True)
+
+    # Consensus sequences
+    if os.path.isfile(join(rdmcl_dir, "consensus_seqs.fa")):
+        consensus_fasta.append(Sb.SeqBuddy(join(rdmcl_dir, "consensus_seqs.fa")))
+        missing_consensus = [rec.id for rec in consensus_fasta[-1].records if rec.id not in clusters]
+    else:
+        consensus_fasta.append(None)
+        missing_consensus = list(clusters)
+
+    for rank in missing_consensus:
+        node = clusters[rank]
+        ids = "^%s$" % "$|^".join(node)
+        subset = Sb.pull_recs(Sb.make_copy(orig_fasta[-1]), ids)
+        subset = Sb.order_ids(subset)
+        try:
+            rank_output = make_msa(subset, in_args.aligner)
+        except (SystemError, AttributeError) as err:
+            print(err)
+            sys.exit()
+
+        rec = Alb.consensus_sequence(rank_output).records()[0]
+        rec.id = rank
+        rec.name = rank
+        rec.description = ""
+        if consensus_fasta[-1] is None:
+            consensus_fasta[-1] = Sb.SeqBuddy([rec], out_format="fasta")
+        else:
+            consensus_fasta[-1].records.append(rec)
+
+    consensus_fasta[-1].write(join(rdmcl_dir, "consensus_seqs.fa"))
+
+    if in_args.domain_partitions:
+        consensus_embl.append(get_features(consensus_fasta[-1], join(rdmcl_dir, "consensus_psc.embl")))
+    else:
+        consensus_embl.append(Sb.make_copy(consensus_fasta[-1]))
+        consensus_embl[-1].out_format = "embl"
+
+    consensus_embl[-1].write(join(rdmcl_dir, "consensus_psc.embl"))
+    return clusters
+
+
 def main():
     in_args = argparse_init()
 
@@ -285,71 +354,7 @@ def main():
 
     # Initial processing of all sequences in the analysis (make/read consensus sequences, fetch/read prosite results)
     for rdmcl_dir in in_args.rdmcl_dir[0]:
-        rdmcl_dir = os.path.abspath(rdmcl_dir)
-
-        if not os.path.isdir(rdmcl_dir):
-            sys.stderr.write("Error: The provided RD-MCL output directory does not exist.\n")
-            sys.exit()
-
-        if not os.path.isfile(join(rdmcl_dir, "final_clusters.txt")):
-            sys.stderr.write("Error: The provided RD-MCL output directory '%s' does not "
-                             "contain the necessary file 'final_clusters.txt'.\n" % rdmcl_dir)
-            sys.exit()
-
-        if not os.path.isfile(join(rdmcl_dir, "input_seqs.fa")):
-            sys.stderr.write("Error: The provided RD-MCL output directory '%s' does not "
-                             "contain the necessary file 'input_seqs.fa'.\n" % rdmcl_dir)
-            sys.exit()
-
-        orig_fasta.append(Sb.SeqBuddy(join(rdmcl_dir, "input_seqs.fa")))
-        if in_args.domain_partitions:
-            orig_embl.append(get_features(orig_fasta[-1], join(rdmcl_dir, "input_seqs_psc.embl")))
-        else:
-            orig_embl.append(Sb.make_copy(orig_fasta[-1]))
-            orig_embl[-1].out_format = "embl"
-
-        orig_embl[-1].write(join(rdmcl_dir, "input_seqs_psc.embl"))
-
-        clusters = hlp.prepare_clusters(join(rdmcl_dir, "final_clusters.txt"), hierarchy=True)
-
-        # Consensus sequences
-        if os.path.isfile(join(rdmcl_dir, "consensus_seqs.fa")):
-            consensus_fasta.append(Sb.SeqBuddy(join(rdmcl_dir, "consensus_seqs.fa")))
-            missing_consensus = [rec.id for rec in consensus_fasta[-1].records if rec.id not in clusters]
-        else:
-            consensus_fasta.append(None)
-            missing_consensus = list(clusters)
-
-        for rank in missing_consensus:
-            node = clusters[rank]
-            ids = "^%s$" % "$|^".join(node)
-            subset = Sb.pull_recs(Sb.make_copy(orig_fasta[-1]), ids)
-            subset = Sb.order_ids(subset)
-            try:
-                rank_output = make_msa(subset, in_args.aligner)
-            except (SystemError, AttributeError) as err:
-                print(err)
-                sys.exit()
-
-            rec = Alb.consensus_sequence(rank_output).records()[0]
-            rec.id = rank
-            rec.name = rank
-            rec.description = ""
-            if consensus_fasta[-1] is None:
-                consensus_fasta[-1] = Sb.SeqBuddy([rec], out_format="fasta")
-            else:
-                consensus_fasta[-1].records.append(rec)
-
-        consensus_fasta[-1].write(join(rdmcl_dir, "consensus_seqs.fa"))
-
-        if in_args.domain_partitions:
-            consensus_embl.append(get_features(consensus_fasta[-1], join(rdmcl_dir, "consensus_psc.embl")))
-        else:
-            consensus_embl.append(Sb.make_copy(consensus_fasta[-1]))
-            consensus_embl[-1].out_format = "embl"
-
-        consensus_embl[-1].write(join(rdmcl_dir, "consensus_psc.embl"))
-
+        clusters = _prepare_rdmcl_dir(in_args, rdmcl_dir, orig_fasta, orig_embl, consensus_fasta, consensus_embl)
         all_clusters.append(clusters)
 
     clust_check = {}
@@ -419,7 +424,7 @@ def main():
         for clust, rec_ids in all_clusters.items():
             hash_dict[clust] += "[%s]" % len(rec_ids)
 
-    # Infer consensus tree with RAxML
+    # Infer consensus
     if in_args.domain_partitions:
         cons_alignment = create_feature_alignment(consensus_embl, in_args.aligner, in_args.align_params)
     elif in_args.hmm:
@@ -440,7 +445,8 @@ def main():
             Popen("hmmalign --trim --amino -o %s %s %s" % (aln_file, hmm, seqs_file), shell=True).wait()
             alignments.append(Alb.AlignBuddy(aln_file).alignments[0])
         cons_alignment = Alb.AlignBuddy(alignments)
-        cons_alignment = cons_alignment if len(cons_alignment) == 1 else Alb.concat_alignments(cons_alignment)
+        cons_alignment = cons_alignment if len(cons_alignment) == 1 else Alb.concat_alignments(cons_alignment,
+                                                                                               group_pattern=".*")
     else:
         cons_alignment = Alb.generate_msa(consensus_embl, "clustalo", params=in_args.align_params, quiet=True)
 
@@ -485,7 +491,7 @@ Phylogenetic inference (%s bootstraps):
                 data = re.sub(r'%s' % clust_hash, r'%s' % clust_name, ifile.read())
             with open(join(outdir, next_file), "w") as ofile:
                 ofile.write(data)
-
+    return
 
 if __name__ == '__main__':
     main()
