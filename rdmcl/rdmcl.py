@@ -1964,7 +1964,8 @@ class Seqs2Clusters(object):
 
             log_output.write("# Current clusters #\n")
             for clust in self.clusters:
-                log_output.write("%s\n%s\n\n" % (clust.name(), clust.seq_ids))
+                seq_ids = sorted(list(clust.seq_ids))
+                log_output.write("%s\n{'%s'}\n\n" % (clust.name(), "', '".join(seq_ids)))
 
             # Create a distribution from all R² values between records in each pre-called large cluster
             global_null_file = br.TempFile()
@@ -2370,6 +2371,8 @@ def argparse_init():
 
     # Developer testing
     dev_flags = parser.add_argument_group(title="\033[1mDeveloper commands (Caution!)\033[m")
+    dev_flags.add_argument("-be", "--build_environment", action="store_true",
+                           help="Set up all working directories and files, but don't run RD-MCL")
     dev_flags.add_argument("-spc", "--suppress_paralog_collapse", action="store_true",
                            help="Do not merge best hit paralogs")
     # dev_flags.add_argument("-sr", "--suppress_recursion", action="store_true",
@@ -2682,6 +2685,11 @@ Continue? y/[n] """ % len(sequences)
     # Base cluster score
     base_score = group_0_cluster.score()
     logging.warning("Base cluster score: %s" % round(base_score, 4))
+
+    # End if the user just wants the environment built
+    if in_args.build_environment:
+        logging.warning("TERMINATING: '--build_environment'")
+        return
 
     # Ortholog caller
     logging.warning("\n** Recursive MCL **")

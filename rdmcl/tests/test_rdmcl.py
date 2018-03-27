@@ -2110,6 +2110,8 @@ parser.add_argument("-f", "--force", action="store_true",
                     help="Overwrite previous run")
 parser.add_argument("-q", "--quiet", action="store_true",
                     help="Suppress all output during run (only final output is returned)")
+parser.add_argument("-be", "--build_environment", action="store_true",
+                    help="Set up all working directories and files, but don't run RD-MCL")
 
 # This is to allow py.test to work with its own flags
 in_args = parser.parse_args([])
