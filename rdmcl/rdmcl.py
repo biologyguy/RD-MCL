@@ -2251,17 +2251,15 @@ class FwdScoreCorrelations(object):
     def _mc_rsquare_vals(recs, args):
         rec1, sub_recs = recs
         hmm_fwd_scores, tmp_rsquares_file = args
-        rsquare_vals_df = pd.DataFrame(columns=["seq1", "seq2", "r_square"])
-        for rec2 in sub_recs:
+        rsquare_vals_df = pd.DataFrame(columns=["seq1", "seq2", "r_square"],
+                                       data=[[None, None, None] for _ in range(len(sub_recs))])
+        for indx, rec2 in enumerate(sub_recs):
             fwd1 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec1.id].sort_values(by="hmm_id").fwd_raw
             fwd2 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec2.id].sort_values(by="hmm_id").fwd_raw
             corr = scipy.stats.pearsonr(fwd1, fwd2)
-            comparison = pd.DataFrame(data=[[rec1.id, rec2.id, corr[0]**2]],
-                                      columns=["seq1", "seq2", "r_square"])
-            rsquare_vals_df = rsquare_vals_df.append(comparison, ignore_index=True)
-        rsquare_vals_df = rsquare_vals_df.append(pd.DataFrame(data=[[rec1.id, rec1.id, 1.0]],
-                                                 columns=["seq1", "seq2", "r_square"]), ignore_index=True)
-
+            rsquare_vals_df.loc[indx, ["seq1", "seq2", "r_square"]] = [rec1.id, rec2.id, corr[0]**2]
+        rsquare_vals_df.loc[-1, ["seq1", "seq2", "r_square"]] = [rec1.id, rec1.id, 1.0]
+        
         rsquare_vals_df = rsquare_vals_df.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
         with LOCK:
             with open(tmp_rsquares_file, "a") as ofile:
