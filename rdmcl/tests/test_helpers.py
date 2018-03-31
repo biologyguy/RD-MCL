@@ -352,7 +352,8 @@ Oma\tMle\t0"""
     assert str(mcl.dataframe) == str(sample_df)
     assert mcl.inflation == 2
     assert mcl.edge_sim_threshold == 0.6
-    assert mcl.name_order == ['Bab', "Cfu", "Mle", "Oma"]
+    assert sorted(list(mcl.name_order)) == ['Bab', "Cfu", "Mle", "Oma"]
+    assert sorted(list(mcl.name_order_indx)) == [0, 1, 2, 3]
     assert str(mcl.trans_matrix) == """\
 [[0.333333333333 0.333333333333 0.             0.333333333333]
  [0.333333333333 0.333333333333 0.             0.333333333333]

@@ -407,10 +407,23 @@ def chunk_list(l, num_chunks):
 # https://www.youtube.com/watch?v=574z9nisRuE around 12:00
 class MarkovClustering(object):
     def __init__(self, data, inflation, edge_sim_threshold=0.):
-        self.dataframe = data
+        """
+        Run MCL on a set if data
+        :param data: Pandas dataframe of form {"seq1", "seq2", "score"}
+        :param inflation: Inflation value
+        :param edge_sim_threshold: Make the graph sparse by removing any edges below this threshold
+        """
+        self.dataframe = data.copy()
+        self.dataframe.seq1 = self.dataframe.seq1.astype('category')
+        self.dataframe.seq2 = self.dataframe.seq2.astype('category')
         self.inflation = inflation
         self.edge_sim_threshold = edge_sim_threshold
-        self.name_order = sorted(list(set(self.dataframe.seq1.tolist() + self.dataframe.seq2.tolist())))
+        self.name_order = {}
+        self.name_order_indx = {}
+        for indx, seq_id in enumerate(sorted(list(set(self.dataframe.seq1.tolist() + self.dataframe.seq2.tolist())))):
+            self.name_order[seq_id] = indx
+            self.name_order_indx[indx] = seq_id
+
         self.trans_matrix = self._df_to_transition_matrix()
         self.sub_state_dfs = [pd.DataFrame(self.trans_matrix)]
         self.clusters = []
@@ -436,11 +449,13 @@ class MarkovClustering(object):
             raise ValueError("The provided dataframe is not a symmetric graph")
         size = int(size)
         tran_mat = np.zeros([size, size])
-        for indx, row in self.dataframe.iterrows():
-            seq1 = self.name_order.index(row.seq1)
-            seq2 = self.name_order.index(row.seq2)
-            tran_mat[seq1][seq2] = row.score
-            tran_mat[seq2][seq1] = row.score
+
+        for indx1, seq1, seq2, score in self.dataframe[["seq1", "seq2", "score"]].itertuples():
+            seq1_indx = self.name_order[seq1]
+            seq2_indx = self.name_order[seq2]
+            tran_mat[seq1_indx][seq2_indx] = score
+            tran_mat[seq2_indx][seq1_indx] = score
+
         tran_mat[tran_mat <= self.edge_sim_threshold] = 0
 
         # This is a 'centering' step that is used by the original MCL algorithm
@@ -453,7 +468,7 @@ class MarkovClustering(object):
 
     def mcl_step(self):
         # Expand
-        # ToDo: There is an issue here, with simulated data and the next command dies quietly
+        # ToDo: There is an issue here, with simulated data the next command dies quietly
         self.trans_matrix = self.trans_matrix.dot(self.trans_matrix)
         # Inflate
         self.trans_matrix = self.trans_matrix ** self.inflation
@@ -467,7 +482,7 @@ class MarkovClustering(object):
             try:
                 valve.step()
             except RuntimeError:  # No convergence after 1000 MCL steps
-                self.clusters = [self.name_order]
+                self.clusters = [list(self.name_order)]
                 return
             self.mcl_step()
             self.sub_state_dfs.append(pd.DataFrame(self.trans_matrix))
@@ -478,14 +493,14 @@ class MarkovClustering(object):
         not_clustered = list(self.name_order)
         for i, row in self.sub_state_dfs[-1].iterrows():
             for j, cell in row.items():
-                if cell != 0 and self.name_order[j] in not_clustered:
-                    next_cluster.append(self.name_order[j])
-                    del not_clustered[not_clustered.index(self.name_order[j])]
+                if cell != 0 and self.name_order_indx[j] in not_clustered:
+                    next_cluster.append(self.name_order_indx[j])
+                    del not_clustered[not_clustered.index(self.name_order_indx[j])]
             if next_cluster:
                 self.clusters.append(next_cluster)
                 next_cluster = []
         self.clusters += [[x] for x in not_clustered]
-        self.clusters.sort(key=len)
+        self.clusters = sorted(self.clusters, key=lambda x: len(x))
         self.clusters.reverse()
         return
 
