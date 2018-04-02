@@ -491,11 +491,11 @@ class MarkovClustering(object):
 
         next_cluster = []
         not_clustered = list(self.name_order)
-        for i, row in self.sub_state_dfs[-1].iterrows():
-            for j, cell in row.items():
-                if cell != 0 and self.name_order_indx[j] in not_clustered:
-                    next_cluster.append(self.name_order_indx[j])
-                    del not_clustered[not_clustered.index(self.name_order_indx[j])]
+        for row in self.sub_state_dfs[-1].itertuples():
+            for i, cell in enumerate(row[1:]):
+                if cell != 0 and self.name_order_indx[i] in not_clustered:
+                    next_cluster.append(self.name_order_indx[i])
+                    del not_clustered[not_clustered.index(self.name_order_indx[i])]
             if next_cluster:
                 self.clusters.append(next_cluster)
                 next_cluster = []
