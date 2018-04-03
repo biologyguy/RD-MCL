@@ -359,13 +359,6 @@ Oma\tMle\t0"""
  [0.333333333333 0.333333333333 0.             0.333333333333]
  [0.             0.             0.             0.            ]
  [0.333333333333 0.333333333333 0.             0.333333333333]]""", print(mcl.trans_matrix)
-    assert len(mcl.sub_state_dfs) == 1
-    assert str(mcl.sub_state_dfs[0]) == """\
-                0               1    2               3
-0  0.333333333333  0.333333333333  0.0  0.333333333333
-1  0.333333333333  0.333333333333  0.0  0.333333333333
-2  0.000000000000  0.000000000000  0.0  0.000000000000
-3  0.333333333333  0.333333333333  0.0  0.333333333333""", print(mcl.sub_state_dfs[0])
     assert mcl.clusters == []
 
 
@@ -381,8 +374,8 @@ Oma\tMle\t0"""
     df.columns = ["seq1", "seq2", "score"]
 
     mcl = helpers.MarkovClustering(df, 2)
-    df1 = mcl.sub_state_dfs[0]
-    df2 = mcl.sub_state_dfs[0].copy()
+    df1 = pd.DataFrame(mcl.trans_matrix)
+    df2 = df1.copy()
     assert helpers.MarkovClustering.compare(df1, df2) == 0
 
     df2[0][0] = 1

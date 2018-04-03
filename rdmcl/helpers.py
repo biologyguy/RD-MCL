@@ -425,7 +425,6 @@ class MarkovClustering(object):
             self.name_order_indx[indx] = seq_id
 
         self.trans_matrix = self._df_to_transition_matrix()
-        self.sub_state_dfs = [pd.DataFrame(self.trans_matrix)]
         self.clusters = []
 
     @staticmethod
@@ -468,31 +467,66 @@ class MarkovClustering(object):
 
     def mcl_step(self):
         # Expand
-        # ToDo: There is an issue here, with simulated data the next command dies quietly
-        self.trans_matrix = self.trans_matrix.dot(self.trans_matrix)
+        self.trans_matrix = np.matmul(self.trans_matrix, self.trans_matrix)
         # Inflate
         self.trans_matrix = self.trans_matrix ** self.inflation
         # Re-normalize
         self.trans_matrix = self.normalize(self.trans_matrix)
         return
 
+    def finalize_clusters(self, df):
+        unresolved_cells = {}  # Index is the column, data is list of tuples (row indx, value)
+        not_clustered = list(self.name_order)
+        for row in df.itertuples():
+            row_indx = row[0]
+            for col_indx, cell in enumerate(row[1:]):
+                seq_name = self.name_order_indx[col_indx]
+                if cell >= 0.5 and seq_name in not_clustered:
+                    df[row_indx][col_indx] = 1
+                    del not_clustered[not_clustered.index(seq_name)]
+                    if col_indx in unresolved_cells:
+                        del unresolved_cells[col_indx]
+                elif cell > 0 and seq_name in not_clustered:
+                    unresolved_cells.setdefault(col_indx, [])
+                    cell = (row_indx, cell)
+                    unresolved_cells[col_indx].append(cell)
+        for col_indx, rows in unresolved_cells.items():
+            rows = sorted(rows, key=lambda x: x[1], reverse=True)
+            df[rows[0]][col_indx] = 1
+        return df
+
     def run(self):
+        hasher = md5()
         valve = br.SafetyValve(global_reps=1000)
+        substate_hashes = [None for _ in range(1000)]
+        last_substate = pd.DataFrame(self.trans_matrix)
+        hasher.update(self.trans_matrix)
+        substate_hashes[0] = hasher.hexdigest()
+        counter = 1
         while True:
             try:
                 valve.step()
             except RuntimeError:  # No convergence after 1000 MCL steps
-                self.clusters = [list(self.name_order)]
-                return
-            self.mcl_step()
-            self.sub_state_dfs.append(pd.DataFrame(self.trans_matrix))
-            if self.compare(self.sub_state_dfs[-2], self.sub_state_dfs[-1]) == 0:
+                substate = self.finalize_clusters(last_substate)
                 break
+            self.mcl_step()
+            substate = pd.DataFrame(self.trans_matrix)
+            hasher.update(self.trans_matrix)
+            substate_hash = hasher.hexdigest()
+            if self.compare(last_substate, substate) == 0:
+                break
+            elif substate_hash in substate_hashes:
+                substate = self.finalize_clusters(substate)
+                break
+            else:
+                substate_hashes[counter] = hasher.hexdigest()
+                last_substate = substate.copy()
+                counter += 1
 
         next_cluster = []
         not_clustered = list(self.name_order)
-        for row in self.sub_state_dfs[-1].itertuples():
-            for i, cell in enumerate(row[1:]):
+        for row in substate.itertuples(index=False):
+            for i, cell in enumerate(row):
                 if cell != 0 and self.name_order_indx[i] in not_clustered:
                     next_cluster.append(self.name_order_indx[i])
                     del not_clustered[not_clustered.index(self.name_order_indx[i])]
