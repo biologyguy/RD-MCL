@@ -465,6 +465,19 @@ class MarkovClustering(object):
         tran_mat = self.normalize(tran_mat)
         return tran_mat
 
+    @staticmethod
+    def finalize_transition_matrix(df):
+        df = df.T
+        for row in df.itertuples():
+            row_indx = row[0]
+            cells = sorted([(indx, value) for indx, value in enumerate(row[1:])], key=lambda x: x[1], reverse=True)
+            if cells[0][1] != 1:
+                df[cells[0][0]][row_indx] = 1.
+                for col_indx, value in cells[1:]:
+                    df[col_indx][row_indx] = 0.
+        df = df.T
+        return df
+
     def mcl_step(self):
         # Expand
         self.trans_matrix = np.matmul(self.trans_matrix, self.trans_matrix)
@@ -473,27 +486,6 @@ class MarkovClustering(object):
         # Re-normalize
         self.trans_matrix = self.normalize(self.trans_matrix)
         return
-
-    def finalize_clusters(self, df):
-        unresolved_cells = {}  # Index is the column, data is list of tuples (row indx, value)
-        not_clustered = list(self.name_order)
-        for row in df.itertuples():
-            row_indx = row[0]
-            for col_indx, cell in enumerate(row[1:]):
-                seq_name = self.name_order_indx[col_indx]
-                if cell >= 0.5 and seq_name in not_clustered:
-                    df[row_indx][col_indx] = 1
-                    del not_clustered[not_clustered.index(seq_name)]
-                    if col_indx in unresolved_cells:
-                        del unresolved_cells[col_indx]
-                elif cell > 0 and seq_name in not_clustered:
-                    unresolved_cells.setdefault(col_indx, [])
-                    cell = (row_indx, cell)
-                    unresolved_cells[col_indx].append(cell)
-        for col_indx, rows in unresolved_cells.items():
-            rows = sorted(rows, key=lambda x: x[1], reverse=True)
-            df[rows[0]][col_indx] = 1
-        return df
 
     def run(self):
         hasher = md5()
@@ -507,7 +499,7 @@ class MarkovClustering(object):
             try:
                 valve.step()
             except RuntimeError:  # No convergence after 1000 MCL steps
-                substate = self.finalize_clusters(last_substate)
+                substate = self.finalize_transition_matrix(last_substate)
                 break
             self.mcl_step()
             substate = pd.DataFrame(self.trans_matrix)
@@ -516,7 +508,7 @@ class MarkovClustering(object):
             if self.compare(last_substate, substate) == 0:
                 break
             elif substate_hash in substate_hashes:
-                substate = self.finalize_clusters(substate)
+                substate = self.finalize_transition_matrix(substate)
                 break
             else:
                 substate_hashes[counter] = hasher.hexdigest()

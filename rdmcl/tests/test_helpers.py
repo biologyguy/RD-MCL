@@ -420,6 +420,35 @@ Oma\tMle\t0"""
     assert "The provided dataframe is not a symmetric graph" in str(err)
 
 
+def test_markov_clustering_finalize_transition_matrix():
+    mtrx = [[1., 0., 1., 0.],
+            [0., 0.3, 0., 0.],
+            [0., 0.3, 0., 1.],
+            [0., 0.4, 0., 0.]]
+
+    new_df = pd.DataFrame(mtrx)
+    new_df = helpers.MarkovClustering.finalize_transition_matrix(new_df)
+    assert str(new_df) == """\
+     0    1    2    3
+0  1.0  0.0  1.0  0.0
+1  0.0  0.0  0.0  0.0
+2  0.0  0.0  0.0  1.0
+3  0.0  1.0  0.0  0.0""", print(new_df)
+
+    mtrx = [[1., 0., 1., 0.],
+            [0., 0.2, 0., 0.],
+            [0., 0.5, 0., 1.],
+            [0., 0.3, 0., 0.]]
+    new_df = pd.DataFrame(mtrx)
+    new_df = helpers.MarkovClustering.finalize_transition_matrix(new_df)
+    assert str(new_df) == """\
+     0    1    2    3
+0  1.0  0.0  1.0  0.0
+1  0.0  0.0  0.0  0.0
+2  0.0  1.0  0.0  1.0
+3  0.0  0.0  0.0  0.0""", print(new_df)
+
+
 def test_markov_clustering_mcl_step():
     data = """\
 Bab\tCfu\t1
