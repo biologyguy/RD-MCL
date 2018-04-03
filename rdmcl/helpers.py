@@ -447,7 +447,7 @@ class MarkovClustering(object):
         if not size.is_integer():
             raise ValueError("The provided dataframe is not a symmetric graph")
         size = int(size)
-        tran_mat = np.zeros([size, size])
+        tran_mat = np.zeros([size, size], dtype="float32")
 
         for indx1, seq1, seq2, score in self.dataframe[["seq1", "seq2", "score"]].itertuples():
             seq1_indx = self.name_order[seq1]
@@ -488,32 +488,23 @@ class MarkovClustering(object):
         return
 
     def run(self):
-        hasher = md5()
         valve = br.SafetyValve(global_reps=1000)
-        substate_hashes = [None for _ in range(1000)]
         last_substate = pd.DataFrame(self.trans_matrix)
-        hasher.update(self.trans_matrix)
-        substate_hashes[0] = hasher.hexdigest()
-        counter = 1
         while True:
             try:
                 valve.step()
             except RuntimeError:  # No convergence after 1000 MCL steps
-                substate = self.finalize_transition_matrix(last_substate)
+                substate = pd.DataFrame(self.trans_matrix)
                 break
             self.mcl_step()
             substate = pd.DataFrame(self.trans_matrix)
-            hasher.update(self.trans_matrix)
-            substate_hash = hasher.hexdigest()
             if self.compare(last_substate, substate) == 0:
                 break
-            elif substate_hash in substate_hashes:
-                substate = self.finalize_transition_matrix(substate)
-                break
             else:
-                substate_hashes[counter] = hasher.hexdigest()
                 last_substate = substate.copy()
-                counter += 1
+
+        if len(np.where(np.logical_and(self.trans_matrix > 0., self.trans_matrix < 1.))[0]):
+            substate = self.finalize_transition_matrix(last_substate)
 
         next_cluster = []
         not_clustered = list(self.name_order)

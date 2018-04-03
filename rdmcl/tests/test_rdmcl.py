@@ -693,15 +693,14 @@ def test_orthogroup_caller(hf):
                                           psi_pred_ss2_dfs, steps=steps, r_seed=r_seed)
 
     expected = [['BOL-PanxαF', 'Lcr-PanxαI', 'Mle-Panxα4', 'Vpa-PanxαA'],
+                ['BOL-PanxαC', 'Lcr-PanxαE', 'Mle-Panxα6', 'Vpa-PanxαC'],
                 ['Lcr-PanxαA', 'Mle-Panxα5', 'Vpa-PanxαF'],
                 ['BOL-PanxαD', 'Lcr-PanxαD', 'Mle-Panxα2'],
-                ['BOL-PanxαC', 'Lcr-PanxαE', 'Mle-Panxα6'],
                 ['Lcr-PanxαK', 'Mle-Panxα7A'],
                 ['Lcr-PanxαH', 'Mle-Panxα10A'],
                 ['Lcr-PanxαB', 'Mle-Panxα1'],
                 ['BOL-PanxαH', 'Mle-Panxα8'],
-                ['BOL-PanxαG', 'Lcr-PanxαF'],
-                ['Vpa-PanxαC']]
+                ['BOL-PanxαG', 'Lcr-PanxαF']]
 
     orthogroup_seqs = [sorted(clust.seq_ids) for clust in orthogroups]
     assert sorted(cluster.seq_ids) in orthogroup_seqs
