@@ -2157,7 +2157,8 @@ class Seqs2Clusters(object):
             # Place any new orphans into new groups
             clusts_needing_update = []
             for seq_id in new_groups["orphans"]:
-                sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
+                sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
+                                          dtype={"seq1": "category", "seq2": "category"})
                 parent = None
                 for clust in copy_clusters:
                     if seq_id in clust.seq_ids:
