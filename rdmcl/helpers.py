@@ -514,7 +514,7 @@ class MarkovClustering(object):
                     if value == 0.:
                         break
         self.trans_matrix = self.trans_matrix.T
-        return self.trans_matrix
+        return
 
     def mcl_step(self):
         # Expand

@@ -13,6 +13,7 @@ from multiprocessing.queues import SimpleQueue
 from multiprocessing import Pipe, Process
 from Bio.SubsMat import SeqMat, MatrixInfo
 from io import StringIO
+from types import SimpleNamespace
 
 pd.set_option('expand_frame_repr', False)
 
@@ -72,7 +73,8 @@ def test_exclusiveconnect(monkeypatch):
         def __init__(self):
             self.next_err = self.error_loop()
 
-        def error_loop(self):
+        @staticmethod
+        def error_loop():
             _errors = [sqlite3.OperationalError("database is locked"), sqlite3.OperationalError("Not expected")]
             for _err in _errors:
                 yield _err
@@ -354,10 +356,11 @@ Oma\tMle\t0"""
     assert mcl.edge_sim_threshold == 0.6
     assert sorted(list(mcl.name_order)) == ['Bab', "Cfu", "Mle", "Oma"]
     assert sorted(list(mcl.name_order_indx)) == [0, 1, 2, 3]
-    expected = np.array([[0.333333343267, 0.333333343267, 0., 0.333333343267],
-                         [0.333333343267, 0.333333343267, 0., 0.333333343267],
-                         [0.,         0.,         0., 0.],
-                         [0.333333343267, 0.333333343267, 0., 0.333333343267]], dtype="float32")
+    expected = np.matrix([[0.333333343267, 0.333333343267, 0., 0.333333343267],
+                          [0.333333343267, 0.333333343267, 0., 0.333333343267],
+                          [0.,         0.,         0., 0.],
+                          [0.333333343267, 0.333333343267, 0., 0.333333343267]],
+                         dtype=str(mcl.trans_matrix.dtype))
     assert np.array_equal(mcl.trans_matrix, expected), print(mcl.trans_matrix)
     assert mcl.clusters == []
 
@@ -412,7 +415,8 @@ Oma\tMle\t0"""
     expected = np.array([[0.333333343267, 0.333333343267, 0., 0.333333343267],
                          [0.333333343267, 0.333333343267, 0., 0.333333343267],
                          [0., 0., 0., 0.],
-                         [0.333333343267, 0.333333343267, 0., 0.333333343267]], dtype="float32")
+                         [0.333333343267, 0.333333343267, 0., 0.333333343267]],
+                        dtype=str(mcl.trans_matrix.dtype))
     assert np.array_equal(mcl._df_to_transition_matrix(), expected), print(mcl._df_to_transition_matrix())
 
     mcl.dataframe = mcl.dataframe.ix[1:, :]
@@ -422,33 +426,42 @@ Oma\tMle\t0"""
 
 
 def test_markov_clustering_finalize_transition_matrix():
-    return
-    mtrx = [[1., 0., 1., 0.],
-            [0., 0.3, 0., 0.],
-            [0., 0.3, 0., 1.],
-            [0., 0.4, 0., 0.]]
+    mtrx = np.array([[1., 0., 1., 0.],
+                     [0., 0.3, 0., 0.],
+                     [0., 0.3, 0., 1.],
+                     [0., 0.4, 0., 0.]])
 
-    new_df = pd.DataFrame(mtrx)
-    new_df = helpers.MarkovClustering.finalize_transition_matrix(new_df)
-    assert str(new_df) == """\
-     0    1    2    3
-0  1.0  0.0  1.0  0.0
-1  0.0  0.0  0.0  0.0
-2  0.0  0.0  0.0  1.0
-3  0.0  1.0  0.0  0.0""", print(new_df)
+    mcl_obj = SimpleNamespace(trans_matrix=mtrx)
+    helpers.MarkovClustering.finalize_transition_matrix(mcl_obj)
+    expected = np.array([[1., 0., 1., 0.],
+                         [0., 0., 0., 0.],
+                         [0., 0., 0., 1.],
+                         [0., 1., 0., 0.]])
+    assert np.array_equal(mcl_obj.trans_matrix, expected), print(mcl_obj.trans_matrix)
 
-    mtrx = [[1., 0., 1., 0.],
-            [0., 0.2, 0., 0.],
-            [0., 0.5, 0., 1.],
-            [0., 0.3, 0., 0.]]
-    new_df = pd.DataFrame(mtrx)
-    new_df = helpers.MarkovClustering.finalize_transition_matrix(new_df)
-    assert str(new_df) == """\
-     0    1    2    3
-0  1.0  0.0  1.0  0.0
-1  0.0  0.0  0.0  0.0
-2  0.0  1.0  0.0  1.0
-3  0.0  0.0  0.0  0.0""", print(new_df)
+    mtrx = np.array([[1., 0., 1., 0.],
+                     [0., 0.2, 0., 0.],
+                     [0., 0.5, 0., 1.],
+                     [0., 0.3, 0., 0.]])
+    mcl_obj = SimpleNamespace(trans_matrix=mtrx)
+    helpers.MarkovClustering.finalize_transition_matrix(mcl_obj)
+    expected = np.array([[1., 0., 1., 0.],
+                         [0., 0., 0., 0.],
+                         [0., 1., 0., 1.],
+                         [0., 0., 0., 0.]])
+    assert np.array_equal(mcl_obj.trans_matrix, expected), print(mcl_obj.trans_matrix)
+
+    mtrx = np.array([[0.5, 0.5, 0., 0.],
+                     [0.5, 0.5, 0., 0.],
+                     [0., 0., 0.5, 0.5],
+                     [0., 0., 0.5, 0.5]])
+    mcl_obj = SimpleNamespace(trans_matrix=mtrx)
+    helpers.MarkovClustering.finalize_transition_matrix(mcl_obj)
+    expected = np.array([[1., 1., 0., 0.],
+                         [0., 0., 0., 0.],
+                         [0., 0., 1., 1.],
+                         [0., 0., 0., 0.]])
+    assert np.array_equal(mcl_obj.trans_matrix, expected), print(mcl_obj.trans_matrix)
 
 
 def test_markov_clustering_mcl_step():
@@ -467,28 +480,32 @@ Oma\tMle\t0"""
     expected = np.array([[0.325268805027, 0.197712421417, 0.050000000745, 0.325268805027],
                          [0.325268805027, 0.472222208977, 0.449999988079, 0.325268805027],
                          [0.024193543941, 0.132352933288, 0.449999988079, 0.024193543941],
-                         [0.325268805027, 0.197712421417, 0.050000000745, 0.325268805027]], dtype="float32")
+                         [0.325268805027, 0.197712421417, 0.050000000745, 0.325268805027]],
+                        dtype=str(mcl.trans_matrix.dtype))
     assert np.array_equal(mcl.trans_matrix, expected), print(mcl.trans_matrix)
 
     mcl.mcl_step()
     expected = np.array([[0.256081074476, 0.179641351104, 0.066523268819, 0.256081074476],
                          [0.47164902091, 0.581160783768, 0.642542898655, 0.47164902091],
                          [0.016188764945, 0.059556555003, 0.224410638213, 0.016188764945],
-                         [0.256081074476, 0.179641351104, 0.066523268819, 0.256081074476]], dtype="float32")
+                         [0.256081074476, 0.179641351104, 0.066523268819, 0.256081074476]],
+                        dtype=str(mcl.trans_matrix.dtype))
     assert np.array_equal(mcl.trans_matrix, expected), print(mcl.trans_matrix)
 
     mcl.mcl_step()
     expected = np.array([[0.1263697, 0.1054491, 0.067736246, 0.1263697],
                          [0.7429621, 0.78150123, 0.84387976, 0.7429621],
                          [0.0042984216, 0.0076005417, 0.020647783, 0.0042984216],
-                         [0.1263697, 0.1054491, 0.067736246, 0.1263697]], dtype="float32")
+                         [0.1263697, 0.1054491, 0.067736246, 0.1263697]],
+                        dtype=str(mcl.trans_matrix.dtype))
     assert np.array_equal(mcl.trans_matrix, expected), print(mcl.trans_matrix)
 
     mcl.mcl_step()
     expected = np.array([[1.9703692e-02, 1.9275241e-02, 1.8409636e-02, 1.9703692e-02],
                          [9.6051764e-01, 9.6137083e-01, 9.6309304e-01, 9.6051764e-01],
                          [7.5001088e-05, 7.8738136e-05, 8.7761167e-05, 7.5001088e-05],
-                         [1.9703692e-02, 1.9275241e-02, 1.8409636e-02, 1.9703692e-02]], dtype="float32")
+                         [1.9703692e-02, 1.9275241e-02, 1.8409636e-02, 1.9703692e-02]],
+                        dtype=str(mcl.trans_matrix.dtype))
     assert np.array_equal(mcl.trans_matrix, expected), print(mcl.trans_matrix)
 
 
