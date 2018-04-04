@@ -428,8 +428,8 @@ class MarkovClustering(object):
         self.clusters = []
 
     @staticmethod
-    def compare(df1, df2):
-        dif = df1 - df2
+    def compare(np1, np2):
+        dif = np1 - np2
         dif **= 2
         return dif.sum().sum()
 
@@ -465,18 +465,36 @@ class MarkovClustering(object):
         tran_mat = self.normalize(tran_mat)
         return tran_mat
 
-    @staticmethod
-    def finalize_transition_matrix(df):
-        df = df.T
-        for row in df.itertuples():
-            row_indx = row[0]
-            cells = sorted([(indx, value) for indx, value in enumerate(row[1:])], key=lambda x: x[1], reverse=True)
+    def finalize_transition_matrix(self):
+        """
+        The transition matrix needs to be reduced to 0s and 1s, with the 1s being read from each row to signify a
+        cluster.
+        Each column sums to 1.0, and only one sequence per column can be set to the member of that particular cluster,
+        so transpose the transition matrix so columns become rows, then find the max score in the row. If the score is
+        1.0, then you can just move on to the next row, otherwise, record the max value and the column index to compare
+        against later rows, and set the remaining cells to 0. When another row has the same max value other than 1.0 in
+        a particular column, then that value is also changed to 1, for inclusion in the group.
+        The transition matrix is modified in place, and transposed back to normal before the method returns.
+        :return: None
+        """
+        self.trans_matrix = self.trans_matrix.T
+        finished_columns = {}
+        for row_indx, row in enumerate(self.trans_matrix):
+            cells = sorted([(col_indx, value) for col_indx, value in enumerate(row)], key=lambda x: (x[1], -x[0]),
+                           reverse=True)
             if cells[0][1] != 1:
-                df[cells[0][0]][row_indx] = 1.
+                if cells[0][0] in finished_columns:
+                    self.trans_matrix[row_indx][cells[0][0]] = 0. if cells[0][1] < finished_columns[cells[0][0]] else 1.
+                else:
+                    self.trans_matrix[row_indx][cells[0][0]] = 1.
+                    finished_columns[cells[0][0]] = cells[0][1]
+
                 for col_indx, value in cells[1:]:
-                    df[col_indx][row_indx] = 0.
-        df = df.T
-        return df
+                    self.trans_matrix[row_indx][col_indx] = 0.
+                    if value == 0.:
+                        break
+        self.trans_matrix = self.trans_matrix.T
+        return self.trans_matrix
 
     def mcl_step(self):
         # Expand
@@ -489,26 +507,24 @@ class MarkovClustering(object):
 
     def run(self):
         valve = br.SafetyValve(global_reps=1000)
-        last_substate = pd.DataFrame(self.trans_matrix)
+        last_substate = self.trans_matrix.copy()
         while True:
             try:
                 valve.step()
             except RuntimeError:  # No convergence after 1000 MCL steps
-                substate = pd.DataFrame(self.trans_matrix)
                 break
             self.mcl_step()
-            substate = pd.DataFrame(self.trans_matrix)
-            if self.compare(last_substate, substate) == 0:
+            if self.compare(last_substate, self.trans_matrix) == 0:
                 break
             else:
-                last_substate = substate.copy()
+                last_substate = self.trans_matrix.copy()
 
         if len(np.where(np.logical_and(self.trans_matrix > 0., self.trans_matrix < 1.))[0]):
-            substate = self.finalize_transition_matrix(last_substate)
+            self.finalize_transition_matrix()
 
         next_cluster = []
         not_clustered = list(self.name_order)
-        for row in substate.itertuples(index=False):
+        for row in self.trans_matrix:
             for i, cell in enumerate(row):
                 if cell != 0 and self.name_order_indx[i] in not_clustered:
                     next_cluster.append(self.name_order_indx[i])
