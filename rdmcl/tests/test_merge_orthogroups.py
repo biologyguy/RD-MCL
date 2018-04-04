@@ -29,7 +29,7 @@ def mock_index_error(*args, **kwargs):
     raise IndexError(args, kwargs)
 
 
-def mock_prepare_between_group_r2_df(force):
+def mock_prepare_between_group_r2_df(*_, **__):
     prep_between_r2_data = {"seq1": ["BOL-PanxαC", "BOL-PanxαC", "Bab-PanxαB", "Bab-PanxαB", "Bab-PanxαB"],
                             "seq2": ["BOL-PanxαA", "Dgl-PanxαE", "BOL-PanxαC", "Bab-PanxαD", "Bch-PanxαE"],
                             "r_square": [0.550504, 0.520893, 0.555286, 0.565252, 0.566482]}
@@ -37,7 +37,7 @@ def mock_prepare_between_group_r2_df(force):
     return prep_between_r2_df
 
 
-def mock_prepare_within_group_r2_df(force):
+def mock_prepare_within_group_r2_df(*_, **__):
     prep_within_r2_data = {"seq1": ["BOL-PanxαC", "BOL-PanxαC", "Bab-PanxαD", "Bab-PanxαD", "Bab-PanxαD"],
                            "seq2": ["Dgl-PanxαG", "Hca-PanxαH", "BOL-PanxαC", "Bch-PanxαE", "Bfo-PanxαD"],
                            "r_square": [0.997720, 0.992786, 0.995777, 0.995940, 0.995856]}
@@ -66,7 +66,7 @@ def test_check_init(hf, monkeypatch):
                             ('group_0_30', ['Bfo-PanxαA'])])
 
     taxa = OrderedDict([('BOL', ['BOL-PanxαC', 'BOL-PanxαA', 'BOL-PanxαB', 'BOL-PanxαD', 'BOL-PanxαH']),
-                        ('Bab', ['Bab-PanxαD', 'Bab-PanxαB', 'Bab-PanxαC','Bab-PanxαA', 'Bab-PanxαE']),
+                        ('Bab', ['Bab-PanxαD', 'Bab-PanxαB', 'Bab-PanxαC', 'Bab-PanxαA', 'Bab-PanxαE']),
                         ('Bch', ['Bch-PanxαE', 'Bch-PanxαC', 'Bch-PanxαD', 'Bch-PanxαA']),
                         ('Bfo', ['Bfo-PanxαD', 'Bfo-PanxαB', 'Bfo-PanxαC', 'Bfo-PanxαE', 'Bfo-PanxαI', 'Bfo-PanxαG',
                                  'Bfo-PanxαA']),
@@ -151,6 +151,7 @@ def test_check_init(hf, monkeypatch):
     assert type(check.btw_group_fwd_dist) is scipy.stats.kde.gaussian_kde
 
 
+# noinspection PyCallByClass
 def test_prepare_within_group_r2_df(capsys, hf):
     clusters = OrderedDict([('group_0_1', ['BOL-PanxαC', 'Bab-PanxαD', 'Bch-PanxαE', 'Bfo-PanxαD', 'Bfr-PanxαC',
                                            'Cfu-PanxαC', 'Dgl-PanxαG', 'Edu-PanxαB', 'Hca-PanxαH']),
@@ -172,7 +173,7 @@ def test_prepare_within_group_r2_df(capsys, hf):
                             ('group_0_30', ['Bfo-PanxαA'])])
 
     test_dir = br.TempDir()
-    subdir = test_dir.subdir("hmm")
+    test_dir.subdir("hmm")
     r_squares = pd.read_csv(join(hf.resource_path, "rsquares_matrix.csv"))
 
     # File "within_group_rsquares.csv" already exists
@@ -208,6 +209,7 @@ def test_prepare_within_group_r2_df(capsys, hf):
     assert os.path.isfile(join(test_dir.path, "hmm", "within_group_rsquares.csv")) is True
 
 
+# noinspection PyCallByClass
 def test_prepare_within_group_fwd_df(capsys, hf):
     clusters = OrderedDict([('group_0_1', ['BOL-PanxαC', 'Bab-PanxαD', 'Bch-PanxαE', 'Bfo-PanxαD', 'Bfr-PanxαC',
                                            'Cfu-PanxαC', 'Dgl-PanxαG', 'Edu-PanxαB', 'Hca-PanxαH']),
@@ -262,6 +264,7 @@ def test_prepare_within_group_fwd_df(capsys, hf):
     assert merge['fwd_raw'].sum() == 177372.9229
 
 
+# noinspection PyCallByClass
 def test_prepare_between_group_r2_df(capsys, hf):
     clusters = OrderedDict([('group_0_1', ['BOL-PanxαC', 'Bab-PanxαD', 'Bch-PanxαE', 'Bfo-PanxαD', 'Bfr-PanxαC',
                                            'Cfu-PanxαC', 'Dgl-PanxαG', 'Edu-PanxαB', 'Hca-PanxαH']),
@@ -315,6 +318,7 @@ def test_prepare_between_group_r2_df(capsys, hf):
     assert merge['r_square'].sum() == 250.82666010791604
 
 
+# noinspection PyCallByClass
 def test_prepare_between_group_fwd_df(capsys, hf):
     clusters = OrderedDict([('group_0_1', ['BOL-PanxαC', 'Bab-PanxαD', 'Bch-PanxαE', 'Bfo-PanxαD', 'Bfr-PanxαC',
                                            'Cfu-PanxαC', 'Dgl-PanxαG', 'Edu-PanxαB', 'Hca-PanxαH']),
@@ -370,7 +374,8 @@ def test_prepare_between_group_fwd_df(capsys, hf):
     assert merge['fwd_raw'].sum() == 384849.17520000006
 
 
-def test_check_existing_group(capsys, hf, monkeypatch):
+# noinspection PyCallByClass
+def test_check_existing_group(hf):
     clusters = OrderedDict([('group_0_1', ['BOL-PanxαC', 'Bab-PanxαD', 'Bch-PanxαE', 'Bfo-PanxαD', 'Bfr-PanxαC',
                                            'Cfu-PanxαC', 'Dgl-PanxαG', 'Edu-PanxαB', 'Hca-PanxαH']),
                             ('group_0_3', ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE',
@@ -399,18 +404,19 @@ def test_check_existing_group(capsys, hf, monkeypatch):
 
     # Make master_clust
     taxa = OrderedDict([('BOL', ['BOL-PanxαC', 'BOL-PanxαA', 'BOL-PanxαB', 'BOL-PanxαD', 'BOL-PanxαH']),
-                 ('Bab', ['Bab-PanxαD', 'Bab-PanxαB', 'Bab-PanxαC', 'Bab-PanxαA', 'Bab-PanxαE']),
-                 ('Bch', ['Bch-PanxαE', 'Bch-PanxαC', 'Bch-PanxαD', 'Bch-PanxαA']), ('Bfo', ['Bfo-PanxαD', 'Bfo-PanxαB',
-                                                                                             'Bfo-PanxαC', 'Bfo-PanxαE',
-                                                                                             'Bfo-PanxαI', 'Bfo-PanxαG',
-                                                                                             'Bfo-PanxαA']),
-                 ('Bfr', ['Bfr-PanxαC', 'Bfr-PanxαB', 'Bfr-PanxαA']),
-                 ('Cfu', ['Cfu-PanxαC', 'Cfu-PanxαA', 'Cfu-PanxαD', 'Cfu-PanxαF', 'Cfu-PanxαB']),
-                 ('Dgl', ['Dgl-PanxαG', 'Dgl-PanxαE', 'Dgl-PanxαI', 'Dgl-PanxαD', 'Dgl-PanxαH', 'Dgl-PanxαA']),
-                 ('Edu', ['Edu-PanxαB', 'Edu-PanxαA', 'Edu-PanxαE', 'Edu-PanxαC', 'Edu-PanxαI', 'Edu-PanxαD']),
-                 ('Hca', ['Hca-PanxαH', 'Hca-PanxαB']), ('Hru', ['Hru-PanxαA', 'Hru-PanxαC']), ('Lcr', ['Lcr-PanxαH']),
-                 ('Hvu',
-                  ['Hvu-PanxβA', 'Hvu-PanxβB', 'Hvu-PanxβC', 'Hvu-PanxβD', 'Hvu-PanxβE', 'Hvu-PanxβF', 'Hvu-PanxβG'])])
+                        ('Bab', ['Bab-PanxαD', 'Bab-PanxαB', 'Bab-PanxαC', 'Bab-PanxαA', 'Bab-PanxαE']),
+                        ('Bch', ['Bch-PanxαE', 'Bch-PanxαC', 'Bch-PanxαD', 'Bch-PanxαA']),
+                        ('Bfo', ['Bfo-PanxαD', 'Bfo-PanxαB', 'Bfo-PanxαC',
+                                 'Bfo-PanxαE', 'Bfo-PanxαI', 'Bfo-PanxαG', 'Bfo-PanxαA']),
+                        ('Bfr', ['Bfr-PanxαC', 'Bfr-PanxαB', 'Bfr-PanxαA']),
+                        ('Cfu', ['Cfu-PanxαC', 'Cfu-PanxαA', 'Cfu-PanxαD', 'Cfu-PanxαF', 'Cfu-PanxαB']),
+                        ('Dgl', ['Dgl-PanxαG', 'Dgl-PanxαE', 'Dgl-PanxαI', 'Dgl-PanxαD', 'Dgl-PanxαH', 'Dgl-PanxαA']),
+                        ('Edu', ['Edu-PanxαB', 'Edu-PanxαA', 'Edu-PanxαE', 'Edu-PanxαC', 'Edu-PanxαI', 'Edu-PanxαD']),
+                        ('Hca', ['Hca-PanxαH', 'Hca-PanxαB']),
+                        ('Hru', ['Hru-PanxαA', 'Hru-PanxαC']),
+                        ('Lcr', ['Lcr-PanxαH']),
+                        ('Hvu', ['Hvu-PanxβA', 'Hvu-PanxβB', 'Hvu-PanxβC', 'Hvu-PanxβD',
+                                 'Hvu-PanxβE', 'Hvu-PanxβF', 'Hvu-PanxβG'])])
 
     seq_ids = ['BOL-PanxαA', 'BOL-PanxαB', 'BOL-PanxαC', 'BOL-PanxαD', 'BOL-PanxαH', 'Bab-PanxαA', 'Bab-PanxαB',
                'Bab-PanxαC', 'Bab-PanxαD', 'Bab-PanxαE', 'Bch-PanxαA', 'Bch-PanxαC', 'Bch-PanxαD', 'Bch-PanxαE',
@@ -428,15 +434,15 @@ def test_check_existing_group(capsys, hf, monkeypatch):
     upper = 1
     within_mu = 0.857553329071
     within_sigma = 0.191460697119
-    between_mu = 0.255164455857
+    btwn_mu = 0.255164455857
     between_sigma = 0.171689140429
     within_group_r2_dist = scipy.stats.truncnorm((lower - within_mu) / within_sigma, (upper - within_mu) / within_sigma,
-                                           loc=within_mu, scale=within_sigma)
-    btw_group_r2_dist = scipy.stats.truncnorm((lower - between_mu) / between_sigma, (upper - between_mu) / between_sigma,
-                                        loc=between_mu, scale=between_sigma)
+                                                 loc=within_mu, scale=within_sigma)
+    btw_group_r2_dist = scipy.stats.truncnorm((lower - btwn_mu) / between_sigma, (upper - btwn_mu) / between_sigma,
+                                              loc=btwn_mu, scale=between_sigma)
     check = SimpleNamespace(clusters=clusters, r_squares=r_squares, master_clust=master_clust,
                             within_group_r2_dist=within_group_r2_dist, btw_group_r2_dist=btw_group_r2_dist)
-    merge = merge_orthogroups.Check.check_existing_group(check, group_name=group_name1)
+    merge_orthogroups.Check.check_existing_group(check, group_name=group_name1)
     assert check.output == [['group_0_7', 0.022800000000000001, 0.096000000000000002, 6.319, 7.083],
                             ['group_0_18', 0.00020000000000000001, 0.090700000000000003, 9.93, 7.922],
                             ['group_0_20', 0.0, 0.0, 5.056, 5.444], ['group_0_23', 0.0, 0.0, 5.056, 5.444],
@@ -453,10 +459,11 @@ def test_check_existing_group(capsys, hf, monkeypatch):
                             master_clust=master_clust,
                             within_group_r2_dist=within_group_r2_dist, btw_group_r2_dist=btw_group_r2_dist)
     with pytest.raises(IndexError) as err:
-        merge = merge_orthogroups.Check.check_existing_group(check, group_name=group_name2)
+        merge_orthogroups.Check.check_existing_group(check, group_name=group_name2)
     assert "Provided group name 'group_X' not found in named clusters: group_0_0" in str(err)
 
 
+# noinspection PyCallByClass
 def test_merge(capsys, hf, monkeypatch):
     clusters = OrderedDict([('group_0_1', ['BOL-PanxαC', 'Bab-PanxαD', 'Bch-PanxαE', 'Bfo-PanxαD', 'Bfr-PanxαC',
                                            'Cfu-PanxαC', 'Dgl-PanxαG', 'Edu-PanxαB', 'Hca-PanxαH']),
@@ -478,20 +485,20 @@ def test_merge(capsys, hf, monkeypatch):
                             ('group_0_30', ['Bfo-PanxαA'])])
 
     output = [['group_0_7', 0.022800000000000001, 0.096000000000000002, 6.319, 7.083],
-                            ['group_0_18', 0.00020000000000000001, 0.090700000000000003, 9.93, 7.922],
-                            ['group_0_20', 0.0, 0.0, 5.056, 5.444], ['group_0_23', 0.0, 0.0, 5.056, 5.444],
-                            ['group_0_26', 0.0, 0.0, 5.308, 5.717], ['group_0_30', 0.0, 0.0, 4.875, 5.25],
-                            ['group_0_5', 0.0, 0.0018, 10.414, 11.994],
-                            ['group_0_1', 0.0, 0.0025000000000000001, 30.246, 34.131],
-                            ['group_0_2', 0.0, 0.0041000000000000003, 19.968, 22.861],
-                            ['group_0_6', 0.0, 0.019099999999999999, 8.458, 9.644],
-                            ['group_0_3', 0.0, 0.019300000000000001, 42.087, 38.53],
-                            ['group_0_0', 0.0, 0.031199999999999999, 15.202, 17.262]]
+              ['group_0_18', 0.00020000000000000001, 0.090700000000000003, 9.93, 7.922],
+              ['group_0_20', 0.0, 0.0, 5.056, 5.444], ['group_0_23', 0.0, 0.0, 5.056, 5.444],
+              ['group_0_26', 0.0, 0.0, 5.308, 5.717], ['group_0_30', 0.0, 0.0, 4.875, 5.25],
+              ['group_0_5', 0.0, 0.0018, 10.414, 11.994],
+              ['group_0_1', 0.0, 0.0025000000000000001, 30.246, 34.131],
+              ['group_0_2', 0.0, 0.0041000000000000003, 19.968, 22.861],
+              ['group_0_6', 0.0, 0.019099999999999999, 8.458, 9.644],
+              ['group_0_3', 0.0, 0.019300000000000001, 42.087, 38.53],
+              ['group_0_0', 0.0, 0.031199999999999999, 15.202, 17.262]]
 
     test_dir = br.TempDir()
-    subdir = test_dir.subdir("hmm")
+    test_dir.subdir("hmm")
     copyfile(join(hf.resource_path, "final_clusters.txt"), join(test_dir.path, "final_clusters.txt"))
-    hmm_file = open(join(test_dir.path, "hmm", 'group_0_19'), 'w+').close()
+    open(join(test_dir.path, "hmm", 'group_0_19'), 'w+').close()
     assert os.path.isfile(join(test_dir.path, "hmm", 'group_0_19')) is True
     query_group = "group_0_19"
     merge_group_1 = "group_0_7"
@@ -501,7 +508,7 @@ def test_merge(capsys, hf, monkeypatch):
     monkeypatch.setattr(merge_orthogroups.Check, "_prepare_between_group_r2_df", lambda *_: True)
     generator = generate_user_answer()
 
-    def monkeyask(input_prompt, default="yes", timeout=0):
+    def monkeyask(input_prompt, **__):
         print(input_prompt)
         return next(generator)
     monkeypatch.setattr(br, "ask", monkeyask)
@@ -511,7 +518,7 @@ def test_merge(capsys, hf, monkeypatch):
     check = SimpleNamespace(clusters=copy(clusters), output=output, group_name=query_group, rdmcl_dir=test_dir.path,
                             _prepare_within_group_r2_df=mock_prepare_within_group_r2_df,
                             _prepare_between_group_r2_df=mock_prepare_between_group_r2_df)
-    merge = merge_orthogroups.Check.merge(check, merge_group_name=merge_group_1)
+    merge_orthogroups.Check.merge(check, merge_group_name=merge_group_1)
     out, err = capsys.readouterr()
     assert "Less than 5% of sequences within current" in out
     log_file_path = join(test_dir.path, "manual_merge.log")
@@ -541,13 +548,13 @@ def test_merge(capsys, hf, monkeypatch):
     assert "Merged!" in out
 
     #  Abort the questionable merge
-    merge = merge_orthogroups.Check.merge(check, merge_group_name=merge_group_1)
+    merge_orthogroups.Check.merge(check, merge_group_name=merge_group_1)
     out, err = capsys.readouterr()
     assert "Less than 5% of sequences within current" in out
     assert "Merge aborted!" in out
 
     #  Test when user-specified merge_group is not in output (group_0_71)
-    merge = merge_orthogroups.Check.merge(check, merge_group_name=merge_group_2)
+    merge_orthogroups.Check.merge(check, merge_group_name=merge_group_2)
     out, err = capsys.readouterr()
     assert "Error: group_0_71 is not a group that group_0_19 can be merged with.\n" in err
 
@@ -555,13 +562,13 @@ def test_merge(capsys, hf, monkeypatch):
     check = SimpleNamespace(clusters=copy(clusters), output=output, group_name=query_group, rdmcl_dir=test_dir.path,
                             _prepare_within_group_r2_df=mock_prepare_within_group_r2_df,
                             _prepare_between_group_r2_df=mock_prepare_between_group_r2_df)
-    merge = merge_orthogroups.Check.merge(check, merge_group_name=merge_group_3)
+    merge_orthogroups.Check.merge(check, merge_group_name=merge_group_3)
     out, err = capsys.readouterr()
     assert "The group that appears to be the most" in out
     assert "Merge aborted!" in out
 
     #  Merge anyway. (User says yes to warning 1, and yes again for all other warnings
-    merge = merge_orthogroups.Check.merge(check, merge_group_name=merge_group_3)
+    merge_orthogroups.Check.merge(check, merge_group_name=merge_group_3)
     out, err = capsys.readouterr()
     assert "The group that appears to be the most" in out
     assert "Less than 5% of sequences within current" in out
@@ -571,22 +578,21 @@ def test_merge(capsys, hf, monkeypatch):
     assert logfile.read() == ("%s group_0_19 -> group_0_7\n"
                               "%s group_0_19 -> group_0_3\n" % (date.today(), date.today()))
     final_clusters_file = open(join(test_dir.path, "final_clusters.txt"))
-    assert final_clusters_file.read() == \
-           "group_0_1  70.0358 BOL-PanxαC Bab-PanxαD Bch-PanxαE Bfo-PanxαD Bfr-PanxαC Cfu-PanxαC Dgl-PanxαG Edu-PanxαB " \
-           "Hca-PanxαH\n" \
-           "group_0_3	38.53	BOL-PanxαA	Bab-PanxαB	Bch-PanxαC	Bfo-PanxαB	Dgl-PanxαE	Edu-PanxαA	Hca-PanxαB	" \
-           "Hru-PanxαA	Hru-PanxαC	Lcr-PanxαH\n" \
-           "group_0_0  75.9846 Bab-PanxαC Bch-PanxαD Bfo-PanxαC Bfr-PanxαB Cfu-PanxαA Cfu-PanxαD Cfu-PanxαF\n" \
-           "group_0_18 2.0734  Hvu-PanxβA Hvu-PanxβB Hvu-PanxβC Hvu-PanxβD Hvu-PanxβE Hvu-PanxβF Hvu-PanxβG\n" \
-           "group_0_2  54.1235 BOL-PanxαB Bab-PanxαA Bch-PanxαA Bfo-PanxαE Bfr-PanxαA Dgl-PanxαI Edu-PanxαE\n" \
-           "group_0_5  20.471  BOL-PanxαD Bab-PanxαE Bfo-PanxαI Dgl-PanxαD\n" \
-           "group_0_6  13.037  BOL-PanxαH Dgl-PanxαH Edu-PanxαC\n" \
-           "group_0_7	7.083	Bfo-PanxαG	Dgl-PanxαA	Hru-PanxαC\n" \
-           "group_0_19 2.9556  Hru-PanxαC\n" \
-           "group_0_20 1.642   Edu-PanxαI\n" \
-           "group_0_23 1.642   Edu-PanxαD\n" \
-           "group_0_26 2.463   Cfu-PanxαB\n" \
-           "group_0_30 1.4778  Bfo-PanxαA"
+    assert final_clusters_file.read() == """\
+group_0_1  70.0358 BOL-PanxαC Bab-PanxαD Bch-PanxαE Bfo-PanxαD Bfr-PanxαC Cfu-PanxαC Dgl-PanxαG Edu-PanxαB Hca-PanxαH
+group_0_3	38.53	BOL-PanxαA	Bab-PanxαB	Bch-PanxαC	Bfo-PanxαB	Dgl-PanxαE	Edu-PanxαA	Hca-PanxαB	\
+Hru-PanxαA	Hru-PanxαC	Lcr-PanxαH
+group_0_0  75.9846 Bab-PanxαC Bch-PanxαD Bfo-PanxαC Bfr-PanxαB Cfu-PanxαA Cfu-PanxαD Cfu-PanxαF
+group_0_18 2.0734  Hvu-PanxβA Hvu-PanxβB Hvu-PanxβC Hvu-PanxβD Hvu-PanxβE Hvu-PanxβF Hvu-PanxβG
+group_0_2  54.1235 BOL-PanxαB Bab-PanxαA Bch-PanxαA Bfo-PanxαE Bfr-PanxαA Dgl-PanxαI Edu-PanxαE
+group_0_5  20.471  BOL-PanxαD Bab-PanxαE Bfo-PanxαI Dgl-PanxαD
+group_0_6  13.037  BOL-PanxαH Dgl-PanxαH Edu-PanxαC
+group_0_7	7.083	Bfo-PanxαG	Dgl-PanxαA	Hru-PanxαC
+group_0_19 2.9556  Hru-PanxαC
+group_0_20 1.642   Edu-PanxαI
+group_0_23 1.642   Edu-PanxαD
+group_0_26 2.463   Cfu-PanxαB
+group_0_30 1.4778  Bfo-PanxαA"""
     final_clusters_file.close()
     assert "Merged!" in out
 
@@ -594,7 +600,7 @@ def test_merge(capsys, hf, monkeypatch):
     check = SimpleNamespace(clusters=copy(clusters), output=output, group_name=query_group, rdmcl_dir=test_dir.path,
                             _prepare_within_group_r2_df=mock_prepare_within_group_r2_df,
                             _prepare_between_group_r2_df=mock_prepare_between_group_r2_df)
-    merge = merge_orthogroups.Check.merge(check, merge_group_name=merge_group_3)
+    merge_orthogroups.Check.merge(check, merge_group_name=merge_group_3)
     out, err = capsys.readouterr()
     assert "The group that appears to be the most" in out
     assert "Less than 5% of sequences within current" in out
@@ -602,7 +608,8 @@ def test_merge(capsys, hf, monkeypatch):
     assert "Merge aborted!" in out
 
 
-def test__str__(capsys):
+# noinspection PyCallByClass
+def test__str__():
     group_name = "group_0_7"
     output = [['group_0_7', 0.022800000000000001, 0.096000000000000002, 6.319, 7.083],
               ['group_0_18', 0.00020000000000000001, 0.090700000000000003, 9.93, 7.922],
@@ -617,7 +624,6 @@ def test__str__(capsys):
 
     check = SimpleNamespace(output=output, group_name=group_name)
     merge = merge_orthogroups.Check.__str__(check)
-    out, err = capsys.readouterr()
     assert merge == '\x1b[1mTesting group_0_7\x1b' \
                     '[0m\n\x1b[4mGroups      R²Within  R²Btw   OrigScore  NewScore\x1b[0m\n' \
                     'group_0_7   \x1b[91m0.0228    \x1b[91m0.096   \x1b[92m6.319      7.083\x1b[39m\n' \
@@ -670,7 +676,7 @@ def test_main(capsys, hf, monkeypatch):
     assert "Error: The provided RD-MCL output directory does not exist" in err
 
     #  Test final_clusters not found
-    argv = ['merge_orthogroups.py', test_dir.path , group_name]
+    argv = ['merge_orthogroups.py', test_dir.path, group_name]
     monkeypatch.setattr(merge_orthogroups.sys, "argv", argv)
     with pytest.raises(SystemExit):
         merge_orthogroups.main()
@@ -709,10 +715,7 @@ def test_main(capsys, hf, monkeypatch):
     check = SimpleNamespace(group_name=None, output="", rdmcl_dir="", clusters="", master_clust="", r_squares="",
                             fwd_scores="", within_group_r2_df="", within_group_r2_dist="", within_group_fwd_df="",
                             within_group_fwd_dist="", btw_group_r2_df="", btw_group_r2_dist="", btw_group_fwd_df="",
-                            btw_group_fwd_dist="", check_existing_group=lambda *_: mock_index_error(), merge=lambda *_: True)
+                            btw_group_fwd_dist="", check_existing_group=lambda *_: mock_index_error(),
+                            merge=lambda *_: True)
     with pytest.raises(IndexError):
         merge_orthogroups.main()
-    out, err = capsys.readouterr()
-
-
-
