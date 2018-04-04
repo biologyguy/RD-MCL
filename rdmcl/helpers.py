@@ -31,6 +31,26 @@ END = '\033[0m'
 np.set_printoptions(precision=12)
 pd.set_option("display.precision", 12)
 
+# Set maximum number of threads numpy can use to prevent cpu over-subscription, assuming OpenBLAS is present on system.
+import ctypes
+from ctypes.util import find_library
+try_paths = ['/opt/OpenBLAS/lib/libopenblas.so',
+             '/lib/libopenblas.so',
+             '/usr/lib/libopenblas.so.0',
+             find_library('openblas')]
+openblas_lib = None
+for libpath in try_paths:
+    try:
+        openblas_lib = ctypes.cdll.LoadLibrary(libpath)
+        break
+    except OSError:
+        continue
+if openblas_lib:
+    try:
+        openblas_lib.openblas_set_num_threads(2)
+    except AttributeError:
+        pass
+
 contributor_list = [br.Contributor("Stephen", "Bond", commits=520, github="https://github.com/biologyguy"),
                     br.Contributor("Karl", "Keat", commits=30, github="https://github.com/KarlKeat")]
 
