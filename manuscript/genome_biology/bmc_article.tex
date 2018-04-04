@@ -250,7 +250,7 @@ Blahh
 %% Background %%
 %%
 \section{Background}\label{sec:background}
-When a gene evolves an important physiological function, purifying selection tends to maintain that function through evolutionary time~\cite{Altenhoff:2012ea, KryuchkovaMostacci:2016iw, Rogozin:2014fp}.
+When a gene evolves an important physiological function, purifying selection tends to maintain that function through evolutionary time~\cite{Altenhoff:2012ea,KryuchkovaMostacci:2016iw,Rogozin:2014fp}.
 As a result, orthology (i.e., homology via speciation) has become a widely used predictor of shared gene product function among species, and considerable effort has been made to develop computational tools for identifying orthologs from genomic data.
 Due to the non-transitive nature of orthology (i.e., paralogs in one species can be orthologous to a single gene in another species), grouping pure sets of one-to-one orthologs is often not possible~\cite{Fitch:2000tf}.
 Instead, the term `orthogroup' has come to represent a cluster of genes descended from a common ancestor of the clade in question, which may include paralogs~\cite{Wapinski:2007fa}.
@@ -269,9 +269,12 @@ InParanoid~\cite{OBrien:2005cy}, EggNOG~\cite{Jensen:2007cc}, and OMA~\cite{Roth
 These methods can be fast and accurate for detecting one-to-one orthologs, but they suffer diminishing recall rates when in-paralogs are present among the species under study~\cite{Dalquen:2013fz} (`in-paralog' describes homologs derived from genetic duplication \textit{after} speciation~\cite{Sonnhammer:2002vm,Tekaia:2016ga}).
 In contrast, Markov clustering (MCL) can efficiently isolate more inclusive sub-graphs~\cite{VanDongen:kJZ890qx,Enright:2002uq}, although the trade-off is generally a reduction in precision;
 it is often difficult to separate closely related orthogroups within a given gene family.
-Indeed, the major challenge facing those wishing to analyze a defined gene family is \textit{resolution}, because the popular MCL-based ortholog prediction methods, such as OrthoMCL~\cite{Li:2003en}, OrthoFinder~\cite{Emms:2015ig}, and ProteinOrtho~\cite{Lechner:2011jk}, are targeted towards coarse-grained clustering of all protein models derived from whole-genome data.
+Indeed, the major challenge faced when analyzing a defined gene family is \textit{resolution}, because the popular MCL-based ortholog prediction methods, such as OrthoMCL~\cite{Li:2003en}, OrthoFinder~\cite{Emms:2015ig}, and ProteinOrtho~\cite{Lechner:2011jk}, are targeted towards coarse-grained clustering of all protein models derived from whole-genome data.
 While computationally efficient, these resources are not well suited for fine-grained processing of individual gene families where all input sequences are homologous.
-This leaves a gap in our ability to easily discern evolutionary patterns at this scale and has inevitably exacerbated the propagation of annotation errors in our public databases~\cite{Schnoes:2009gb}, which still relies heavily on annotation transfer following inference of homology against a limited number of reference species~\cite{Aken:2016dl, Mi:2016bw, OLeary:2016cm}.
+
+[!!!Need to address Kimmen Sjolander's work~\cite{Brown:2007dp,Krishnamurthy:2007fs}!!!]
+
+This leaves a gap in our ability to easily discern evolutionary patterns at this scale and has exacerbated the propagation of annotation errors in our public databases~\cite{Schnoes:2009gb}, which still rely heavily on annotation transfer following inference of homology against a limited number of reference species~\cite{Aken:2016dl,Mi:2016bw,OLeary:2016cm}.
 Here we present a method that overcomes these challenges, along with a suite of tools to assist with detailed downstream analysis.
 
 
@@ -279,7 +282,7 @@ Here we present a method that overcomes these challenges, along with a suite of 
 Recursive Dynamic Markov Clustering (RD-MCL) is a new pairwise similarity graph-based orthogroup prediction heuristic that achieves high precision within the context of a gene family.
 Specifically, RD-MCL significantly improves upon the BLASTP-based pairwise similarity metrics currently in popular use, applies an optimization algorithm to dynamically select MCL parameters, recursively subdivides overly inclusive orthogroups, and implements final polishing steps to maximize overall accuracy (Figure~\ref{fig:pipeline}).
 The entire workflow has been encapsulated in a single executable, which can be run from the command line and minimally requires a sequence file as input.
-Given sufficient taxonomic coverage, RD-MCL clearly reveals mis-assembled or mis-annotated sequences, as well as orthogroups that have been previously undescribed.
+Given appropriate taxonomic coverage, RD-MCL clearly reveals mis-assembled or mis-annotated sequences, as well as orthogroups that have been previously undescribed.
 Furthermore, a set of high quality orthogroups from a well-sampled taxonomic group can be leveraged to analyze sequences from clades that are less well sampled, allowing for detailed phylogenetic placement of new sequences into a gene family with greater precision than is possible with simple best-hit database queries.
 The software is open-source (https://research.nhgri.nih.gov/software/RD-MCL/) and distributed as part of a suite of tools to facilitate all of the downstream analyses reported here.
 
@@ -291,10 +294,13 @@ The software is open-source (https://research.nhgri.nih.gov/software/RD-MCL/) an
 \label{fig:pipeline}
 \end{figure*}
 
-\subsection{Overcoming BLAST-based similarity metric limitations}\label{subsec:overcomingBlast-basedSimilarityMetricLimitations}
-BLASTP scores reduce overall resolving power of MCL when sequences are too similar or too dissimilar.
-BLAST scores (bit or e-value) have a strong length bias when calculating orthogroups, but this can be corrected for by creating a linear model from the top 5\% of matches between two species and scaling all other matches according to that model~\cite{Emms:2015ig}.
+\subsection{Resolution increases when the sequence similarity metric is improved}\label{subsec:overcomingBlast-basedSimilarityMetricLimitations}
+BLAST-based similarity metrics (bit score or e-value) have a strong length bias when used to identify orthogroups, but this can be corrected for by creating a linear model from the best matches, then scaling the entire pairwise similarity graph with that model~\cite{Emms:2015ig}.
+Unfortunately,
+
 OrthoFinder also uses a static inflation/edge similarity threshold for MCL~\cite{Emms:2015ig}
+
+BLASTP scores reduce the overall resolving power of MCL when sequences are too similar or too dissimilar.
 
 Need a figure that illustrates relative information content of each metric.
 

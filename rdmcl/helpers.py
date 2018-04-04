@@ -31,6 +31,26 @@ END = '\033[0m'
 np.set_printoptions(precision=12)
 pd.set_option("display.precision", 12)
 
+# Set maximum number of threads numpy can use to prevent cpu over-subscription, assuming OpenBLAS is present on system.
+import ctypes
+from ctypes.util import find_library
+try_paths = ['/opt/OpenBLAS/lib/libopenblas.so',
+             '/lib/libopenblas.so',
+             '/usr/lib/libopenblas.so.0',
+             find_library('openblas')]
+openblas_lib = None
+for libpath in try_paths:
+    try:
+        openblas_lib = ctypes.cdll.LoadLibrary(libpath)
+        break
+    except OSError:
+        continue
+if openblas_lib:
+    try:
+        openblas_lib.openblas_set_num_threads(2)
+    except AttributeError:
+        pass
+
 contributor_list = [br.Contributor("Stephen", "Bond", commits=520, github="https://github.com/biologyguy"),
                     br.Contributor("Karl", "Keat", commits=30, github="https://github.com/KarlKeat")]
 
@@ -407,17 +427,29 @@ def chunk_list(l, num_chunks):
 # https://www.youtube.com/watch?v=574z9nisRuE around 12:00
 class MarkovClustering(object):
     def __init__(self, data, inflation, edge_sim_threshold=0.):
-        self.dataframe = data
+        """
+        Run MCL on a set if data
+        :param data: Pandas dataframe of form {"seq1", "seq2", "score"}
+        :param inflation: Inflation value
+        :param edge_sim_threshold: Make the graph sparse by removing any edges below this threshold
+        """
+        self.dataframe = data.copy()
+        self.dataframe.seq1 = self.dataframe.seq1.astype('category')
+        self.dataframe.seq2 = self.dataframe.seq2.astype('category')
         self.inflation = inflation
         self.edge_sim_threshold = edge_sim_threshold
-        self.name_order = sorted(list(set(self.dataframe.seq1.tolist() + self.dataframe.seq2.tolist())))
+        self.name_order = {}
+        self.name_order_indx = {}
+        for indx, seq_id in enumerate(sorted(list(set(self.dataframe.seq1.tolist() + self.dataframe.seq2.tolist())))):
+            self.name_order[seq_id] = indx
+            self.name_order_indx[indx] = seq_id
+
         self.trans_matrix = self._df_to_transition_matrix()
-        self.sub_state_dfs = [pd.DataFrame(self.trans_matrix)]
         self.clusters = []
 
     @staticmethod
-    def compare(df1, df2):
-        dif = df1 - df2
+    def compare(np1, np2):
+        dif = np1 - np2
         dif **= 2
         return dif.sum().sum()
 
@@ -435,12 +467,14 @@ class MarkovClustering(object):
         if not size.is_integer():
             raise ValueError("The provided dataframe is not a symmetric graph")
         size = int(size)
-        tran_mat = np.zeros([size, size])
-        for indx, row in self.dataframe.iterrows():
-            seq1 = self.name_order.index(row.seq1)
-            seq2 = self.name_order.index(row.seq2)
-            tran_mat[seq1][seq2] = row.score
-            tran_mat[seq2][seq1] = row.score
+        tran_mat = np.zeros([size, size], dtype="float32")
+
+        for indx1, seq1, seq2, score in self.dataframe[["seq1", "seq2", "score"]].itertuples():
+            seq1_indx = self.name_order[seq1]
+            seq2_indx = self.name_order[seq2]
+            tran_mat[seq1_indx][seq2_indx] = score
+            tran_mat[seq2_indx][seq1_indx] = score
+
         tran_mat[tran_mat <= self.edge_sim_threshold] = 0
 
         # This is a 'centering' step that is used by the original MCL algorithm
@@ -451,10 +485,40 @@ class MarkovClustering(object):
         tran_mat = self.normalize(tran_mat)
         return tran_mat
 
+    def finalize_transition_matrix(self):
+        """
+        The transition matrix needs to be reduced to 0s and 1s, with the 1s being read from each row to signify a
+        cluster.
+        Each column sums to 1.0, and only one sequence per column can be set to the member of that particular cluster,
+        so transpose the transition matrix so columns become rows, then find the max score in the row. If the score is
+        1.0, then you can just move on to the next row, otherwise, record the max value and the column index to compare
+        against later rows, and set the remaining cells to 0. When another row has the same max value other than 1.0 in
+        a particular column, then that value is also changed to 1, for inclusion in the group.
+        The transition matrix is modified in place, and transposed back to normal before the method returns.
+        :return: None
+        """
+        self.trans_matrix = self.trans_matrix.T
+        finished_columns = {}
+        for row_indx, row in enumerate(self.trans_matrix):
+            cells = sorted([(col_indx, value) for col_indx, value in enumerate(row)], key=lambda x: (x[1], -x[0]),
+                           reverse=True)
+            if cells[0][1] != 1:
+                if cells[0][0] in finished_columns:
+                    self.trans_matrix[row_indx][cells[0][0]] = 0. if cells[0][1] < finished_columns[cells[0][0]] else 1.
+                else:
+                    self.trans_matrix[row_indx][cells[0][0]] = 1.
+                    finished_columns[cells[0][0]] = cells[0][1]
+
+                for col_indx, value in cells[1:]:
+                    self.trans_matrix[row_indx][col_indx] = 0.
+                    if value == 0.:
+                        break
+        self.trans_matrix = self.trans_matrix.T
+        return self.trans_matrix
+
     def mcl_step(self):
         # Expand
-        # ToDo: There is an issue here, with simulated data and the next command dies quietly
-        self.trans_matrix = self.trans_matrix.dot(self.trans_matrix)
+        self.trans_matrix = np.matmul(self.trans_matrix, self.trans_matrix)
         # Inflate
         self.trans_matrix = self.trans_matrix ** self.inflation
         # Re-normalize
@@ -463,29 +527,33 @@ class MarkovClustering(object):
 
     def run(self):
         valve = br.SafetyValve(global_reps=1000)
+        last_substate = self.trans_matrix.copy()
         while True:
             try:
                 valve.step()
             except RuntimeError:  # No convergence after 1000 MCL steps
-                self.clusters = [self.name_order]
-                return
-            self.mcl_step()
-            self.sub_state_dfs.append(pd.DataFrame(self.trans_matrix))
-            if self.compare(self.sub_state_dfs[-2], self.sub_state_dfs[-1]) == 0:
                 break
+            self.mcl_step()
+            if self.compare(last_substate, self.trans_matrix) == 0:
+                break
+            else:
+                last_substate = self.trans_matrix.copy()
+
+        if len(np.where(np.logical_and(self.trans_matrix > 0., self.trans_matrix < 1.))[0]):
+            self.finalize_transition_matrix()
 
         next_cluster = []
         not_clustered = list(self.name_order)
-        for i, row in self.sub_state_dfs[-1].iterrows():
-            for j, cell in row.items():
-                if cell != 0 and self.name_order[j] in not_clustered:
-                    next_cluster.append(self.name_order[j])
-                    del not_clustered[not_clustered.index(self.name_order[j])]
+        for row in self.trans_matrix:
+            for i, cell in enumerate(row):
+                if cell != 0 and self.name_order_indx[i] in not_clustered:
+                    next_cluster.append(self.name_order_indx[i])
+                    del not_clustered[not_clustered.index(self.name_order_indx[i])]
             if next_cluster:
                 self.clusters.append(next_cluster)
                 next_cluster = []
         self.clusters += [[x] for x in not_clustered]
-        self.clusters.sort(key=len)
+        self.clusters = sorted(self.clusters, key=lambda x: len(x))
         self.clusters.reverse()
         return
 

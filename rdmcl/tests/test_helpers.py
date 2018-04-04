@@ -352,19 +352,13 @@ Oma\tMle\t0"""
     assert str(mcl.dataframe) == str(sample_df)
     assert mcl.inflation == 2
     assert mcl.edge_sim_threshold == 0.6
-    assert mcl.name_order == ['Bab', "Cfu", "Mle", "Oma"]
+    assert sorted(list(mcl.name_order)) == ['Bab', "Cfu", "Mle", "Oma"]
+    assert sorted(list(mcl.name_order_indx)) == [0, 1, 2, 3]
     assert str(mcl.trans_matrix) == """\
-[[0.333333333333 0.333333333333 0.             0.333333333333]
- [0.333333333333 0.333333333333 0.             0.333333333333]
- [0.             0.             0.             0.            ]
- [0.333333333333 0.333333333333 0.             0.333333333333]]""", print(mcl.trans_matrix)
-    assert len(mcl.sub_state_dfs) == 1
-    assert str(mcl.sub_state_dfs[0]) == """\
-                0               1    2               3
-0  0.333333333333  0.333333333333  0.0  0.333333333333
-1  0.333333333333  0.333333333333  0.0  0.333333333333
-2  0.000000000000  0.000000000000  0.0  0.000000000000
-3  0.333333333333  0.333333333333  0.0  0.333333333333""", print(mcl.sub_state_dfs[0])
+[[0.33333334 0.33333334 0.         0.33333334]
+ [0.33333334 0.33333334 0.         0.33333334]
+ [0.         0.         0.         0.        ]
+ [0.33333334 0.33333334 0.         0.33333334]]""", print(mcl.trans_matrix)
     assert mcl.clusters == []
 
 
@@ -380,13 +374,14 @@ Oma\tMle\t0"""
     df.columns = ["seq1", "seq2", "score"]
 
     mcl = helpers.MarkovClustering(df, 2)
-    df1 = mcl.sub_state_dfs[0]
-    df2 = mcl.sub_state_dfs[0].copy()
+    df1 = pd.DataFrame(mcl.trans_matrix)
+    df2 = df1.copy()
     assert helpers.MarkovClustering.compare(df1, df2) == 0
 
     df2[0][0] = 1
     df2[1][3] = 1.5
-    assert round(helpers.MarkovClustering.compare(df1, df2), 1) == 1.8
+    compare = helpers.MarkovClustering.compare(df1, df2)
+    assert round(float(compare), 1) == 1.8
 
 
 def test_markov_clustering_normalize():
@@ -415,15 +410,45 @@ Oma\tMle\t0"""
 
     mcl = helpers.MarkovClustering(df, 2)
     assert str(mcl._df_to_transition_matrix()) == """\
-[[0.333333333333 0.333333333333 0.             0.333333333333]
- [0.333333333333 0.333333333333 0.             0.333333333333]
- [0.             0.             0.             0.            ]
- [0.333333333333 0.333333333333 0.             0.333333333333]]""", print(mcl._df_to_transition_matrix())
+[[0.33333334 0.33333334 0.         0.33333334]
+ [0.33333334 0.33333334 0.         0.33333334]
+ [0.         0.         0.         0.        ]
+ [0.33333334 0.33333334 0.         0.33333334]]""", print(mcl._df_to_transition_matrix())
 
     mcl.dataframe = mcl.dataframe.ix[1:, :]
     with pytest.raises(ValueError) as err:
         mcl._df_to_transition_matrix()
     assert "The provided dataframe is not a symmetric graph" in str(err)
+
+
+def test_markov_clustering_finalize_transition_matrix():
+    return
+    mtrx = [[1., 0., 1., 0.],
+            [0., 0.3, 0., 0.],
+            [0., 0.3, 0., 1.],
+            [0., 0.4, 0., 0.]]
+
+    new_df = pd.DataFrame(mtrx)
+    new_df = helpers.MarkovClustering.finalize_transition_matrix(new_df)
+    assert str(new_df) == """\
+     0    1    2    3
+0  1.0  0.0  1.0  0.0
+1  0.0  0.0  0.0  0.0
+2  0.0  0.0  0.0  1.0
+3  0.0  1.0  0.0  0.0""", print(new_df)
+
+    mtrx = [[1., 0., 1., 0.],
+            [0., 0.2, 0., 0.],
+            [0., 0.5, 0., 1.],
+            [0., 0.3, 0., 0.]]
+    new_df = pd.DataFrame(mtrx)
+    new_df = helpers.MarkovClustering.finalize_transition_matrix(new_df)
+    assert str(new_df) == """\
+     0    1    2    3
+0  1.0  0.0  1.0  0.0
+1  0.0  0.0  0.0  0.0
+2  0.0  1.0  0.0  1.0
+3  0.0  0.0  0.0  0.0""", print(new_df)
 
 
 def test_markov_clustering_mcl_step():
@@ -440,38 +465,55 @@ Oma\tMle\t0"""
     mcl = helpers.MarkovClustering(df, 2)
     mcl.mcl_step()
     assert str(mcl.trans_matrix) == """\
-[[0.325268817204 0.197712418301 0.05           0.325268817204]
- [0.325268817204 0.472222222222 0.45           0.325268817204]
- [0.024193548387 0.132352941176 0.45           0.024193548387]
- [0.325268817204 0.197712418301 0.05           0.325268817204]]""", print(mcl.trans_matrix)
+[[0.3252688   0.19771242  0.05        0.3252688  ]
+ [0.3252688   0.4722222   0.45        0.3252688  ]
+ [0.024193544 0.13235293  0.45        0.024193544]
+ [0.3252688   0.19771242  0.05        0.3252688  ]]""", print(mcl.trans_matrix)
 
     mcl.mcl_step()
     assert str(mcl.trans_matrix) == """\
-[[0.256081071995 0.179641327936 0.066523261673 0.256081071995]
- [0.471649087074 0.58116078281  0.642542807074 0.471649087074]
- [0.016188768936 0.059556561318 0.224410669579 0.016188768936]
- [0.256081071995 0.179641327936 0.066523261673 0.256081071995]]""", print(mcl.trans_matrix)
+[[0.25608107  0.17964135  0.06652327  0.25608107 ]
+ [0.47164902  0.5811608   0.6425429   0.47164902 ]
+ [0.016188765 0.059556555 0.22441064  0.016188765]
+ [0.25608107  0.17964135  0.06652327  0.25608107 ]]""", print(mcl.trans_matrix)
 
     mcl.mcl_step()
     assert str(mcl.trans_matrix) == """\
-[[0.126369683583 0.105449088392 0.067736224348 0.126369683583]
- [0.742962210536 0.781501277602 0.843879757744 0.742962210536]
- [0.004298422298 0.007600545613 0.020647793561 0.004298422298]
- [0.126369683583 0.105449088392 0.067736224348 0.126369683583]]""", print(mcl.trans_matrix)
+[[0.1263697    0.1054491    0.067736246  0.1263697   ]
+ [0.7429621    0.78150123   0.84387976   0.7429621   ]
+ [0.0042984216 0.0076005417 0.020647783  0.0042984216]
+ [0.1263697    0.1054491    0.067736246  0.1263697   ]]""", print(mcl.trans_matrix)
 
     mcl.mcl_step()
     assert str(mcl.trans_matrix) == """\
-[[1.970368856337e-02 1.927523117037e-02 1.840962617627e-02
-  1.970368856337e-02]
- [9.605176217034e-01 9.613707994477e-01 9.630929864027e-01
-  9.605176217034e-01]
- [7.500116985867e-05 7.873821159075e-05 8.776124477265e-05
-  7.500116985867e-05]
- [1.970368856337e-02 1.927523117037e-02 1.840962617627e-02
-  1.970368856337e-02]]""", print(mcl.trans_matrix)
+[[1.9703692e-02 1.9275241e-02 1.8409636e-02 1.9703692e-02]
+ [9.6051764e-01 9.6137083e-01 9.6309304e-01 9.6051764e-01]
+ [7.5001088e-05 7.8738136e-05 8.7761167e-05 7.5001088e-05]
+ [1.9703692e-02 1.9275241e-02 1.8409636e-02 1.9703692e-02]]""", print(mcl.trans_matrix)
 
 
-def test_markov_clustering_run(monkeypatch):
+def test_markov_clustering_run(monkeypatch, capsys):
+    data = """\
+Bab\tCfu\t0.3
+Bab\tOma\t0.5
+Bab\tMle\t0
+Cfu\tMle\t0.7
+Cfu\tOma\t0.7
+Oma\tMle\t0"""
+    df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False)
+    df.columns = ["seq1", "seq2", "score"]
+
+    mcl = helpers.MarkovClustering(df, 2)
+    mcl.run()
+
+    assert str(mcl.trans_matrix) == """\
+[[0. 0. 0. 0.]
+ [1. 1. 1. 1.]
+ [0. 0. 0. 0.]
+ [0. 0. 0. 0.]]""", print(str(mcl.trans_matrix))
+    mcl.clusters = [sorted(row) for row in mcl.clusters]
+    assert mcl.clusters == [["Bab", "Cfu", "Mle", "Oma"]]
+
     data = """\
 Bab\tCfu\t0.9
 Bab\tOma\t0.1
@@ -485,10 +527,11 @@ Oma\tMle\t0.9"""
     mcl = helpers.MarkovClustering(df, 2)
     mcl.run()
     assert str(mcl.trans_matrix) == """\
-[[0.5 0.5 0.  0. ]
- [0.5 0.5 0.  0. ]
- [0.  0.  0.5 0.5]
- [0.  0.  0.5 0.5]]""", print(str(mcl.trans_matrix))
+[[1. 1. 0. 0.]
+ [0. 0. 0. 0.]
+ [0. 0. 1. 1.]
+ [0. 0. 0. 0.]]""", print(str(mcl.trans_matrix))
+    mcl.clusters = [sorted(row) for row in mcl.clusters]
     assert mcl.clusters == [["Mle", "Oma"], ['Bab', "Cfu"]]
 
     def safetyvalve_init(self, *_, **__):
@@ -497,8 +540,10 @@ Oma\tMle\t0.9"""
 
     monkeypatch.setattr(br.SafetyValve, "__init__", safetyvalve_init)
     mcl = helpers.MarkovClustering(df, 2)
+    capsys.readouterr()
     mcl.run()
-    assert mcl.clusters[0] == ['Bab', "Cfu", "Mle", "Oma"]
+    mcl.clusters = [sorted(row) for row in mcl.clusters]
+    assert mcl.clusters == [["Mle", "Oma"], ['Bab', "Cfu"]]
 
 
 def test_markov_clustering_write():

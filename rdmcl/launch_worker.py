@@ -318,7 +318,7 @@ class Worker(object):
 
     def process_final_results(self, id_hash, subjob_num, num_subjobs):
         with open(self.data_file, "r") as ifile:
-            sim_scores = pd.read_csv(ifile, index_col=False)
+            sim_scores = pd.read_csv(ifile, index_col=False, dtype={"seq1": "category", "seq2": "category"})
 
         if num_subjobs > 1:
             # If all subjobs are not complete, an empty df is returned
@@ -422,7 +422,12 @@ class Worker(object):
                 output = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi"])
                 for indx in range(1, num_subjobs + 1):
                     next_df = os.path.join(subjob_out_dir, "%s_of_%s.sim_df" % (indx, num_subjobs))
-                    output = output.append(pd.read_csv(next_df, index_col=False))
+                    output = output.append(pd.read_csv(next_df, index_col=False,
+                                                       dtype={"seq1": "category", "seq2": "category"}))
+        if "seq1" in output:
+            output.seq1 = output.seq1.astype("category")
+        if "seq2" in output:
+            output.seq2 = output.seq2.astype("category")
         return output
 
     def terminate(self, message):

@@ -703,8 +703,8 @@ psipass2 {0}{3}data{3}weights_p2.dat 1 1.0 1.0 {1}{3}{2}.ss2 {1}{3}{2}.ss > {1}{
 
 
 def read_ss2_file(path):
-    ss_file = pd.read_csv(path, comment="#", header=None, delim_whitespace=True)
-    ss_file.columns = ["indx", "aa", "ss", "coil_prob", "helix_prob", "sheet_prob"]
+    ss_file = pd.read_csv(path, comment="#", header=None, delim_whitespace=True,
+                          names=["indx", "aa", "ss", "coil_prob", "helix_prob", "sheet_prob"])
     return ss_file
 
 
@@ -863,8 +863,9 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
             # All mcl sub clusters are written to database in mcmcmc_mcl(), so no need to check if exists
             graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash=?", (cluster_ids_hash,))[0][0]
 
-            sim_scores = pd.read_csv(StringIO(graph), index_col=False, header=None)
-            sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+            sim_scores = pd.read_csv(StringIO(graph), index_col=False, header=None,
+                                     names=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
+                                     dtype={"seq1": "category", "seq2": "category"})
 
         sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster,
                               taxa_sep=taxa_sep, r_seed=rand_gen.randint(1, 999999999999999))
@@ -1117,8 +1118,9 @@ def retrieve_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=False):
     query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash=?", (seq_id_hash,))
     if query and len(query[0]) == 2:
         sim_scores, alignment = query[0]
-        sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None)
-        sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+        sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None,
+                                 names=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
+                                 dtype={"seq1": "category", "seq2": "category"})
         return sim_scores, Alb.AlignBuddy(alignment, in_format="fasta")
 
     # Try to feed the job to independent workers
@@ -1338,8 +1340,9 @@ class WorkerJob(object):
         if not query or len(query[0]) != 2:
             return False
         sim_scores, alignment = query[0]
-        sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None)
-        sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+        sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None,
+                                 names=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
+                                 dtype={"seq1": "category", "seq2": "category"})
         with hlp.ExclusiveConnect(WORKER_DB) as cursor:
             cursor.execute("DELETE FROM waiting WHERE hash=? AND master_id=?", (self.job_id,
                                                                                 self.heartbeat.id,))
@@ -1360,8 +1363,9 @@ class WorkerJob(object):
     def process_finished(self):
         location = join(WORKER_OUT, self.job_id)
         alignment = Alb.AlignBuddy("%s.aln" % location, in_format="fasta")
-        sim_scores = pd.read_csv("%s.graph" % location, index_col=False, header=None)
-        sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+        sim_scores = pd.read_csv("%s.graph" % location, index_col=False, header=None,
+                                 names=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
+                                 dtype={"seq1": "category", "seq2": "category"})
         cluster2database(Cluster(self.seq_ids, sim_scores), self.sql_broker, alignment)
 
         for del_file in [".aln", ".graph", ".seqs"]:
@@ -1487,8 +1491,9 @@ def mcmcmc_mcl(args, params):
                     if len(alignment.records()) == 1:
                         sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
                     else:
-                        sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None)
-                        sim_scores.columns = ["seq1", "seq2", "subsmat", "psi", "raw_score", "score"]
+                        sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None,
+                                                 names=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
+                                                 dtype={"seq1": "category", "seq2": "category"})
 
                     cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
                                       r_seed=rand_gen.randint(1, 999999999999999))
@@ -1964,7 +1969,8 @@ class Seqs2Clusters(object):
 
             log_output.write("# Current clusters #\n")
             for clust in self.clusters:
-                log_output.write("%s\n%s\n\n" % (clust.name(), clust.seq_ids))
+                seq_ids = sorted(list(clust.seq_ids))
+                log_output.write("%s\n{'%s'}\n\n" % (clust.name(), "', '".join(seq_ids)))
 
             # Create a distribution from all R² values between records in each pre-called large cluster
             global_null_file = br.TempFile()
@@ -2151,7 +2157,8 @@ class Seqs2Clusters(object):
             # Place any new orphans into new groups
             clusts_needing_update = []
             for seq_id in new_groups["orphans"]:
-                sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
+                sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
+                                          dtype={"seq1": "category", "seq2": "category"})
                 parent = None
                 for clust in copy_clusters:
                     if seq_id in clust.seq_ids:
@@ -2198,9 +2205,10 @@ class Seqs2Clusters(object):
 
 
 class FwdScoreCorrelations(object):
-    def __init__(self, seqbuddy, outdir):
+    def __init__(self, seqbuddy, outdir, quiet=True):
         self.seqbuddy = seqbuddy
         self.outdir = outdir
+        self.quiet = quiet
         self.tmp_dir = br.TempDir()
         self.tmp_dir.subfile("seqs.fa")
 
@@ -2235,14 +2243,14 @@ class FwdScoreCorrelations(object):
     def create_hmm_fwd_score_df(self, force=False):
         # Create HMM forward-score dataframe from initial input --> p(seq|hmm)
         if os.path.isfile(self.hmm_fwd_scores_path) and not force:
-            return pd.read_csv(self.hmm_fwd_scores_path)
+            return pd.read_csv(self.hmm_fwd_scores_path, dtype={"hmm_id": "category", "rec_id": "category"})
 
         self.seqbuddy.write(join(self.tmp_dir.path, self.tmp_dir.subfiles[0]), out_format="fasta")
         hmm_scores_file = br.TempFile()
         br.run_multicore_function(self.seqbuddy.records, self._mc_fwd_back_run, [hmm_scores_file.path],
-                                  max_processes=CPUS, quiet=True)
-        self.hmm_fwd_scores = pd.read_csv(hmm_scores_file.path, header=None)
-        self.hmm_fwd_scores.columns = ["hmm_id", "rec_id", "fwd_raw"]
+                                  max_processes=CPUS, quiet=self.quiet)
+        self.hmm_fwd_scores = pd.read_csv(hmm_scores_file.path, header=None, names=["hmm_id", "rec_id", "fwd_raw"],
+                                          dtype={"hmm_id": "category", "rec_id": "category"})
         self.hmm_fwd_scores.to_csv(self.hmm_fwd_scores_path, index=False)
         return self.hmm_fwd_scores
 
@@ -2250,17 +2258,15 @@ class FwdScoreCorrelations(object):
     def _mc_rsquare_vals(recs, args):
         rec1, sub_recs = recs
         hmm_fwd_scores, tmp_rsquares_file = args
-        rsquare_vals_df = pd.DataFrame(columns=["seq1", "seq2", "r_square"])
-        for rec2 in sub_recs:
+        rsquare_vals_df = pd.DataFrame(columns=["seq1", "seq2", "r_square"],
+                                       data=[[None, None, None] for _ in range(len(sub_recs))])
+        for indx, rec2 in enumerate(sub_recs):
             fwd1 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec1.id].sort_values(by="hmm_id").fwd_raw
             fwd2 = hmm_fwd_scores.loc[hmm_fwd_scores.rec_id == rec2.id].sort_values(by="hmm_id").fwd_raw
             corr = scipy.stats.pearsonr(fwd1, fwd2)
-            comparison = pd.DataFrame(data=[[rec1.id, rec2.id, corr[0]**2]],
-                                      columns=["seq1", "seq2", "r_square"])
-            rsquare_vals_df = rsquare_vals_df.append(comparison, ignore_index=True)
-        rsquare_vals_df = rsquare_vals_df.append(pd.DataFrame(data=[[rec1.id, rec1.id, 1.0]],
-                                                 columns=["seq1", "seq2", "r_square"]), ignore_index=True)
-
+            rsquare_vals_df.loc[indx, ["seq1", "seq2", "r_square"]] = [rec1.id, rec2.id, corr[0]**2]
+        rsquare_vals_df.loc[-1, ["seq1", "seq2", "r_square"]] = [rec1.id, rec1.id, 1.0]
+        
         rsquare_vals_df = rsquare_vals_df.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
         with LOCK:
             with open(tmp_rsquares_file, "a") as ofile:
@@ -2269,7 +2275,7 @@ class FwdScoreCorrelations(object):
     def create_fwd_score_rsquared_matrix(self, force=False):
         # Calculate all-by-all matrix of correlation coefficients on fwd scores among all sequences
         if os.path.isfile(self.rsquares_df_path) and not force:
-            return pd.read_csv(self.rsquares_df_path)
+            return pd.read_csv(self.rsquares_df_path, dtype={"seq1": "category", "seq2": "category"})
 
         sub_recs = list(self.seqbuddy.records[1:])
         multicore_data = [None for _ in range(len(self.seqbuddy))]
@@ -2278,10 +2284,10 @@ class FwdScoreCorrelations(object):
             multicore_data[indx] = (rec1, sub_recs)
             sub_recs = sub_recs[1:]
         br.run_multicore_function(multicore_data, self._mc_rsquare_vals, [self.hmm_fwd_scores, tmp_rsquares_file.path],
-                                  max_processes=CPUS)
+                                  max_processes=CPUS, quiet=self.quiet)
 
-        self.rsquare_vals_df = pd.read_csv(tmp_rsquares_file.path, header=None)
-        self.rsquare_vals_df.columns = ["seq1", "seq2", "r_square"]
+        self.rsquare_vals_df = pd.read_csv(tmp_rsquares_file.path, header=None, names=["seq1", "seq2", "r_square"],
+                                           dtype={"seq1": "category", "seq2": "category"})
         self.rsquare_vals_df = self.rsquare_vals_df.sort_values(by=["seq1", "seq2"]).reset_index(drop=True)
         self.rsquare_vals_df.to_csv(self.rsquares_df_path, index=False)
         return self.rsquare_vals_df
@@ -2370,6 +2376,8 @@ def argparse_init():
 
     # Developer testing
     dev_flags = parser.add_argument_group(title="\033[1mDeveloper commands (Caution!)\033[m")
+    dev_flags.add_argument("-be", "--build_environment", action="store_true",
+                           help="Set up all working directories and files, but don't run RD-MCL")
     dev_flags.add_argument("-spc", "--suppress_paralog_collapse", action="store_true",
                            help="Do not merge best hit paralogs")
     # dev_flags.add_argument("-sr", "--suppress_recursion", action="store_true",
@@ -2642,7 +2650,7 @@ Continue? y/[n] """ % len(sequences)
                               max_processes=CPUS, quiet=in_args.quiet)
 
     logging.warning("\n** Compile HMM forward-score correlation matrix **")
-    FwdScoreCorrelations(sequences, in_args.outdir)
+    FwdScoreCorrelations(sequences, in_args.outdir, quiet=in_args.quiet)
 
     # Initial alignment
     logging.warning("\n** All-by-all graph **")
@@ -2682,6 +2690,11 @@ Continue? y/[n] """ % len(sequences)
     # Base cluster score
     base_score = group_0_cluster.score()
     logging.warning("Base cluster score: %s" % round(base_score, 4))
+
+    # End if the user just wants the environment built
+    if in_args.build_environment:
+        logging.warning("TERMINATING: '--build_environment'")
+        return
 
     # Ortholog caller
     logging.warning("\n** Recursive MCL **")
