@@ -127,26 +127,26 @@ def test_check_init(hf, monkeypatch):
     assert check.rdmcl_dir == test_dir.path
     assert check.clusters == clusters
     assert check.master_clust.taxa == taxa
-    assert check.r_squares.get_value(37, 'seq1') == 'BOL-PanxαC'
-    assert check.r_squares.get_value(316, 'seq2') == 'Edu-PanxαC'
-    assert check.r_squares['r_square'].sum() == 455.83679143893914
-    assert check.fwd_scores.get_value(2636, 'hmm_id') == 'Bfo-PanxαA'
-    assert check.fwd_scores.get_value(2, 'rec_id') == 'Edu-PanxαC'
-    assert check.fwd_scores['fwd_raw'].sum() == 640373.9347999988
-    assert check.within_group_r2_df.get_value(1, 'seq1') == 'BOL-PanxαC'
-    assert check.within_group_r2_df.get_value(3, 'seq2') == 'Bch-PanxαE'
+    assert check.r_squares.at[37, 'seq1'] == 'BOL-PanxαC'
+    assert check.r_squares.at[316, 'seq2'] == 'Edu-PanxαC'
+    assert check.r_squares['r_square'].sum() == 455.83679143893875
+    assert check.fwd_scores.at[2636, 'hmm_id'] == 'Bfo-PanxαA'
+    assert check.fwd_scores.at[2, 'rec_id'] == 'Edu-PanxαC'
+    assert check.fwd_scores['fwd_raw'].sum() == 640373.9347999999
+    assert check.within_group_r2_df.at[1, 'seq1'] == 'BOL-PanxαC'
+    assert check.within_group_r2_df.at[3, 'seq2'] == 'Bch-PanxαE'
     assert check.within_group_r2_df['r_square'].sum() == 4.978079
     assert check.within_group_r2_dist is True
-    assert check.within_group_fwd_df.get_value(1, 'hmm_id') == 'Cfu-PanxαC'
-    assert check.within_group_fwd_df.get_value(3, 'rec_id') == 'Bch-PanxαE'
+    assert check.within_group_fwd_df.at[1, 'hmm_id'] == 'Cfu-PanxαC'
+    assert check.within_group_fwd_df.at[3, 'rec_id'] == 'Bch-PanxαE'
     assert check.within_group_fwd_df['fwd_raw'].sum() == 3116.2209
     assert type(check.within_group_fwd_dist) is scipy.stats.kde.gaussian_kde
-    assert check.btw_group_r2_df.get_value(1, 'seq1') == 'BOL-PanxαC'
-    assert check.btw_group_r2_df.get_value(3, 'seq2') == 'Bab-PanxαD'
+    assert check.btw_group_r2_df.at[1, 'seq1'] == 'BOL-PanxαC'
+    assert check.btw_group_r2_df.at[3, 'seq2'] == 'Bab-PanxαD'
     assert check.btw_group_r2_df['r_square'].sum() == 2.758417
     assert check.btw_group_r2_dist is True
-    assert check.btw_group_fwd_df.get_value(1, 'hmm_id') == 'Bch-PanxαC'
-    assert check.btw_group_fwd_df.get_value(3, 'rec_id') == 'Bch-PanxαE'
+    assert check.btw_group_fwd_df.at[1, 'hmm_id'] == 'Bch-PanxαC'
+    assert check.btw_group_fwd_df.at[3, 'rec_id'] == 'Bch-PanxαE'
     assert check.btw_group_fwd_df['fwd_raw'].sum() == 1566.3966
     assert type(check.btw_group_fwd_dist) is scipy.stats.kde.gaussian_kde
 
@@ -192,8 +192,8 @@ def test_prepare_within_group_r2_df(capsys, hf):
     merge = merge_orthogroups.Check._prepare_within_group_r2_df(check, force=False)
     out, err = capsys.readouterr()
     assert err == "Preparing hmm/within_group_rsquares.csv...\n"
-    assert merge.get_value(1, 'seq1') == 'BOL-PanxαC'
-    assert merge.get_value(3, 'seq2') == 'Bch-PanxαE'
+    assert merge.at[1, 'seq1'] == 'BOL-PanxαC'
+    assert merge.at[3, 'seq2'] == 'Bch-PanxαE'
     assert merge['r_square'].sum() == 124.34523271531056
     os.remove(join(test_dir.path, "hmm", "within_group_rsquares.csv"))
 
@@ -202,8 +202,8 @@ def test_prepare_within_group_r2_df(capsys, hf):
     merge = merge_orthogroups.Check._prepare_within_group_r2_df(check, force=True)
     assert err == "Preparing hmm/within_group_rsquares.csv...\n"
     assert type(merge) is pd.DataFrame
-    assert merge.get_value(1, 'seq1') == 'BOL-PanxαC'
-    assert merge.get_value(3, 'seq2') == 'Bch-PanxαE'
+    assert merge.at[1, 'seq1'] == 'BOL-PanxαC'
+    assert merge.at[3, 'seq2'] == 'Bch-PanxαE'
     assert merge['r_square'].sum() == 124.34523271531056
     assert os.path.isfile(join(test_dir.path, "hmm", "within_group_rsquares.csv")) is True
 
@@ -241,25 +241,25 @@ def test_prepare_within_group_fwd_df(capsys, hf):
     merge = merge_orthogroups.Check._prepare_within_group_fwd_df(check, force=False)
     out, err = capsys.readouterr()
     assert err == "Preparing hmm/within_group_fwd.csv...\n"
-    assert merge.get_value(1, 'hmm_id') == 'Cfu-PanxαC'
-    assert merge.get_value(329, 'rec_id') == 'BOL-PanxαH'
-    assert merge['fwd_raw'].sum() == 177372.92289999998
+    assert merge.at[1, 'hmm_id'] == 'Cfu-PanxαC'
+    assert merge.at[329, 'rec_id'] == 'BOL-PanxαH'
+    assert merge['fwd_raw'].sum() == 177372.9229
 
     #  File "within_group_fwd.csv" already exists, run method again
     assert os.path.isfile(join(test_dir.path, "hmm", "within_group_fwd.csv")) is True
     check = SimpleNamespace(rdmcl_dir=test_dir.path, clusters=clusters, r_squares=r_squares, fwd_scores=fwd_scores)
     merge = merge_orthogroups.Check._prepare_within_group_fwd_df(check, force=False)
-    assert merge.get_value(1, 'hmm_id') == 'Cfu-PanxαC'
-    assert merge.get_value(329, 'rec_id') == 'BOL-PanxαH'
-    assert merge['fwd_raw'].sum() == 177372.92289999998
+    assert merge.at[1, 'hmm_id'] == 'Cfu-PanxαC'
+    assert merge.at[329, 'rec_id'] == 'BOL-PanxαH'
+    assert merge['fwd_raw'].sum() == 177372.9229
     os.remove(join(test_dir.path, "hmm", "within_group_fwd.csv"))
 
     #  force=True
     check = SimpleNamespace(rdmcl_dir=test_dir.path, clusters=clusters, r_squares=r_squares, fwd_scores=fwd_scores)
     merge = merge_orthogroups.Check._prepare_within_group_fwd_df(check, force=True)
-    assert merge.get_value(1, 'hmm_id') == 'Cfu-PanxαC'
-    assert merge.get_value(329, 'rec_id') == 'BOL-PanxαH'
-    assert merge['fwd_raw'].sum() == 177372.92289999998
+    assert merge.at[1, 'hmm_id'] == 'Cfu-PanxαC'
+    assert merge.at[329, 'rec_id'] == 'BOL-PanxαH'
+    assert merge['fwd_raw'].sum() == 177372.9229
 
 
 def test_prepare_between_group_r2_df(capsys, hf):
@@ -292,27 +292,27 @@ def test_prepare_between_group_r2_df(capsys, hf):
     merge = merge_orthogroups.Check._prepare_between_group_r2_df(check, force=False)
     out, err = capsys.readouterr()
     assert err == "Preparing hmm/between_group_rsquares.csv...\n"
-    assert merge.get_value(1, 'seq1') == 'BOL-PanxαC'
-    assert merge.get_value(978, 'seq2') == 'Dgl-PanxαA'
-    assert merge['r_square'].sum() == 250.8266601079159
+    assert merge.at[1, 'seq1'] == 'BOL-PanxαC'
+    assert merge.at[978, 'seq2'] == 'Dgl-PanxαA'
+    assert merge['r_square'].sum() == 250.82666010791604
 
     #  Skip the main loop when file already exists
     check = SimpleNamespace(rdmcl_dir=test_dir.path, clusters=clusters, r_squares=r_squares)
     merge = merge_orthogroups.Check._prepare_between_group_r2_df(check, force=False)
     out, err = capsys.readouterr()
     assert err == ""
-    assert merge.get_value(1, 'seq1') == 'BOL-PanxαC'
-    assert merge.get_value(978, 'seq2') == 'Dgl-PanxαA'
-    assert merge['r_square'].sum() == 250.8266601079159
+    assert merge.at[1, 'seq1'] == 'BOL-PanxαC'
+    assert merge.at[978, 'seq2'] == 'Dgl-PanxαA'
+    assert merge['r_square'].sum() == 250.82666010791604
 
     # force=True
     check = SimpleNamespace(rdmcl_dir=test_dir.path, clusters=clusters, r_squares=r_squares)
     merge = merge_orthogroups.Check._prepare_between_group_r2_df(check, force=True)
     out, err = capsys.readouterr()
     assert err == "Preparing hmm/between_group_rsquares.csv...\n"
-    assert merge.get_value(1, 'seq1') == 'BOL-PanxαC'
-    assert merge.get_value(978, 'seq2') == 'Dgl-PanxαA'
-    assert merge['r_square'].sum() == 250.8266601079159
+    assert merge.at[1, 'seq1'] == 'BOL-PanxαC'
+    assert merge.at[978, 'seq2'] == 'Dgl-PanxαA'
+    assert merge['r_square'].sum() == 250.82666010791604
 
 
 def test_prepare_between_group_fwd_df(capsys, hf):
@@ -346,9 +346,9 @@ def test_prepare_between_group_fwd_df(capsys, hf):
     merge = merge_orthogroups.Check._prepare_between_group_fwd_df(check, force=False)
     out, err = capsys.readouterr()
     assert err == "Preparing hmm/between_group_fwd.csv...\n"
-    assert merge.get_value(1, 'hmm_id') == 'Bch-PanxαC'
-    assert merge.get_value(1959, 'rec_id') == 'Bfo-PanxαG'
-    assert merge['fwd_raw'].sum() == 384849.1751999998
+    assert merge.at[1, 'hmm_id'] == 'Bch-PanxαC'
+    assert merge.at[1959, 'rec_id'] == 'Bfo-PanxαG'
+    assert merge['fwd_raw'].sum() == 384849.17520000006
 
     #  File "between_group_fwd.csv" already exists
     assert os.path.isfile(join(test_dir.path, "hmm", "between_group_fwd.csv")) is True
@@ -356,18 +356,18 @@ def test_prepare_between_group_fwd_df(capsys, hf):
     merge = merge_orthogroups.Check._prepare_between_group_fwd_df(check, force=False)
     out, err = capsys.readouterr()
     assert err == ""
-    assert merge.get_value(1, 'hmm_id') == 'Bch-PanxαC'
-    assert merge.get_value(1959, 'rec_id') == 'Bfo-PanxαG'
-    assert merge['fwd_raw'].sum() == 384849.1751999998
+    assert merge.at[1, 'hmm_id'] == 'Bch-PanxαC'
+    assert merge.at[1959, 'rec_id'] == 'Bfo-PanxαG'
+    assert merge['fwd_raw'].sum() == 384849.17520000006
 
     #  force=True
     check = SimpleNamespace(rdmcl_dir=test_dir.path, clusters=clusters, fwd_scores=fwd_scores)
     merge = merge_orthogroups.Check._prepare_between_group_fwd_df(check, force=True)
     out, err = capsys.readouterr()
     assert err == "Preparing hmm/between_group_fwd.csv...\n"
-    assert merge.get_value(1, 'hmm_id') == 'Bch-PanxαC'
-    assert merge.get_value(1959, 'rec_id') == 'Bfo-PanxαG'
-    assert merge['fwd_raw'].sum() == 384849.1751999998
+    assert merge.at[1, 'hmm_id'] == 'Bch-PanxαC'
+    assert merge.at[1959, 'rec_id'] == 'Bfo-PanxαG'
+    assert merge['fwd_raw'].sum() == 384849.17520000006
 
 
 def test_check_existing_group(capsys, hf, monkeypatch):
