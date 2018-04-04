@@ -28,6 +28,7 @@ from datetime import date
 from subprocess import Popen, PIPE
 from multiprocessing import Lock
 import scipy.stats
+import re
 
 VERSION = hlp.VERSION
 VERSION.name = "merge_orthogroups"
@@ -64,7 +65,7 @@ class Check(object):
                     continue
                 clust_rsquares = self.r_squares.loc[(self.r_squares["seq1"].isin(seqs)) &
                                                     (self.r_squares["seq2"].isin(seqs)) &
-                                                    (self.r_squares["rec_id1"] != self.r_squares["seq2"])].copy()
+                                                    (self.r_squares["seq1"] != self.r_squares["seq2"])].copy()
                 within_group_rsquares = within_group_rsquares.append(clust_rsquares, ignore_index=True)
             within_group_rsquares.to_csv(join(self.rdmcl_dir, "hmm", "within_group_rsquares.csv"))
         else:
@@ -140,7 +141,6 @@ class Check(object):
         self.group_name = group_name
         query = self.clusters[group_name]
         query_score = Cluster(query, parent=self.master_clust).score()
-
         self.output = []
         for g, seqs in self.clusters.items():
             if g == group_name or len(seqs) < len(query):
@@ -150,7 +150,6 @@ class Check(object):
                                          ((self.r_squares["seq1"].isin(seqs)) &
                                           (self.r_squares["seq2"].isin(query))) &
                                          (self.r_squares["seq1"] != self.r_squares["seq2"])].copy()
-
             ave, std = hlp.mean(compare.r_square), hlp.std(compare.r_square)
             upper2 = ave + (std * 2)
             upper2 = 1 if upper2 > 1 else upper2
@@ -167,22 +166,20 @@ class Check(object):
 
     @staticmethod
     def _mc_fwd_back_old_hmms(seq_chunk, args):
+        ## This method is only used in check_new_sequence, which is never used.
         try:
             hmm_scores_file, hmm_dir_path, query_file = args
             hmm_fwd_scores = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
             for seq in seq_chunk:
                 next_hmm_path = join(hmm_dir_path, "%s.hmm" % seq.id)
-
                 fwdback_output = Popen("%s %s %s" % (rdmcl.HMM_FWD_BACK, next_hmm_path, query_file),
                                        shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
                 fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
                                             header=None, comment="#", index_col=False)
                 fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
                 fwd_scores_df["hmm_id"] = seq.id
-
                 hmm_fwd_scores = hmm_fwd_scores.append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
                                                        ignore_index=True)
-
             hmm_fwd_scores = hmm_fwd_scores.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
             with LOCK:
                 with open(hmm_scores_file, "a") as ofile:
@@ -193,7 +190,9 @@ class Check(object):
 
     @staticmethod
     def _mc_run_fwd_back_new_hmm(seq_chunk, args):
+        ## This method is only used in check_new_sequence, which is never used.
         try:
+            # Todo Why is rec not used?
             rec, out_dir, hmm_path = args
             seqbuddy = Sb.SeqBuddy(seq_chunk)
             id_hash = hlp.md5_hash("".join(sorted([seq.id for seq in seqbuddy.records])))
@@ -210,6 +209,7 @@ class Check(object):
 
     @staticmethod
     def _mc_r_squares(seq_chunks, args):
+        ## This method is only used in check_new_sequence, which is never used.
         try:
             rec, hmm_fwd_scores, output_path = args
             comparisons = pd.DataFrame(columns=["seq1", "seq2", "r_square"])
@@ -229,6 +229,7 @@ class Check(object):
         return
 
     def _mc_conf_inters(self, clust, args):
+        ## This method is only used in check_new_sequence, which is never used.
         try:
             g, seqs = clust
             rec, hmm_fwd_scores, output_file = args
@@ -263,6 +264,7 @@ class Check(object):
         return
 
     def check_new_sequence(self, rec, minimum=1):
+        #  This method is not used
         seqs_file = join(self.rdmcl_dir, "input_seqs.fa")
         query_file = br.TempFile()
         query_file.write(rec.format("fasta"))
@@ -313,7 +315,6 @@ class Check(object):
                              (merge_group_name, self.group_name))
             return
         merge_group = merge_group[0]
-
         do_merge = True
         if self.output[0][0] != merge_group[0] and not force:
             if not br.ask("{0}Merge Warning{1}: The group that appears to be the most\n"
@@ -362,8 +363,11 @@ class Check(object):
             with open(join(self.rdmcl_dir, "final_clusters.txt"), "r") as ifile:
                 final_lines = ifile.readlines()
             final_lines = [l for l in final_lines if not l.startswith("%s\t" % self.group_name)]
+            print("final_lines:", final_lines)
             for indx, l in enumerate(final_lines):
-                if l.startswith("%s\t" % merge_group_name):
+                print("indx:", indx, "Looking for a line that starts with:", merge_group_name)
+                if re.match(merge_group_name + r"\s", l):
+                    print("found it!")
                     final_lines[indx] = [merge_group_name, str(merge_group[4]), *self.clusters[merge_group_name]]
                     final_lines[indx] = "\t".join(final_lines[indx])
                     final_lines[indx] += "\n"
@@ -378,7 +382,6 @@ class Check(object):
             # 5) Delete group HMM
             if os.path.isfile(join(self.rdmcl_dir, "hmm", self.group_name)):
                 os.remove(join(self.rdmcl_dir, "hmm", self.group_name))
-
             print("%sMerged!%s\n" % (hlp.GREEN, hlp.END))
         else:
             print("%sMerge aborted!%s" % (hlp.RED, hlp.END))
@@ -439,6 +442,7 @@ def argparse_init():
 
 def main():
     in_args = argparse_init()
+    print(in_args)
     rdmcl_dir = os.path.abspath(in_args.rdmcl_dir)
     if not os.path.isdir(rdmcl_dir):
         sys.stderr.write("Error: The provided RD-MCL output directory does not exist.\n")
