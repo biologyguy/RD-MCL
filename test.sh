@@ -30,6 +30,14 @@ then
     FAILURE=1
 fi
 
+#### merge_orthogroups tests
+TEST_SCRIPTS='test_merge_orthogroups.py '
+py.test ${TEST_SCRIPTS} --cache-clear -p no:cacheprovider -p no:logging --cov --cov-append --cov-report= --cov-config ../.coveragerc --durations=10
+if [ $? -ne 0 ]
+then
+    FAILURE=1
+fi
+
 #### Worker tests
 TEST_SCRIPTS='test_worker.py '
 py.test ${TEST_SCRIPTS} --cache-clear -p no:cacheprovider -p no:logging --cov --cov-append --cov-report= --cov-config ../.coveragerc --durations=10

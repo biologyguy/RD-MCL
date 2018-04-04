@@ -16,6 +16,10 @@ echo "test_mcmcmc.py"
 TEST_SCRIPTS=${DIR}'/tests/test_mcmcmc.py '
 py.test ${TEST_SCRIPTS} --cov rdmcl.mcmcmc --cov-report html --cov-config .coveragerc -n 8 -p no:cacheprovider -p no:logging --durations=10 $@
 
+echo "test_merge_orthogroups.py"
+TEST_SCRIPTS=${DIR}'/tests/test_merge_orthogroups.py '
+py.test ${TEST_SCRIPTS} --cov rdmcl.merge_orthogroups --cov-report html -n 8 --cov-config .coveragerc -p no:cacheprovider -p no:logging --durations=10 -m "not slow" $@
+
 echo "test_worker.py"
 TEST_SCRIPTS=${DIR}'/tests/test_worker.py '
 py.test ${TEST_SCRIPTS} --cov rdmcl.launch_worker --cov-report html --cov-config .coveragerc -n 8 -p no:cacheprovider -p no:logging --durations=10 $@
