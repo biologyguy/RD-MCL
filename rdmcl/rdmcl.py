@@ -1451,6 +1451,9 @@ class WorkerJob(object):
 def mcmcmc_mcl(args, params):
     """
     Function passed to mcmcmcm.MCMCMC that will execute MCL and return the final cluster scores
+    THINK ABOUT: Can this entire thing be simplified? Why spend all this time calculating all-by-all graphs that may
+    never be used? I think the only graphs that need to be calculated are those that get fed into the recursive cluster
+    breakdown.
     :param args: Sample values to run MCL with and a random seed [inflation, gq, r_seed]
     :param params: List of parameters (see below for unpacking assignment)
     :return:

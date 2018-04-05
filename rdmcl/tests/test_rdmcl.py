@@ -472,7 +472,8 @@ def test_rbhc_creates_orphan(hf):
     cluster = rdmcl.Cluster(seq_ids, hf.get_sim_scores(seq_ids), parent=parent)
     cluster.set_name()
     assert cluster.create_rbh_cliques(log_file)[0] == cluster
-    assert "TERMINATED: Spinning off cliques would orphan Bch-PanxαB and Lcr-PanxαI" in log_file.read(), print(log_file.read())
+    assert "TERMINATED: Spinning off cliques would " \
+           "orphan Bch-PanxαB and Lcr-PanxαI" in log_file.read(), print(log_file.read())
 
 
 def test_rbhc_fail_integration(hf):
@@ -1852,6 +1853,7 @@ def test_get_sort_order():
     assert sort_order == [[('Bab-PanxαB', 0.925854279759)], [('Bab-PanxαC', 0.935854279759)]], print(sort_order)
 
 
+'''
 def test_place_orphans(hf):
     return
     broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
@@ -1934,6 +1936,7 @@ group_0_3\tgroup_0_0\t0.0174886528987
     orphans = rdmcl.Orphans(parent_sb, clusters[:2], broker, hf.get_data("ss2_paths"), br.TempDir().path)
     assert not orphans.place_orphans()
     assert len(orphans.clusters) == 2
+'''
 
 
 def test_instantiate_fwdscorecorrelations(hf, monkeypatch):

@@ -436,6 +436,7 @@ class MarkovClustering(object):
         self.dataframe = data.copy()
         self.dataframe.seq1 = self.dataframe.seq1.astype('category')
         self.dataframe.seq2 = self.dataframe.seq2.astype('category')
+        self.dataframe.score = self.dataframe.score.astype('float32')
         self.inflation = inflation
         self.edge_sim_threshold = edge_sim_threshold
         self.name_order = {}

@@ -348,8 +348,8 @@ Bab\tMle\t0
 Cfu\tMle\t0
 Cfu\tOma\t1
 Oma\tMle\t0"""
-    sample_df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False)
-    sample_df.columns = ["seq1", "seq2", "score"]
+    sample_df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False, names=["seq1", "seq2", "score"],
+                            dtype={"seq1": "category", "seq2": "category", "score": "float32"})
     mcl = helpers.MarkovClustering(sample_df, 2, 0.6)
     assert str(mcl.dataframe) == str(sample_df)
     assert mcl.inflation == 2
@@ -373,8 +373,8 @@ Bab\tMle\t0
 Cfu\tMle\t0
 Cfu\tOma\t1
 Oma\tMle\t0"""
-    df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False)
-    df.columns = ["seq1", "seq2", "score"]
+    df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False, names=["seq1", "seq2", "score"],
+                     dtype={"seq1": "category", "seq2": "category", "score": "float32"})
 
     mcl = helpers.MarkovClustering(df, 2)
     df1 = pd.DataFrame(mcl.trans_matrix)
@@ -408,8 +408,8 @@ Bab\tMle\t0
 Cfu\tMle\t0
 Cfu\tOma\t1
 Oma\tMle\t0"""
-    df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False)
-    df.columns = ["seq1", "seq2", "score"]
+    df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False, names=["seq1", "seq2", "score"],
+                     dtype={"seq1": "category", "seq2": "category", "score": "float32"})
 
     mcl = helpers.MarkovClustering(df, 2)
     expected = np.array([[0.333333343267, 0.333333343267, 0., 0.333333343267],
@@ -472,8 +472,8 @@ Bab\tMle\t0
 Cfu\tMle\t1
 Cfu\tOma\t1
 Oma\tMle\t0"""
-    df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False)
-    df.columns = ["seq1", "seq2", "score"]
+    df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False, names=["seq1", "seq2", "score"],
+                     dtype={"seq1": "category", "seq2": "category", "score": "float32"})
 
     mcl = helpers.MarkovClustering(df, 2)
     mcl.mcl_step()
@@ -517,8 +517,8 @@ Bab\tMle\t0
 Cfu\tMle\t0.7
 Cfu\tOma\t0.7
 Oma\tMle\t0"""
-    df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False)
-    df.columns = ["seq1", "seq2", "score"]
+    df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False, names=["seq1", "seq2", "score"],
+                     dtype={"seq1": "category", "seq2": "category", "score": "float32"})
 
     mcl = helpers.MarkovClustering(df, 2)
     mcl.run()
@@ -538,8 +538,8 @@ Bab\tMle\t0.1
 Cfu\tMle\t0.1
 Cfu\tOma\t0.1
 Oma\tMle\t0.9"""
-    df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False)
-    df.columns = ["seq1", "seq2", "score"]
+    df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False, names=["seq1", "seq2", "score"],
+                     dtype={"seq1": "category", "seq2": "category", "score": "float32"})
 
     mcl = helpers.MarkovClustering(df, 2)
     mcl.run()
@@ -571,8 +571,8 @@ Bab\tMle\t0
 Cfu\tMle\t0.7
 Cfu\tOma\t0.7
 Oma\tMle\t0"""
-    df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False)
-    df.columns = ["seq1", "seq2", "score"]
+    df = pd.read_csv(StringIO(data), sep="\t", header=None, index_col=False, names=["seq1", "seq2", "score"],
+                     dtype={"seq1": "category", "seq2": "category", "score": "float32"})
 
     mcl = helpers.MarkovClustering(df, 2)
     mcl.run()

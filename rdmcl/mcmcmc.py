@@ -7,7 +7,6 @@ Use the Metropolis-Hastings algorithm to estimate optimal parameters for a given
 """
 
 import os
-import sys
 import random
 import string
 from scipy.stats import norm
