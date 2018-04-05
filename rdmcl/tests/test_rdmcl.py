@@ -8,7 +8,7 @@ import sqlite3
 import pandas as pd
 import shutil
 import argparse
-#import numpy as np
+from types import SimpleNamespace
 from .. import rdmcl
 from .. import helpers
 from math import ceil
@@ -547,6 +547,36 @@ def test_rbhc_remaining_seqs_pass(hf):
 \tCliques identified and spun off:
 \t\t['Lcr-PanxαL', 'Mle-Panxα5', 'Vpa-PanxαF']
 \t\t['Edu-PanxαG', 'Lcr-PanxαA', 'Pba-PanxαE']""" in log_file.read()
+
+
+def test_cluster_max_score(hf, monkeypatch, capsys):
+    taxa = OrderedDict()
+    for next_id in hf.get_data("cteno_ids"):
+        taxon = next_id.split("-")[0]
+        taxa.setdefault(taxon, [])
+        taxa[taxon].append(next_id)
+    mock_parent_clust = SimpleNamespace(taxa=taxa, pull_scores_subgraph=lambda seq_ids: print(seq_ids),
+                                        max_score=rdmcl.Cluster.max_score)
+    mock_clust = SimpleNamespace(score=lambda: 1)
+    monkeypatch.setattr(rdmcl, "Cluster", lambda *_, **__: mock_clust)
+    assert mock_parent_clust.max_score(mock_parent_clust) == 14
+    out, err = capsys.readouterr()
+    assert "['Bfo-PanxαI', 'Dgl-PanxαI', 'Edu-PanxαI', 'Hvu-PanxβI', 'Lcr-PanxαI', 'Mle-Panxα6']" in out
+
+
+def test_cluster_min_score(hf, monkeypatch, capsys):
+    taxa = OrderedDict()
+    for next_id in hf.get_data("cteno_ids"):
+        taxon = next_id.split("-")[0]
+        taxa.setdefault(taxon, [])
+        taxa[taxon].append(next_id)
+    mock_parent_clust = SimpleNamespace(taxa=taxa, pull_scores_subgraph=lambda seq_ids: print(seq_ids),
+                                        min_score=rdmcl.Cluster.min_score)
+    mock_clust = SimpleNamespace(score=lambda: 1)
+    monkeypatch.setattr(rdmcl, "Cluster", lambda *_, **__: mock_clust)
+    assert mock_parent_clust.min_score(mock_parent_clust) == 18
+    out, err = capsys.readouterr()
+    assert "['Oma-PanxαA', 'Oma-PanxαB', 'Oma-PanxαC', 'Oma-PanxαD']" in out
 
 
 def test_cluster_len(hf):

@@ -639,6 +639,29 @@ class Cluster(object):
                        "\n\t\t".join([str(sorted(res.seq_ids)) for res in results]))
         return results
 
+    def max_score(self):
+        # The best score would be perfect separation of taxa
+        sub_clusters = [[]]
+        for taxon, genes in self.taxa.items():
+            for indx, gene in enumerate(genes):
+                if len(sub_clusters) > indx:
+                    sub_clusters[indx].append(gene)
+                else:
+                    sub_clusters.append([gene])
+        best_possible_score = 0
+        for seq_ids in sub_clusters:
+            subcluster = Cluster(seq_ids, self.pull_scores_subgraph(seq_ids), parent=self)
+            best_possible_score += subcluster.score()
+        return best_possible_score
+
+    def min_score(self):
+        # The worst score possible is all genes in each taxa clustered together.
+        worst_possible_score = 0
+        for taxon, seq_ids in self.taxa.items():
+            bad_clust = Cluster(seq_ids, self.pull_scores_subgraph(seq_ids), parent=self)
+            worst_possible_score += bad_clust.score()
+        return worst_possible_score
+
     def __len__(self):
         return len(self.seq_ids)
 
@@ -792,23 +815,10 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
     # I know what the best and worst possible scores are, so let MCMCMC know (better for calculating acceptance rates)
     # The worst score possible would be all genes in each taxa segregated.
-    worst_possible_score = 0
-    for taxon, seq_ids in master_cluster.taxa.items():
-        bad_clust = Cluster(seq_ids, master_cluster.pull_scores_subgraph(seq_ids), parent=master_cluster)
-        worst_possible_score += bad_clust.score()
+    worst_possible_score = master_cluster.min_score()
 
     # The best score would be perfect separation of taxa
-    sub_clusters = [[]]
-    for taxon, genes in master_cluster.taxa.items():
-        for indx, gene in enumerate(genes):
-            if len(sub_clusters) > indx:
-                sub_clusters[indx].append(gene)
-            else:
-                sub_clusters.append([gene])
-    best_possible_score = 0
-    for seq_ids in sub_clusters:
-        subcluster = Cluster(seq_ids, master_cluster.pull_scores_subgraph(seq_ids), parent=master_cluster)
-        best_possible_score += subcluster.score()
+    best_possible_score = master_cluster.max_score()
 
     if best_possible_score == worst_possible_score:
         return cluster_list
