@@ -1156,13 +1156,12 @@ def retrieve_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=False):
 
     # Grab from the database first, if the data exists there already
     query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash=?", (seq_id_hash,))
-    if query and len(query[0]) == 2:
+    if query and len(query[0]) == 2 and None not in query[0]:
         sim_scores, alignment = query[0]
-        if sim_scores and alignment:
-            sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None,
-                                     names=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
-                                     dtype={"seq1": "category", "seq2": "category"})
-            return sim_scores, Alb.AlignBuddy(alignment, in_format="fasta")
+        sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None,
+                                 names=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
+                                 dtype={"seq1": "category", "seq2": "category"})
+        return sim_scores, Alb.AlignBuddy(alignment, in_format="fasta")
 
     # Try to feed the job to independent workers
     if WORKER_DB and os.path.isfile(WORKER_DB) and len(seq_ids) > MIN_SIZE_TO_WORKER:
@@ -1378,7 +1377,7 @@ class WorkerJob(object):
     def pull_from_db(self):
         # Remember that job_id and seq_id_hash are different! job_id includes details about alignment
         query = self.sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash=?", (self.seq_id_hash,))
-        if not query or len(query[0]) != 2:
+        if not query or len(query[0]) != 2 or None in query[0]:
             return False
         sim_scores, alignment = query[0]
         sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None,
