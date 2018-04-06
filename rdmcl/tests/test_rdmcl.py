@@ -2170,8 +2170,12 @@ def test_full_run(hf, capsys):
     test_in_args.outdir = out_dir.path
     test_in_args.sqlite_db = join(hf.resource_path, "db.sqlite")
     test_in_args.psipred_dir = join(hf.resource_path, "psi_pred")
-    test_in_args.mcmc_steps = 10
+    test_in_args.mcmc_steps = 100
     test_in_args.r_seed = 1
+    test_in_args.resume = True
+
+    shutil.copytree(join(hf.resource_path, "mcmcmc"), join(out_dir.path, "mcmcmc"))
+
     rdmcl.full_run(test_in_args)
 
     for expected_dir in ["alignments", "hmm", "mcmcmc", "psi_pred", "sim_scores"]:
@@ -2187,9 +2191,9 @@ def test_full_run(hf, capsys):
         assert content == """\
 group_0_0_0\t20.5286\tBOL-PanxαA\tLcr-PanxαH\tMle-Panxα10A\tMle-Panxα9\tVpa-PanxαB
 group_0_2\t4.0\tBOL-PanxαH\tMle-Panxα8
-group_0_1_1\t5.25\tLcr-PanxαK\tMle-Panxα7A
-group_0_0_1\t1.25\tMle-Panxα5
-group_0_1_0\t2.0833\tBOL-PanxαG
+group_0_1_0_1\t5.25\tLcr-PanxαK\tMle-Panxα7A
+group_0_1_1\t1.25\tMle-Panxα5
+group_0_1_0_0\t2.0833\tBOL-PanxαG
 """, print(content)
 
     out, err = capsys.readouterr()
