@@ -782,13 +782,13 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
             with open(join(mcmcmc_path, "end_message.log"), "w") as _ofile:
                 _ofile.write(end_message + "\n")
 
-        _, alignment = retrieve_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=True)
-        alignment.write(join(outdir, "alignments", master_cluster.name()))
+        _, _alignment = retrieve_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=True)
+        _alignment.write(join(outdir, "alignments", master_cluster.name()))
         master_cluster.sim_scores.to_csv(join(outdir, "sim_scores", "%s.scores" % master_cluster.name()),
                                          header=None, index=False, sep="\t")
-        alignment = Alb.generate_hmm(alignment, HMMBUILD)
+        _alignment = Alb.generate_hmm(_alignment, HMMBUILD)
         with open(join(outdir, "hmm", master_cluster.name()), "w") as _ofile:
-            _ofile.write(alignment.alignments[0].hmm)
+            _ofile.write(_alignment.alignments[0].hmm)
         update = len(master_cluster.seq_ids) if not master_cluster.subgroup_counter else 0
         progress.update("placed", update)
         return
@@ -864,21 +864,51 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     with open(join(mcmcmc_path, "best_group"), "w") as ofile:
         ofile.write('\n'.join(best_clusters))
 
+    child_list = OrderedDict()
+    for indx, cluster_ids in enumerate(mcl_clusters):
+        sb_copy = Sb.make_copy(seqbuddy)
+        sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster_ids]))
+        # Queue jobs if appropriate
+        if WORKER_DB and os.path.isfile(WORKER_DB) and len(cluster_ids) >= MIN_SIZE_TO_WORKER:
+            p = Process(target=mc_create_all_by_all_scores, args=(sb_copy, [psi_pred_ss2, sql_broker]))
+            # Need to slow the start down a little, otherwise it can run into concurrency issues
+            time.sleep(0.1)
+            p.start()
+            seq_ids = sorted([rec.id for rec in sb_copy.records])
+            seq_id_hash = hlp.md5_hash(", ".join(seq_ids))
+            child_list[seq_id_hash] = [p, indx, cluster_ids]
+        else:
+            sim_scores, alb_obj = retrieve_all_by_all_scores(sb_copy, psi_pred_ss2, sql_broker, quiet=True)
+            cluster = Cluster(cluster_ids, sim_scores, parent=master_cluster, taxa_sep=taxa_sep,
+                              r_seed=rand_gen.randint(1, 999999999999999))
+            mcl_clusters[indx] = cluster
+
+    # wait for remaining processes to complete
+    while len(child_list) > 0:
+        for _name, args in child_list.items():
+            child, indx, cluster_ids = args
+            if child.is_alive():
+                continue
+            else:
+                query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash=?", (_name,))
+                if query and len(query[0]) == 2:
+                    sim_scores, alignment = query[0]
+                    alignment = Alb.AlignBuddy(alignment, in_format="fasta")
+                    if len(alignment.records()) == 1:
+                        sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
+                    else:
+                        sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None,
+                                                 names=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
+                                                 dtype={"seq1": "category", "seq2": "category"})
+
+                    cluster = Cluster(cluster_ids, sim_scores, parent=master_cluster, taxa_sep=taxa_sep,
+                                      r_seed=rand_gen.randint(1, 999999999999999))
+                    mcl_clusters[indx] = cluster
+                    del child_list[_name]
+                    break
+
     recursion_clusters = []
     for sub_cluster in mcl_clusters:
-        cluster_ids_hash = hlp.md5_hash(", ".join(sorted(sub_cluster)))
-        if len(sub_cluster) == 1:
-            sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
-        else:
-            # All mcl sub clusters are written to database in mcmcmc_mcl(), so no need to check if exists
-            graph = sql_broker.query("SELECT (graph) FROM data_table WHERE hash=?", (cluster_ids_hash,))[0][0]
-
-            sim_scores = pd.read_csv(StringIO(graph), index_col=False, header=None,
-                                     names=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
-                                     dtype={"seq1": "category", "seq2": "category"})
-
-        sub_cluster = Cluster(sub_cluster, sim_scores=sim_scores, parent=master_cluster,
-                              taxa_sep=taxa_sep, r_seed=rand_gen.randint(1, 999999999999999))
         if sub_cluster.seq_id_hash == master_cluster.seq_id_hash:  # This shouldn't ever happen
             raise ArithmeticError("The sub_cluster and master_cluster are the same, but are returning different "
                                   "scores\nsub-cluster score: %s, master score: %s\n%s"
@@ -1128,10 +1158,11 @@ def retrieve_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=False):
     query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash=?", (seq_id_hash,))
     if query and len(query[0]) == 2:
         sim_scores, alignment = query[0]
-        sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None,
-                                 names=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
-                                 dtype={"seq1": "category", "seq2": "category"})
-        return sim_scores, Alb.AlignBuddy(alignment, in_format="fasta")
+        if sim_scores and alignment:
+            sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None,
+                                     names=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
+                                     dtype={"seq1": "category", "seq2": "category"})
+            return sim_scores, Alb.AlignBuddy(alignment, in_format="fasta")
 
     # Try to feed the job to independent workers
     if WORKER_DB and os.path.isfile(WORKER_DB) and len(seq_ids) > MIN_SIZE_TO_WORKER:
@@ -1451,9 +1482,6 @@ class WorkerJob(object):
 def mcmcmc_mcl(args, params):
     """
     Function passed to mcmcmcm.MCMCMC that will execute MCL and return the final cluster scores
-    THINK ABOUT: Can this entire thing be simplified? Why spend all this time calculating all-by-all graphs that may
-    never be used? I think the only graphs that need to be calculated are those that get fed into the recursive cluster
-    breakdown.
     :param args: Sample values to run MCL with and a random seed [inflation, gq, r_seed]
     :param params: List of parameters (see below for unpacking assignment)
     :return:
@@ -1470,50 +1498,17 @@ def mcmcmc_mcl(args, params):
     clusters = sorted(clusters, key=lambda x: len(x), reverse=True)
     score = 0
 
-    child_list = OrderedDict()
     for indx, cluster_ids in enumerate(clusters):
-        sb_copy = Sb.make_copy(seqbuddy)
-        sb_copy = Sb.pull_recs(sb_copy, "|".join(["^%s$" % rec_id for rec_id in cluster_ids]))
-        # Queue jobs if appropriate
-        if WORKER_DB and os.path.isfile(WORKER_DB) and len(cluster_ids) >= MIN_SIZE_TO_WORKER:
-            p = Process(target=mc_create_all_by_all_scores, args=(sb_copy, [psi_pred_ss2, sql_broker]))
-            # Need to slow the start down a little, otherwise it can run into concurrency issues
-            time.sleep(0.1)
-            p.start()
-            seq_ids = sorted([rec.id for rec in sb_copy.records])
-            seq_id_hash = hlp.md5_hash(", ".join(seq_ids))
-            child_list[seq_id_hash] = [p, indx, cluster_ids]
-        else:
-            sim_scores, alb_obj = retrieve_all_by_all_scores(sb_copy, psi_pred_ss2, sql_broker, quiet=True)
-            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
-                              r_seed=rand_gen.randint(1, 999999999999999))
-            clusters[indx] = cluster
-            score += cluster.score()
+        sim_scores = parent_cluster.pull_scores_subgraph(cluster_ids)
+        cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
+                          r_seed=rand_gen.randint(1, 999999999999999))
 
-    # wait for remaining processes to complete
-    while len(child_list) > 0:
-        for _name, args in child_list.items():
-            child, indx, cluster_ids = args
-            if child.is_alive():
-                continue
-            else:
-                query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash=?", (_name,))
-                if query and len(query[0]) == 2:
-                    sim_scores, alignment = query[0]
-                    alignment = Alb.AlignBuddy(alignment, in_format="fasta")
-                    if len(alignment.records()) == 1:
-                        sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
-                    else:
-                        sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None,
-                                                 names=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
-                                                 dtype={"seq1": "category", "seq2": "category"})
+        clusters[indx] = cluster
+        score += cluster.score()
 
-                    cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
-                                      r_seed=rand_gen.randint(1, 999999999999999))
-                    clusters[indx] = cluster
-                    score += cluster.score()
-                    del child_list[_name]
-                    break
+        sql_broker.query("""INSERT OR IGNORE INTO data_table (hash, seq_ids, cluster_score)
+                        VALUES (?, ?, ?)
+                        """, (cluster.seq_id_hash, cluster.seq_ids_str, cluster.score(),))
 
     with LOCK:
         with open(join(exter_tmp_dir, "max.txt"), "r") as ifile:
@@ -1532,14 +1527,10 @@ def mcmcmc_mcl(args, params):
             score_sum = 0
             cluster_ids = []
             for cluster in clusters.split(","):
-                sql_query = sql_broker.query("SELECT seq_ids, graph FROM data_table WHERE hash=?", (cluster,))
+                sql_query = sql_broker.query("SELECT seq_ids FROM data_table WHERE hash=?", (cluster,))
                 seq_ids = sql_query[0][0].split(", ")
                 cluster_ids.append(sql_query[0][0])
-                if len(seq_ids) == 1:
-                    sim_scores = pd.DataFrame(columns=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"])
-                else:
-                    sim_scores = pd.read_csv(StringIO(sql_query[0][1]), index_col=False, header=None)
-
+                sim_scores = parent_cluster.pull_scores_subgraph(seq_ids)
                 cluster = Cluster(seq_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
                                   r_seed=rand_gen.randint(1, 999999999999))
                 score_sum += cluster.score()
