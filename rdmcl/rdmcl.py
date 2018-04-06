@@ -669,18 +669,23 @@ class Cluster(object):
         return str(sorted(self.seq_ids))
 
 
-def cluster2database(cluster, sql_broker, alignment):
+def cluster2database(cluster, sql_broker, alignment, update=False):
     """
     Update the database with a cluster
     :param cluster: Cluster object
     :param sql_broker: A running helpers.SQLiteBroker object
     :param alignment: An alignment as an AlignBuddy object or string
+    :param update: Replace any values already in the record
     :return:
     """
-    sql_broker.query("""INSERT OR IGNORE INTO data_table (hash, seq_ids, alignment, graph, cluster_score)
-                        VALUES (?, ?, ?, ?, ?)
-                        """, (cluster.seq_id_hash, cluster.seq_ids_str, str(alignment),
-                              cluster.sim_scores.to_csv(header=None, index=False), cluster.score(),))
+    sql_broker.query("INSERT OR IGNORE INTO data_table (hash, seq_ids, alignment, graph, cluster_score) "
+                     "VALUES (?, ?, ?, ?, ?)", (cluster.seq_id_hash, cluster.seq_ids_str, str(alignment),
+                                                cluster.sim_scores.to_csv(header=None, index=False), cluster.score(),))
+    if update:
+        sql_broker.query("UPDATE data_table SET alignment=?, graph=?, cluster_score=? "
+                         "WHERE hash=?",
+                         (str(alignment), cluster.sim_scores.to_csv(header=None, index=False),
+                          cluster.score(),  cluster.seq_id_hash,))
     return
 
 
@@ -891,7 +896,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                 continue
             else:
                 query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash=?", (_name,))
-                if query and len(query[0]) == 2:
+                if query and len(query[0]) == 2 and query[0][0] and query[0][1]:
                     sim_scores, alignment = query[0]
                     alignment = Alb.AlignBuddy(alignment, in_format="fasta")
                     if len(alignment.records()) == 1:
@@ -906,6 +911,12 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                     mcl_clusters[indx] = cluster
                     del child_list[_name]
                     break
+                else:
+                    print(query)
+                    print(query[0])
+                    print(query[0][0])
+                    print(query[0][1])
+                    sys.exit()
 
     recursion_clusters = []
     for sub_cluster in mcl_clusters:
@@ -1156,7 +1167,7 @@ def retrieve_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=False):
 
     # Grab from the database first, if the data exists there already
     query = sql_broker.query("SELECT graph, alignment FROM data_table WHERE hash=?", (seq_id_hash,))
-    if query and len(query[0]) == 2:
+    if query and len(query[0]) == 2 and query[0][0] and query[0][1]:
         sim_scores, alignment = query[0]
         if sim_scores and alignment:
             sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None,
@@ -1169,6 +1180,8 @@ def retrieve_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=False):
         workerjob = WorkerJob(seqbuddy, sql_broker)
         worker_result = workerjob.run()
         if worker_result:
+            sim_scores, alignment = worker_result
+            cluster2database(Cluster(seq_ids, sim_scores), sql_broker, alignment, update=True)
             return worker_result
 
     # If the job is small or couldn't be pushed off on a worker, do it directly
@@ -1215,7 +1228,7 @@ class AllByAllScores(object):
                                       quiet=self.quiet, max_processes=CPUS)
         sim_scores = pd.read_csv(all_by_all_outfile.get_handle("r"), index_col=False)
         sim_scores = set_final_sim_scores(sim_scores)
-        cluster2database(Cluster(self.seq_ids, sim_scores), self.sql_broker, alignment)
+        cluster2database(Cluster(self.seq_ids, sim_scores), self.sql_broker, alignment, update=True)
         return sim_scores, alignment
 
 
@@ -1407,7 +1420,7 @@ class WorkerJob(object):
         sim_scores = pd.read_csv("%s.graph" % location, index_col=False, header=None,
                                  names=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
                                  dtype={"seq1": "category", "seq2": "category"})
-        cluster2database(Cluster(self.seq_ids, sim_scores), self.sql_broker, alignment)
+        cluster2database(Cluster(self.seq_ids, sim_scores), self.sql_broker, alignment, update=True)
 
         for del_file in [".aln", ".graph", ".seqs"]:
             os.remove(join(WORKER_OUT, "%s%s" % (self.job_id, del_file)))

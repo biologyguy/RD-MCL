@@ -1077,6 +1077,8 @@ def test_retrieve_all_by_all_scores_feed_worker(hf, monkeypatch):
     monkeypatch.setattr(rdmcl, "WorkerJob", MockWorkerJob)
     monkeypatch.setattr(rdmcl, "WORKER_DB", tmpfile.path)
     monkeypatch.setattr(rdmcl, "MIN_SIZE_TO_WORKER", 1)
+    monkeypatch.setattr(rdmcl, "cluster2database", lambda *_, **__: True)
+    monkeypatch.setattr(rdmcl, "Cluster", lambda *_, **__: True)
 
     sim_scores, alignbuddy = rdmcl.retrieve_all_by_all_scores(seqbuddy, "psi_pred_files", sql_broker)
     assert sim_scores == "worker_sim_scores"
@@ -1467,7 +1469,7 @@ def test_workerjob_check_finished(hf, monkeypatch):
 
 def test_workerjob_process_finished(hf, monkeypatch):
     monkeypatch.setattr(rdmcl, "HeartBeat", MockHeartBeat)
-    monkeypatch.setattr(rdmcl, "cluster2database", lambda *_: True)
+    monkeypatch.setattr(rdmcl, "cluster2database", lambda *_, **__: True)
     temp_dir = br.TempDir()
     work_db = temp_dir.copy_to("%swork_db.sqlite" % hf.resource_path)
     rdmcl.WORKER_DB = work_db
