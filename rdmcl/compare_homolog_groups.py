@@ -113,6 +113,15 @@ class Comparison(object):
             self.pretty_out += "%s\n" % "\t".join(q_cluster)
         return
 
+    def score(self):
+        output = "Precision:    %s%%\n" % (round(self.precision, 4) * 100)
+        output += "Recall:       %s%%\n" % (round(self.recall, 4) * 100)
+        output += "Accuracy:     %s%%\n" % (round(self.accuracy, 4) * 100)
+        output += "tn rate:      %s%%\n" % (round(self.tn_rate, 4) * 100)
+        output += "Query score:  %s\n" % round(self.query_score, 2)
+        output += "True score:   %s\n" % round(self.true_score, 2)
+        return output
+
 
 class Cluster(rdmcl.Cluster):
     def __init__(self, seq_ids, parent=None, taxa_separator="-"):
@@ -175,12 +184,7 @@ def main():
     comparison = Comparison(in_args.true_clusters, in_args.query_clusters)
 
     if in_args.score:
-        print("Precision:    %s%%" % (round(comparison.precision, 4) * 100))
-        print("Recall:       %s%%" % (round(comparison.recall, 4) * 100))
-        print("Accuracy:     %s%%" % (round(comparison.accuracy, 4) * 100))
-        print("tn rate:      %s%%" % (round(comparison.tn_rate, 4) * 100))
-        print("Query score:  %s" % round(comparison.query_score, 2))
-        print("True score:   %s\n" % round(comparison.true_score, 2))
+        print(comparison.score())
     else:
         print(comparison.pretty_out)
 
