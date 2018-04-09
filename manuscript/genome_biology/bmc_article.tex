@@ -312,10 +312,25 @@ Need a figure that illustrates relative information content of each metric.
 "Information entropy is defined as the average amount of information produced by a stochastic source of data." -wikipedia, Entropy(info theory)
 
 \subsection{MCL parameters must be tuned to maximally resolve orthogroups}\label{subsec:mclParametersMustBeTunedToMaximallyResolveOrthogroups}
-\lipsum[1]
+Local maxima in cluster number and orthogroup scores are possible across MCL parameter space (see all RefSeq caspase RD-MCL scores).
+This means that a simple optimization algorithm is not appropriate, hence the choice to use Metropolis-Hastings.
 
 \subsection{Recursive MCL compensates for variable evolutionary separation within and between orthogroups}\label{subsec:recursiveMclCompensatesForVariableEvolutionarySeparationBetweenOrthogroups}
 \lipsum[1]
+
+\subsubsection{Number of sequences}
+WNTs
+
+Simulated: To test the effects of increasing the number of orthogroups and orthogroup size, datasets were simulated with 4 to 30 taxa and between 4 and 30 genes per taxa.
+
+\subsubsection{Missing data}
+WNTs
+
+\subsubsection{Gene duplications}
+WNTs
+
+\subsubsection{Hybrid sequences (weird domain structures)}
+TIR-containing proteins
 
 \subsection{Simulation data across the dynamic range of RD-MCL}\label{subsec:simulationDataAcrossTheDynamicRangeOfRd-mcl}
 To test the performance of RD-MCL compared to other available ortholog prediction tools, we simulated sets of homologs using the Pyvolve module~\cite{Spielman:2015kv}.
@@ -362,32 +377,16 @@ Figure~\ref{fig:branch_len_std} illustrates the case-by-case performance of RD-M
 \label{fig:branch_len_std}
 \end{figure}
 
-\subsubsection{Number of sequences}
-To test the effects of increasing the number of orthogroups and orthogroup size, datasets were simulated with 4 to 30 taxa and between 4 and 30 genes per taxa.
+\subsection{Downstream analyses of sample gene families}
+In this section, I will describe some of the interesting evolutionary and systematic discoveries made possible by fine-grained clustering.
 
-\subsubsection{Missing data}
-\lipsum[1]
-
-\subsubsection{Gene duplications}
-\lipsum[1]
-
-\subsubsection{Hybrid sequences (weird domain structures)}
-\lipsum[1]
-
-\subsection{RD-MCL classification of sample gene families}\label{subsec:rd-mclClassificationOfSampleGeneFamilies}
-\lipsum[1]
-
-\subsubsection{Caspases: Recovering known orthogroups from well sampled clades}
-Caspases are cysteine-dependent aspartyl-specific proteases with key regulatory roles in inflammation, immunity, and tissue homeostasis~\cite{Songane:2018kq, McIlwain:2013iy}.
-The complement of chordate caspases has been well described through careful reconstruction of genomic synteny, capturing a rich history of gene duplication and loss in specific clades~\cite{Eckhart:2008gv, Sakamaki:2009fu, Sakamaki:2015kb, Sakata:2007bs}.
+\subsubsection{Caspases}
+Caspases are cysteine-dependent aspartyl-specific proteases with key regulatory roles in inflammation, immunity, and tissue homeostasis~\cite{Songane:2018kq,McIlwain:2013iy}.
+The complement of chordate caspases has been well described through careful reconstruction of genomic synteny, capturing a rich history of gene duplication and loss in specific clades~\cite{Eckhart:2008gv,Sakamaki:2009fu,Sakamaki:2015kb,Sakata:2007bs}.
 Presence of a caspase catalytic region (CASc) was used as the inclusion criteria
 
 Discuss the mess that is Casps-1/4/5/12/13
 
-\subsubsection{WNTs: Anchoring novel orthogroups from transcriptome date}
-\lipsum[1]
-
-\subsection{Downstream analyses}\label{subsec:downstreamAnalyses}
 \subsubsection{Inferring orthogroup 'gene-trees' from consensus sequences}
 Reducing the phylogenetic history of a multi-domain gene family down to a single bifurcating tree may not capture the complex evolutionary events behind the modern-day complement of sequences.
 Domain shuffling can cause different regions within a gene to have very different genomic histories, with rigorous efforts having been made to develop methods for phylogenetic reconciliation.
@@ -433,7 +432,7 @@ The performance of each tool was assessed by calculating the precision and recal
 
 Where TP is True Positive, FP is False Positives, and FN is False Negatives.
 
-\subsection{Caspase and WNT sequence data}\label{subsec:caspaseAndWntSequenceData}
+\subsection{WNT, TIR-containing, and Caspase sequence data}
 The CASc domain from human caspase-2 (NCBI accession NP\_116764.2) and the wnt domain from mouse Wnt-6 (UniProt accession AAA40569.1) were each used as the starting sequence for a three-iteration PSI-BLAST search of the RefSeq database, limiting the results to metazoans (taxid: 33208), an expectation threshold of 0.01, and allowing for the return of up to 20,000 target sequences.
 Accession numbers for all target sequences were downloaded directly from the PSI-BLAST results page, then DatabaseBuddy~\cite{Bond:2017bj} was used to filter out isoforms, partial sequences, and low-quality sequences before fetching the GenBank records.
 Given the current depth of species-level coverage in RefSeq, five taxonomic ranges were identified as most appropriate for input into RD-MCL: \textit{Actinopterygii}, \textit{Achelosauria}, \textit{Mammalia}, \textit{Diptera}, and \textit{Hymenoptera}.
@@ -476,7 +475,7 @@ O \equiv
 \end{bmatrix}
 \]
 
-Each row $Y$ is summed and modified by cofactors $\psi$ and $\gamma$. $\psi$ is proportional to the number of taxa in $Y$ relative to the total number of taxa present globally (i.e., the length of $X$ in the above matrix), and $\gamma$ imposes exponentially diminishing returns on the score for each successive index of $Y$.
+Each row $Y$ is summed and modified by cofactors $\psi$ and $\gamma$. $\psi$ is proportional to the number of taxa in $Y$ relative to the total number of taxa present globally (i.e.\ the length of $X$ in the above matrix), and $\gamma$ imposes exponentially diminishing returns on the score for each successive index of $Y$.
 
 \begin{gather*}
     \psi = \frac{|\{Y:Y \neq 0\}|}{|j|} + 1\\
