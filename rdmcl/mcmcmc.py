@@ -367,12 +367,14 @@ class MCMCMC:
                 walker.accept()
         return
 
-    def run(self, progress=False):
+    def run(self, progress=False, anneal=(1, 1)):
         """
         NOTE: Gibbs sampling is a way of selecting variables one at a time instead of all at once. This is beneficial in
         high dimensional variable space because it will increase the probability of accepting a new sample. It isn't
         implemented here, but it might be worth keeping in mind.
         :param progress: Dynamic print how many steps have been run.
+        :param anneal: Simulated annealing (i.e., heat progressively lowers with time)
+        :type anneal: tuple (lowest, steps)
         """
         counter = 0
         printer = br.DynamicPrint(quiet=not progress)
@@ -394,8 +396,12 @@ class MCMCMC:
                     for variable in walker.variables:
                         if walker.lava:
                             variable.draw_random()
-                        else:
+                        elif not anneal:
                             variable.draw_new_value(walker.heat)
+                        else:
+                            scale = anneal[0] if counter >= anneal[1] \
+                                else anneal[0] - ((counter / anneal[1]) * (1 - anneal[0]))
+                            variable.draw_new_value(walker.heat * scale)
                         func_args.append(variable.draw_value)
 
                     # Always add a new seed for the target function
