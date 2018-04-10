@@ -367,14 +367,19 @@ class MCMCMC:
                 walker.accept()
         return
 
-    def run(self):
+    def run(self, progress=False):
         """
         NOTE: Gibbs sampling is a way of selecting variables one at a time instead of all at once. This is beneficial in
         high dimensional variable space because it will increase the probability of accepting a new sample. It isn't
         implemented here, but it might be worth keeping in mind.
+        :param progress: Dynamic print how many steps have been run.
         """
         counter = 0
+        printer = br.DynamicPrint(quiet=not progress)
         while not self._check_convergence() and (counter <= self.steps or self.steps == 0):
+            message = "Running step %s" % (counter + 1)
+            message += " of %s" % self.steps if self.steps != 0 else ""
+            printer.write(message)
             tmp_dump = self.dumpfile + ".temp"
             with open(tmp_dump, "wb") as ofile:
                 dump_obj = [chain._dump_obj() for chain in self.chains]
