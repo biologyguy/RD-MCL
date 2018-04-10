@@ -10,7 +10,7 @@ import os
 import random
 import string
 from scipy.stats import norm
-from buddysuite.buddy_resources import TempFile, SafetyValve
+from buddysuite import buddy_resources as br
 from copy import deepcopy
 from multiprocessing import Process
 from collections import OrderedDict
@@ -39,7 +39,7 @@ class Variable:
     def draw_new_value(self, heat):
         #  NOTE: Might need to tune heat if the acceptance rate is to low or high.
         draw_val = round(self.rand_gen.gauss(self.current_value, ((self.max - self.min) * heat)), 12)
-        valve = SafetyValve(global_reps=100)
+        valve = br.SafetyValve(global_reps=100)
         while draw_val < self.min or draw_val > self.max:
             if draw_val < self.min:
                 draw_val = self.min + abs(self.min - draw_val)
@@ -96,10 +96,10 @@ class _Walker:
         self.score_history = []
         self.rand_gen = random.Random(r_seed)
         self.name = "".join([self.rand_gen.choice(string.ascii_letters + string.digits) for _ in range(20)])
-        self.proposed_score_file = TempFile()
+        self.proposed_score_file = br.TempFile()
 
         # Sample `function` for starting min/max scores
-        valve = SafetyValve(31)
+        valve = br.SafetyValve(31)
         if min_max:
             if type(min_max) not in [list, tuple] or len(min_max) != 2 or min_max[0] == min_max[1]:
                 raise ValueError("min_max value passed into _Walker is not of type [num, different num]")
