@@ -207,6 +207,8 @@ class Cluster(object):
             taxa = next_seq_id.split(self.taxa_sep)[0]
             self.taxa.setdefault(taxa, [])
             self.taxa[taxa].append(next_seq_id)
+        self.max_genes_in_a_taxa = max([len(self.taxa[taxa]) for taxa in self.taxa]) if not self.parent else \
+            max([len(self.parent.taxa[taxa]) for taxa in self.parent.taxa])
 
     def collapse(self):
         breakout = False
