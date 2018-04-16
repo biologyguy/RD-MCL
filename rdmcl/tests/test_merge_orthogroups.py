@@ -81,31 +81,31 @@ def test_check_init(hf, monkeypatch):
                                  'Hvu-PanxβG'])])
     cluster_object = SimpleNamespace(taxa_separator="-", taxa=taxa)
 
-    #  First 5 lines of output from _prepare_within_group_r2_df
+    # First 5 lines of output from _prepare_within_group_r2_df
     prep_within_r2_data = {"seq1": ["BOL-PanxαC", "BOL-PanxαC", "Bab-PanxαD", "Bab-PanxαD", "Bab-PanxαD"],
                            "seq2": ["Dgl-PanxαG", "Hca-PanxαH", "BOL-PanxαC", "Bch-PanxαE", "Bfo-PanxαD"],
                            "r_square": [0.997720, 0.992786, 0.995777, 0.995940, 0.995856]}
     prep_within_r2_df = pd.DataFrame(data=prep_within_r2_data)
 
-    #  First 5 lines of output from _prepare_within_group_fwd_df
+    # First 5 lines of output from _prepare_within_group_fwd_df
     prep_within_fwd_data = {"hmm_id": ["Cfu-PanxαC", "Cfu-PanxαC", "Cfu-PanxαC", "Cfu-PanxαC", "Cfu-PanxαC"],
                             "rec_id": ["Cfu-PanxαC", "Edu-PanxαB", "Bab-PanxαD", "Bch-PanxαE", "Bfo-PanxαD"],
                             "fwd_raw": [666.8759, 619.9454, 604.2560, 615.6625, 609.4811]}
     prep_within_fwd_df = pd.DataFrame(data=prep_within_fwd_data)
 
-    #  First 5 lines of output from _prepare_between_group_r2_df
+    # First 5 lines of output from _prepare_between_group_r2_df
     prep_between_r2_data = {"seq1": ["BOL-PanxαC", "BOL-PanxαC", "Bab-PanxαB", "Bab-PanxαB", "Bab-PanxαB"],
                             "seq2": ["BOL-PanxαA", "Dgl-PanxαE", "BOL-PanxαC", "Bab-PanxαD", "Bch-PanxαE"],
                             "r_square": [0.550504, 0.520893, 0.555286, 0.565252, 0.566482]}
     prep_between_r2_df = pd.DataFrame(data=prep_between_r2_data)
 
-    #  First 5 lines of output from _prepare_between_group_fwd_df
+    # First 5 lines of output from _prepare_between_group_fwd_df
     prep_between_fwd_data = {"hmm_id": ["Bch-PanxαC", "Bch-PanxαC", "Bch-PanxαC", "Bch-PanxαC", "Bch-PanxαC"],
                              "rec_id": ["Cfu-PanxαC", "Edu-PanxαB", "Bab-PanxαD", "Bch-PanxαE", "Bfo-PanxαD"],
                              "fwd_raw": [316.2845, 313.8431, 309.1125, 315.0160, 312.1405]}
     prep_between_fwd_df = pd.DataFrame(data=prep_between_fwd_data)
 
-    #  monkeypatch functions called in def __init__
+    # monkeypatch functions called in def __init__
     monkeypatch.setattr(hlp, "prepare_clusters", lambda *_, **__: clusters)
     monkeypatch.setattr(compare_homolog_groups, "Cluster", lambda *_: cluster_object)
     monkeypatch.setattr(merge_orthogroups.Check, "_prepare_within_group_r2_df", lambda *_: prep_within_r2_df)
@@ -114,7 +114,7 @@ def test_check_init(hf, monkeypatch):
     monkeypatch.setattr(merge_orthogroups.Check, "_prepare_between_group_fwd_df", lambda *_: prep_between_fwd_df)
     monkeypatch.setattr(hlp, "create_truncnorm", lambda *_: True)
 
-    #  Make tempdir. Make subdir "hmm". Copy csv files in hmm.
+    # Make tempdir. Make subdir "hmm". Copy csv files in hmm.
     test_dir = br.TempDir()
     subdir = test_dir.subdir("hmm")
     copyfile(join(hf.resource_path, "final_clusters.txt"), join(subdir, "final_clusters.txt"))
@@ -237,7 +237,7 @@ def test_prepare_within_group_fwd_df(capsys, hf):
     r_squares = pd.read_csv(join(test_dir.path, "hmm", "rsquares_matrix.csv"))
     fwd_scores = pd.read_csv(join(test_dir.path, "hmm", "hmm_fwd_scores.csv"))
 
-    #  force=False, file "within_group_fwd.csv" does not exist
+    # force=False, file "within_group_fwd.csv" does not exist
     assert os.path.isfile(join(test_dir.path, "hmm", "within_group_fwd.csv")) is False
     check = SimpleNamespace(rdmcl_dir=test_dir.path, clusters=clusters, r_squares=r_squares, fwd_scores=fwd_scores)
     merge = merge_orthogroups.Check._prepare_within_group_fwd_df(check, force=False)
@@ -247,7 +247,7 @@ def test_prepare_within_group_fwd_df(capsys, hf):
     assert merge.at[329, 'rec_id'] == 'BOL-PanxαH'
     assert merge['fwd_raw'].sum() == 177372.9229
 
-    #  File "within_group_fwd.csv" already exists, run method again
+    # File "within_group_fwd.csv" already exists, run method again
     assert os.path.isfile(join(test_dir.path, "hmm", "within_group_fwd.csv")) is True
     check = SimpleNamespace(rdmcl_dir=test_dir.path, clusters=clusters, r_squares=r_squares, fwd_scores=fwd_scores)
     merge = merge_orthogroups.Check._prepare_within_group_fwd_df(check, force=False)
@@ -256,7 +256,7 @@ def test_prepare_within_group_fwd_df(capsys, hf):
     assert merge['fwd_raw'].sum() == 177372.9229
     os.remove(join(test_dir.path, "hmm", "within_group_fwd.csv"))
 
-    #  force=True
+    # force=True
     check = SimpleNamespace(rdmcl_dir=test_dir.path, clusters=clusters, r_squares=r_squares, fwd_scores=fwd_scores)
     merge = merge_orthogroups.Check._prepare_within_group_fwd_df(check, force=True)
     assert merge.at[1, 'hmm_id'] == 'Cfu-PanxαC'
@@ -290,7 +290,7 @@ def test_prepare_between_group_r2_df(capsys, hf):
     copyfile(join(hf.resource_path, "rsquares_matrix.csv"), join(subdir, "rsquares_matrix.csv"))
     r_squares = pd.read_csv(join(test_dir.path, "hmm", "rsquares_matrix.csv"))
 
-    #  force=False, file "between_group_rsquares.csv" does not exist
+    # force=False, file "between_group_rsquares.csv" does not exist
     check = SimpleNamespace(rdmcl_dir=test_dir.path, clusters=clusters, r_squares=r_squares)
     merge = merge_orthogroups.Check._prepare_between_group_r2_df(check, force=False)
     out, err = capsys.readouterr()
@@ -299,7 +299,7 @@ def test_prepare_between_group_r2_df(capsys, hf):
     assert merge.at[978, 'seq2'] == 'Dgl-PanxαA'
     assert merge['r_square'].sum() == 250.82666010791604
 
-    #  Skip the main loop when file already exists
+    # Skip the main loop when file already exists
     check = SimpleNamespace(rdmcl_dir=test_dir.path, clusters=clusters, r_squares=r_squares)
     merge = merge_orthogroups.Check._prepare_between_group_r2_df(check, force=False)
     out, err = capsys.readouterr()
@@ -345,7 +345,7 @@ def test_prepare_between_group_fwd_df(capsys, hf):
     copyfile(join(hf.resource_path, "hmm_fwd_scores.csv"), join(subdir, "hmm_fwd_scores.csv"))
     fwd_scores = pd.read_csv(join(test_dir.path, "hmm", "hmm_fwd_scores.csv"))
 
-    #  force=False, file "between_group_fwd.csv" does not exist
+    # force=False, file "between_group_fwd.csv" does not exist
     check = SimpleNamespace(rdmcl_dir=test_dir.path, clusters=clusters, fwd_scores=fwd_scores)
     merge = merge_orthogroups.Check._prepare_between_group_fwd_df(check, force=False)
     out, err = capsys.readouterr()
@@ -354,7 +354,7 @@ def test_prepare_between_group_fwd_df(capsys, hf):
     assert merge.at[1959, 'rec_id'] == 'Bfo-PanxαG'
     assert merge['fwd_raw'].sum() == 384849.17520000006
 
-    #  File "between_group_fwd.csv" already exists
+    # File "between_group_fwd.csv" already exists
     assert os.path.isfile(join(test_dir.path, "hmm", "between_group_fwd.csv")) is True
     check = SimpleNamespace(rdmcl_dir=test_dir.path, clusters=clusters, fwd_scores=fwd_scores)
     merge = merge_orthogroups.Check._prepare_between_group_fwd_df(check, force=False)
@@ -364,7 +364,7 @@ def test_prepare_between_group_fwd_df(capsys, hf):
     assert merge.at[1959, 'rec_id'] == 'Bfo-PanxαG'
     assert merge['fwd_raw'].sum() == 384849.17520000006
 
-    #  force=True
+    # force=True
     check = SimpleNamespace(rdmcl_dir=test_dir.path, clusters=clusters, fwd_scores=fwd_scores)
     merge = merge_orthogroups.Check._prepare_between_group_fwd_df(check, force=True)
     out, err = capsys.readouterr()
@@ -443,18 +443,20 @@ def test_check_existing_group(hf):
     check = SimpleNamespace(clusters=clusters, r_squares=r_squares, master_clust=master_clust,
                             within_group_r2_dist=within_group_r2_dist, btw_group_r2_dist=btw_group_r2_dist)
     merge_orthogroups.Check.check_existing_group(check, group_name=group_name1)
-    assert check.output == [['group_0_7', 0.022800000000000001, 0.096000000000000002, 6.319, 7.083],
-                            ['group_0_18', 0.00020000000000000001, 0.090700000000000003, 9.93, 7.922],
-                            ['group_0_20', 0.0, 0.0, 5.056, 5.444], ['group_0_23', 0.0, 0.0, 5.056, 5.444],
-                            ['group_0_26', 0.0, 0.0, 5.308, 5.717], ['group_0_30', 0.0, 0.0, 4.875, 5.25],
+    assert check.output == [['group_0_7', 0.0228, 0.096, 6.319, 7.083],
+                            ['group_0_18', 0.0002, 0.0907, 5.119, 5.494],
+                            ['group_0_20', 0.0, 0.0, 5.056, 5.444],
+                            ['group_0_23', 0.0, 0.0, 5.056, 5.444],
+                            ['group_0_26', 0.0, 0.0, 5.308, 5.717],
+                            ['group_0_30', 0.0, 0.0, 4.875, 5.25],
                             ['group_0_5', 0.0, 0.0018, 10.414, 11.994],
-                            ['group_0_1', 0.0, 0.0025000000000000001, 30.246, 34.131],
-                            ['group_0_2', 0.0, 0.0041000000000000003, 19.968, 22.861],
-                            ['group_0_6', 0.0, 0.019099999999999999, 8.458, 9.644],
-                            ['group_0_3', 0.0, 0.019300000000000001, 42.087, 38.53],
-                            ['group_0_0', 0.0, 0.031199999999999999, 15.202, 17.262]]
+                            ['group_0_1', 0.0, 0.0025, 30.246, 34.131],
+                            ['group_0_2', 0.0, 0.0041, 19.968, 22.861],
+                            ['group_0_6', 0.0, 0.0191, 8.458, 9.644],
+                            ['group_0_3', 0.0, 0.0193, 42.087, 38.994],
+                            ['group_0_0', 0.0, 0.0312, 15.29, 17.405]]
 
-    #  Test specified group non existent
+    # Test specified group non existent
     check = SimpleNamespace(clusters=clusters, r_squares=r_squares,
                             master_clust=master_clust,
                             within_group_r2_dist=within_group_r2_dist, btw_group_r2_dist=btw_group_r2_dist)
@@ -513,8 +515,8 @@ def test_merge(capsys, hf, monkeypatch):
         return next(generator)
     monkeypatch.setattr(br, "ask", monkeyask)
 
-    #  Test when user-specified merge_group is the first item in output (group_0_7) and the merge is questionable
-    #  User does not abort the merge
+    # Test when user-specified merge_group is the first item in output (group_0_7) and the merge is questionable
+    # User does not abort the merge
     check = SimpleNamespace(clusters=copy(clusters), output=output, group_name=query_group, rdmcl_dir=test_dir.path,
                             _prepare_within_group_r2_df=mock_prepare_within_group_r2_df,
                             _prepare_between_group_r2_df=mock_prepare_between_group_r2_df)
@@ -547,18 +549,18 @@ def test_merge(capsys, hf, monkeypatch):
     assert os.path.isfile(join(test_dir.path, "hmm", 'group_0_19')) is False
     assert "Merged!" in out
 
-    #  Abort the questionable merge
+    # Abort the questionable merge
     merge_orthogroups.Check.merge(check, merge_group_name=merge_group_1)
     out, err = capsys.readouterr()
     assert "Less than 5% of sequences within current" in out
     assert "Merge aborted!" in out
 
-    #  Test when user-specified merge_group is not in output (group_0_71)
+    # Test when user-specified merge_group is not in output (group_0_71)
     merge_orthogroups.Check.merge(check, merge_group_name=merge_group_2)
     out, err = capsys.readouterr()
     assert "Error: group_0_71 is not a group that group_0_19 can be merged with.\n" in err
 
-    #  Test when user-specified merge_group is in output, but not the first in the list (group_0_3): abort merge
+    # Test when user-specified merge_group is in output, but not the first in the list (group_0_3): abort merge
     check = SimpleNamespace(clusters=copy(clusters), output=output, group_name=query_group, rdmcl_dir=test_dir.path,
                             _prepare_within_group_r2_df=mock_prepare_within_group_r2_df,
                             _prepare_between_group_r2_df=mock_prepare_between_group_r2_df)
@@ -567,7 +569,7 @@ def test_merge(capsys, hf, monkeypatch):
     assert "The group that appears to be the most" in out
     assert "Merge aborted!" in out
 
-    #  Merge anyway. (User says yes to warning 1, and yes again for all other warnings
+    # Merge anyway. (User says yes to warning 1, and yes again for all other warnings
     merge_orthogroups.Check.merge(check, merge_group_name=merge_group_3)
     out, err = capsys.readouterr()
     assert "The group that appears to be the most" in out
@@ -596,7 +598,7 @@ group_0_30 1.4778  Bfo-PanxαA"""
     final_clusters_file.close()
     assert "Merged!" in out
 
-    #  Say yes at warning 1 and 2, but user changes his/her mind at warning 3
+    # Say yes at warning 1 and 2, but user changes his/her mind at warning 3
     check = SimpleNamespace(clusters=copy(clusters), output=output, group_name=query_group, rdmcl_dir=test_dir.path,
                             _prepare_within_group_r2_df=mock_prepare_within_group_r2_df,
                             _prepare_between_group_r2_df=mock_prepare_between_group_r2_df)
@@ -667,7 +669,7 @@ def test_main(capsys, hf, monkeypatch):
                             btw_group_fwd_dist="", check_existing_group=lambda *_: True, merge=lambda *_: True)
     monkeypatch.setattr(merge_orthogroups, "Check", lambda *_: check)
 
-    #  Test non existing directory
+    # Test non existing directory
     argv = ['merge_orthogroups.py', 'non/existing/dir/', group_name]
     monkeypatch.setattr(merge_orthogroups.sys, "argv", argv)
     with pytest.raises(SystemExit):
@@ -675,7 +677,7 @@ def test_main(capsys, hf, monkeypatch):
     out, err = capsys.readouterr()
     assert "Error: The provided RD-MCL output directory does not exist" in err
 
-    #  Test final_clusters not found
+    # Test final_clusters not found
     argv = ['merge_orthogroups.py', test_dir.path, group_name]
     monkeypatch.setattr(merge_orthogroups.sys, "argv", argv)
     with pytest.raises(SystemExit):
@@ -683,7 +685,7 @@ def test_main(capsys, hf, monkeypatch):
     out, err = capsys.readouterr()
     assert "Error: The provided RD-MCL output directory does not contain the necessary file 'final_clusters.txt" in err
 
-    #  Test rsquares matrix not found
+    # Test rsquares matrix not found
     copyfile(join(hf.resource_path, "final_clusters.txt"), join(test_dir.path, "final_clusters.txt"))
     with pytest.raises(SystemExit):
         merge_orthogroups.main()
@@ -704,14 +706,14 @@ def test_main(capsys, hf, monkeypatch):
     out, err = capsys.readouterr()
     assert str(err) == ""
 
-    #  Test force
+    # Test force
     argv = ['merge_orthogroups.py', test_dir.path, group_name, '--merge', 'group_0', '--force']
     monkeypatch.setattr(merge_orthogroups.sys, "argv", argv)
     merge_orthogroups.main()
     out, err = capsys.readouterr()
     assert str(err) == ""
 
-    #  Test IndexError
+    # Test IndexError
     check = SimpleNamespace(group_name=None, output="", rdmcl_dir="", clusters="", master_clust="", r_squares="",
                             fwd_scores="", within_group_r2_df="", within_group_r2_dist="", within_group_fwd_df="",
                             within_group_fwd_dist="", btw_group_r2_df="", btw_group_r2_dist="", btw_group_fwd_df="",

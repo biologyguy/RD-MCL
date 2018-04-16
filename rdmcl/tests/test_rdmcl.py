@@ -277,7 +277,7 @@ def test_cluster_score_diminishing_returns(hf):
     child_ids = ['BOL-PanxαA', 'BOL-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Edu-PanxαA', 'Hca-PanxαB',
                  'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
     child = rdmcl.Cluster(child_ids, hf.get_sim_scores(child_ids), parent=parent)
-    assert child._score_diminishing_returns() == child.cluster_score == 39.713011188271594
+    assert child._score_diminishing_returns() == child.cluster_score == 40.01161694101508
 
     # Single sequence
     child_ids = ['BOL-PanxαA']

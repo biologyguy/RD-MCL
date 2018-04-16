@@ -166,7 +166,7 @@ class Check(object):
 
     @staticmethod
     def _mc_fwd_back_old_hmms(seq_chunk, args):
-        ## This method is only used in check_new_sequence, which is never used.
+        # This method is only used in check_new_sequence, which is never used.
         try:
             hmm_scores_file, hmm_dir_path, query_file = args
             hmm_fwd_scores = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
@@ -190,7 +190,7 @@ class Check(object):
 
     @staticmethod
     def _mc_run_fwd_back_new_hmm(seq_chunk, args):
-        ## This method is only used in check_new_sequence, which is never used.
+        # This method is only used in check_new_sequence, which is never used.
         try:
             # Todo Why is rec not used?
             rec, out_dir, hmm_path = args
@@ -209,7 +209,7 @@ class Check(object):
 
     @staticmethod
     def _mc_r_squares(seq_chunks, args):
-        ## This method is only used in check_new_sequence, which is never used.
+        # This method is only used in check_new_sequence, which is never used.
         try:
             rec, hmm_fwd_scores, output_path = args
             comparisons = pd.DataFrame(columns=["seq1", "seq2", "r_square"])
@@ -229,7 +229,7 @@ class Check(object):
         return
 
     def _mc_conf_inters(self, clust, args):
-        ## This method is only used in check_new_sequence, which is never used.
+        # This method is only used in check_new_sequence, which is never used.
         try:
             g, seqs = clust
             rec, hmm_fwd_scores, output_file = args
@@ -442,7 +442,6 @@ def argparse_init():
 
 def main():
     in_args = argparse_init()
-    print(in_args)
     rdmcl_dir = os.path.abspath(in_args.rdmcl_dir)
     if not os.path.isdir(rdmcl_dir):
         sys.stderr.write("Error: The provided RD-MCL output directory does not exist.\n")

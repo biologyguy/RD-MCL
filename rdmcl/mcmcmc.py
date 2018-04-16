@@ -266,9 +266,26 @@ class _Chain(object):
             ofile.write(var_dict["results"])
 
 
-class MCMCMC:
+class MCMCMC(object):
     """
     Sets up the infrastructure to run a Metropolis Hasting random walk
+    :param variables: List of mcmcmc.Variable objects
+    :param func: The scoring function MCMCMC will run on, must return a numeric value
+    :param params: List of any additional parameters that need to be fed into the scoring function
+    :param steps: Maximum number of mcmc steps
+    :param sample_rate: How many steps between each sample that is written to file
+    :param num_walkers: Number of standard mcmcmc.Walker objects created per mcmcmc.Chain
+    :param num_chains: Number of mcmcmc.Chain objects created for the run
+    :param quiet: Suppress some of the output
+    :param include_lava: Adds an extra 'lava Walker' to each Chain, which samples parameter space completely at random
+    :param include_ice: Adds an extra 'ice Walker' to each Chain, which only samples parameter space for highest scores
+    :param outfile_root: Each chain will write output to a file called chain_#, but the 'chain' part can be changed
+    :param burn_in: How many steps to discard before calculating convergence?
+    :param r_seed: Set a specific random seed number to fix the outcome of the run
+    :param convergence: Increase or decrease the level of support required for convergence
+    :param cold_heat: Increase or decrease the co-factor controlling the behavior of the cold chain
+    :param hot_heat: Increase or decrease the co-factor controlling the behavior of the hot chains
+    :param min_max: If you know the range of your scoring function, include it
     """
     def __init__(self, variables, func, params=None, steps=0, sample_rate=1, num_walkers=3, num_chains=3, quiet=False,
                  include_lava=False, include_ice=False, outfile_root='./chain', burn_in=100, r_seed=None,
@@ -379,7 +396,7 @@ class MCMCMC:
         counter = 0
         printer = br.DynamicPrint(quiet=not progress)
         while not self._check_convergence() and (counter <= self.steps or self.steps == 0):
-            message = "Running step %s" % (counter + 1)
+            message = "Running step %s" % counter
             message += " of %s" % self.steps if self.steps != 0 else ""
             printer.write(message)
             tmp_dump = self.dumpfile + ".temp"

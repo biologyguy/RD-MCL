@@ -411,13 +411,16 @@ class Cluster(object):
         return self.cluster_score
 
     def get_dim_ret_base_score(self):
-        ave_num_paralogs = len(self.seq_ids) / len(self.taxa)
-        if ave_num_paralogs < len(self.taxa):  # If more taxa than paralogs => DRB < 0.5, easier
-            return (ave_num_paralogs / len(self.taxa)) * 0.5
-        elif ave_num_paralogs == len(self.taxa):  # If num taxa == num paralogs => DRB = 0.5
+        # Do not go all the way back to base cluster when determining the effect of taxonomic spread relative to
+        # the number of genes, this is part of the recursive nature of the method, only looking at the 'current' state
+        parent = self if not self.parent else self.parent
+        ave_num_paralogs = len(parent.seq_ids) / len(parent.taxa)
+        if ave_num_paralogs < len(parent.taxa):  # If more taxa than paralogs => DRB < 0.5, penalizes in-paralogs more
+            return (ave_num_paralogs / len(parent.taxa)) * 0.5
+        elif ave_num_paralogs == len(parent.taxa):  # If num taxa == num paralogs => DRB = 0.5
             return 0.5
-        else:  # If more paralogs than taxa => DRB > 0.5
-            return 1 - ((len(self.taxa) / ave_num_paralogs) * 0.5)
+        else:  # If more paralogs than taxa => DRB > 0.5, penalizes in-paralogs less
+            return 1 - ((len(parent.taxa) / ave_num_paralogs) * 0.5)
 
     def _score_direct_replicate_penalty(self):
         # Final scores can be negative, which is problematic
