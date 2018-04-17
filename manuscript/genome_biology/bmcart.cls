@@ -745,7 +745,7 @@
 
 \def\makefigure@float{
   \setlength{\fboxsep}{\figure@sep}%
-  \setlength{\fboxrule}{0.25\p@}%
+  \setlength{\fboxrule}{0.0\p@}%
   \fcolorbox{bmcblue}{white}{\box\bmcfloat@box}}
 
 \@namedef{figure*}{\@figurestartrue\@ifnextchar[{\@figure}{\@figure[t]}}

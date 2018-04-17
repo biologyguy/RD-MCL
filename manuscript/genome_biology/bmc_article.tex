@@ -294,7 +294,45 @@ The software is open-source (https://research.nhgri.nih.gov/software/RD-MCL/) an
 \label{fig:pipeline}
 \end{figure*}
 
-\subsection{Increasing MCL resolution with BLASTP-free sequence similarity metric}\label{subsec:increasingMclResolutionWithBlastp-freeSequenceSimilarityMetric}
+\subsection{Wnt proteins as a benchmark dataset}\label{subsec:benchmarkDatasetWnts}
+The `wingless-related integration site' (Wnt) proteins comprise a gene family with \textasciitilde{}20 members that are remarkably well conserved in vertebrates.
+Because of their central role in key biological processes like embryonic patterning and cellular proliferation, these genes have been carefully and comprehensively cataloged~\cite{Garriock:2007hb}, allowing us to leverage them as a pre-curated dataset for benchmarking purposes in this study.
+The family itself is divided into twelve distinct classes (Wnt1-Wnt11, and Wnt16), many of which are subdivided into two paralogs in mammals and bird, or up to four paralogs in fish.
+Primary isoforms for each Wnt gene belonging to species in \textit{Mammalia}, \textit{Aves}, or \textit{Actinopterygii} were identified in the RefSeq database using PSI-BLAST, and only minor filtering was applied to remove sequences that clearly fall outside of the normal complement of orthogroups (e.g.,\ sequences smaller than 250 or larger than 650 residues, and several duplicate entries for \textit{Home sapiens}, \textit{Mus musculus}, \textit{Rattus norvegicus}, and \textit{Bos taurus}).
+Twenty-one benchmark orthogroups were created from this dataset, strictly based on RefSeq annotation, as summarized in supplemental table X\@.
+
+\subsection{Defining an orthogroup score}\label{subsec:definingAnOrthogroupScore}
+If an orthogroup is explicitly defined as ``the set of genes that are descended from a single gene in the last common ancestor of all the species being considered"~\ref{Emms:2015ig}, then we can devise a scoring system to assess the relative quality of any putative orthogroups based solely on the number of genes from each organism in a cluster and the overall distribution of genes across all clusters (i.e.,\ independent of sequence alignment or phylogenetic inference).
+The details of this `orthogroup score' are outlined in the Materials and Methods~\ref{subsec:rd-mclFitnessFunction} subsection and Figure~\ref{fig:orthogroupscores}, but, intuitively, a cluster with many sequences each from distinct organisms will be scored higher than a cluster of the same size with many sequences from the same organism.
+Furthermore, the relative influence a given species can have on the score should be scaled according to how many paralogs that species possesses, therefore preventing species-specific gene expansion from confounding the overall picture of homology within the family.
+
+
+\begin{figure*}[t]
+  \begin{center}
+  \includegraphics[height=0.5\textheight]{../figures/orthogroup_scores.eps}
+\end{center}
+\caption{Cluster scoring function.
+A) Cluster scores always increase as more sequences are added, but the rate of increase is reduced with the addition of in-paralogs.
+Each series represents a square matrix of X species with X paralogs each, where sequences are added to the sample cluster one at a time, always including the minimum number of in-paralogs possible.
+Note that the inflection points corresponds to the next 'level' of in-paralogs being added to the cluster.
+B) To further demonstrate the diminishing returns in-paralogs contribute to cluster scores, orthologs in fixed-size clusters are progressively replaced with in-paralogs, thereby reducing the score of that cluster.
+C) To further inflate the score of clusters with diverse composition, a scaling factor is applied according to the percentage of available taxa a cluster contains.
+In the example plot, the cluster is composed of a single sequence and its score is ascertained as taxa are iteratively added to the total data set.
+This scaling factor is constrained between 1 and 2.
+D) The sequences from the taxon with the greatest number of paralogs in the entire dataset are given a base score of 1, with all other sequences scaled by a factor of sqrt(len(max)/len(taxon)).
+Thus, species' with fewer paralogs contribute more to the score than those with a greater number of paralogs. }
+\label{fig:orthogroupscores}
+\end{figure*}
+
+
+\subsection{Choosing an appropriate sequence similarity metric for resolving orthogroups from a single gene family}\label{subsec:increasingMclResolutionWithBlastp-freeSequenceSimilarityMetric}
+
+%% Only show figures
+
+Historically, the negative common log (-log\textsubscript{10}) of the BLASTP expectation value (NLE) has been used as the edge-weighting metric for graph-based ortholog prediction~\cite{Enright:2002uq,Li:2003en}.
+
+
+
 Similarity metrics derived from BLASTP bit scores or expectation values (E-value) are the primary edge-weight values used for homology inference by MCL~\cite{Gibbons:2015be}.
 
 
@@ -302,18 +340,17 @@ The transition (stochastic) matrix used by MCL requires that the similarity metr
 This reduces the applicability of unbounded scoring functions, such as raw bit-scores, because the distribution of similarity scores can be arbitrarily skewed by outliers.
 The primary issue with the bit-score is a strong length bias, but this can be corrected for by scaling directly against alignment length or by scaling against a linear model derived from the best matches~\cite{Emms:2015ig}.
 
-
-OrthoFinder also uses a static inflation/edge similarity threshold for MCL~\cite{Emms:2015ig}
-
 BLASTP scores reduce the overall resolving power of MCL when sequences are too similar or too dissimilar.
 
-Need a figure that illustrates relative information content of each metric.
 
-"Information entropy is defined as the average amount of information produced by a stochastic source of data." -wikipedia, Entropy(info theory)
+
 
 \subsection{MCL parameters must be tuned to maximally resolve orthogroups}\label{subsec:mclParametersMustBeTunedToMaximallyResolveOrthogroups}
 Local maxima in cluster number and orthogroup scores are possible across MCL parameter space (see all RefSeq caspase RD-MCL scores).
+
 This means that a simple optimization algorithm is not appropriate, hence the choice to use Metropolis-Hastings.
+
+OrthoFinder also uses a static inflation/edge similarity threshold for MCL~\cite{Emms:2015ig}
 
 \subsection{Recursive MCL compensates for variable evolutionary separation within and between orthogroups}\label{subsec:recursiveMclCompensatesForVariableEvolutionarySeparationBetweenOrthogroups}
 \lipsum[1]
@@ -377,7 +414,7 @@ Figure~\ref{fig:branch_len_std} illustrates the case-by-case performance of RD-M
 \label{fig:branch_len_std}
 \end{figure}
 
-\subsection{Downstream analyses of sample gene families}
+\subsection{Downstream analyses of sample gene families}\label{subsec:downstreamAnalysesOfSampleGeneFamilies}
 In this section, I will describe some of the interesting evolutionary and systematic discoveries made possible by fine-grained clustering.
 
 \subsubsection{Caspases}
@@ -432,7 +469,7 @@ The performance of each tool was assessed by calculating the precision and recal
 
 Where TP is True Positive, FP is False Positives, and FN is False Negatives.
 
-\subsection{WNT, TIR-containing, and Caspase sequence data}
+\subsection{WNT, TIR-containing, and Caspase sequence data}\label{subsec:wnt,Tir-containing,AndCaspaseSequenceData}
 The CASc domain from human caspase-2 (NCBI accession NP\_116764.2) and the wnt domain from mouse Wnt-6 (UniProt accession AAA40569.1) were each used as the starting sequence for a three-iteration PSI-BLAST search of the RefSeq database, limiting the results to metazoans (taxid: 33208), an expectation threshold of 0.01, and allowing for the return of up to 20,000 target sequences.
 Accession numbers for all target sequences were downloaded directly from the PSI-BLAST results page, then DatabaseBuddy~\cite{Bond:2017bj} was used to filter out isoforms, partial sequences, and low-quality sequences before fetching the GenBank records.
 Given the current depth of species-level coverage in RefSeq, five taxonomic ranges were identified as most appropriate for input into RD-MCL: \textit{Actinopterygii}, \textit{Achelosauria}, \textit{Mammalia}, \textit{Diptera}, and \textit{Hymenoptera}.
