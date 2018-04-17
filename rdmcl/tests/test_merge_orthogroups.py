@@ -443,19 +443,18 @@ def test_check_existing_group(hf):
     check = SimpleNamespace(clusters=clusters, r_squares=r_squares, master_clust=master_clust,
                             within_group_r2_dist=within_group_r2_dist, btw_group_r2_dist=btw_group_r2_dist)
     merge_orthogroups.Check.check_existing_group(check, group_name=group_name1)
-    assert check.output == [['group_0_7', 0.0228, 0.096, 6.319, 7.083],
-                            ['group_0_18', 0.0002, 0.0907, 5.119, 5.494],
-                            ['group_0_20', 0.0, 0.0, 5.056, 5.444],
-                            ['group_0_23', 0.0, 0.0, 5.056, 5.444],
-                            ['group_0_26', 0.0, 0.0, 5.308, 5.717],
-                            ['group_0_30', 0.0, 0.0, 4.875, 5.25],
-                            ['group_0_5', 0.0, 0.0018, 10.414, 11.994],
-                            ['group_0_1', 0.0, 0.0025, 30.246, 34.131],
-                            ['group_0_2', 0.0, 0.0041, 19.968, 22.861],
-                            ['group_0_6', 0.0, 0.0191, 8.458, 9.644],
-                            ['group_0_3', 0.0, 0.0193, 42.087, 38.994],
-                            ['group_0_0', 0.0, 0.0312, 15.29, 17.405]]
-
+    assert check.output == [['group_0_7', 0.0228, 0.096, 4.454, 4.939],
+                            ['group_0_18', 0.0002, 0.0907, 3.354, 3.594],
+                            ['group_0_20', 0.0, 0.0, 3.197, 3.443],
+                            ['group_0_23', 0.0, 0.0, 3.197, 3.443],
+                            ['group_0_26', 0.0, 0.0, 3.309, 3.563],
+                            ['group_0_30', 0.0, 0.0, 3.11, 3.349],
+                            ['group_0_5', 0.0, 0.0018, 7.955, 8.95],
+                            ['group_0_1', 0.0, 0.0025, 22.031, 24.387],
+                            ['group_0_2', 0.0, 0.0041, 15.29, 17.08],
+                            ['group_0_6', 0.0, 0.0191, 6.206, 6.952],
+                            ['group_0_3', 0.0, 0.0193, 25.191, 23.538],
+                            ['group_0_0', 0.0, 0.0312, 11.113, 12.411]], print(check.output)
     # Test specified group non existent
     check = SimpleNamespace(clusters=clusters, r_squares=r_squares,
                             master_clust=master_clust,

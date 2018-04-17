@@ -271,30 +271,31 @@ def test_cluster_score_diminishing_returns(hf):
     assert child.cluster_score is None
 
     # The second call just retrieves the attribute from the cluster saved during first call
-    assert child._score_diminishing_returns() == child.cluster_score == 45.77283950617284
+    assert child._score_diminishing_returns() == child.cluster_score == 31.54453234556702
 
     # With paralogs
     child_ids = ['BOL-PanxαA', 'BOL-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE', 'Edu-PanxαA', 'Hca-PanxαB',
                  'Hru-PanxαA', 'Lcr-PanxαH', 'Mle-Panxα10A', 'Oma-PanxαC', 'Tin-PanxαC', 'Vpa-PanxαB']
     child = rdmcl.Cluster(child_ids, hf.get_sim_scores(child_ids), parent=parent)
-    assert child._score_diminishing_returns() == child.cluster_score == 40.01161694101508
+    assert child._score_diminishing_returns() == child.cluster_score == 28.026855296607042
 
     # Single sequence
     child_ids = ['BOL-PanxαA']
     child = rdmcl.Cluster(child_ids, hf.get_sim_scores(child_ids), parent=parent)
-    assert round(child._score_diminishing_returns(), 12) == 1.847222222222
+    assert round(child._score_diminishing_returns(), 12) == 1.396368747506
 
     # Include an orphan sequence
     child_ids = ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC']
     sim_scores = hf.get_sim_scores(child_ids)
     child = rdmcl.Cluster(child_ids, sim_scores, parent=parent)
-    assert round(child._score_diminishing_returns(), 3) == 8.575
+    assert round(child._score_diminishing_returns(), 3) == 5.448
+
     child.seq_ids.add("Foo-Bar3")
-    assert round(child._score_diminishing_returns(), 12) == 8.510526315789
+    assert round(child._score_diminishing_returns(), 12) == 5.406807724037
 
     # Edge case where child is full size of parent
     child = rdmcl.Cluster(parent.seq_ids, parent.sim_scores, parent=parent)
-    assert round(child._score_diminishing_returns(), 12) == 100.877456025217
+    assert round(child._score_diminishing_returns(), 12) == 66.193608312847
 
 
 def test_get_dim_ret_base_score(hf):

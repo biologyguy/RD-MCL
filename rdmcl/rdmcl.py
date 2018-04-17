@@ -38,7 +38,7 @@ from io import StringIO
 from subprocess import Popen, PIPE
 from multiprocessing import Lock, Process
 from random import choice, Random, randint, random
-from math import log2
+from math import log2, sqrt
 from collections import OrderedDict
 from copy import deepcopy, copy
 # from hashlib import md5
@@ -396,11 +396,11 @@ class Cluster(object):
         score = 0
         for indx, subcluster in enumerate(subclusters):
             subscore = 0
-            # Minimum score for a single gene is 1, which is given to the genes contained in the the taxa with the
+            # Minimum base score for a single gene is 1, which is given to the genes contained in the the taxa with the
             # largest number of genes. All other genes are pegged to this value, and increase in value if included in
             # a cluster proportionally to how many genes are in the taxa.
             for taxon in subcluster:
-                subscore += self.max_genes_in_a_taxa / len(base_cluster.taxa[taxon])
+                subscore += sqrt(self.max_genes_in_a_taxa / len(base_cluster.taxa[taxon]))
 
             # Multiply subscore by 1-2, based on how many taxa contained (perfect score if all possible taxa present)
             subscore *= len(subcluster) / len(base_cluster.taxa) + 1
