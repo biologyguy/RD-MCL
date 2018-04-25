@@ -369,8 +369,23 @@ F)~The standardizing affect of the Emms transform becomes most noticeable when c
 \end{figure*}
 
 
-Unfortunately, this does not resolve another issue arising from the \textit{local} nature of BLAST alignment, where very dissimilar sequences that fall below detection threshold along most of their length are assigned high similarity scores because of a short conserved motif (Figure~\ref{fig:Bitscores}D).
-Again, further fixes are feasible, but we have chosen to discard BLASTP-based similarity metrics in favour of a multiple sequence alignment-based method in the current implementation of RD-MCL\@.
+Despite the improvements provided by the Emms transform, data is still being discarded from the all-by-all similarity matrix when BLAST bit scores are used.
+For example, we know \textit{a priori} that all sequences in the WNT dataset are homologous, yet a small percentage of edges are sparse because their similarity falls below the BLAST threshold.
+This proportion will become higher when more diverse protein families or greater taxonomic coverage are considered, and while these edges may still be pruned away to optimize orthogroup assignment by MCL, we cannot know this beforehand.
+BLAST is also considering only a single aspect of primary sequence, namely the amino acid substitution matrix (e.g., BLOSUM or PAM).
+It is, however, perfectly feasible to include an arbitrary number of sequence properties into the similarity metric, so we have devised a new scoring method that forces global alignment of all sequences and considers a substitution matrix along with predicted secondary structure properties.
+Figure~\ref{fig:rdmclscores} illustrates that this new scoring function is independent of sequence length and, while correlated with the Emms transform scores, presents a unique dynamic range.
+The details of the RD-MCL scoring function are elaborated in Materials and Methods section~\ref{subsec:seq-sim-func} and is further compared against BLAST-based metrics for orthogroup assignment in section~\ref{subsec:TuningParams}.
+
+
+\begin{figure}[t]
+  \begin{center}
+  \includegraphics[height=0.6\textheight]{../figures/rdmcl_scoring.eps}
+\end{center}
+\caption{Words and stuff}
+\label{fig:rdmclscores}
+\end{figure}
+
 
 
 \subsection{MCL parameters must be tuned to maximally resolve orthogroups}\label{subsec:TuningParams}
@@ -452,7 +467,7 @@ Presence of a caspase catalytic region (CASc) was used as the inclusion criteria
 
 Discuss the mess that is Casps-1/4/5/12/13
 
-\subsubsection{Inferring orthogroup 'gene-trees' from consensus sequences}
+\subsubsection{Inferring orthogroup `gene-trees' from consensus sequences}
 Reducing the phylogenetic history of a multi-domain gene family down to a single bifurcating tree may not capture the complex evolutionary events behind the modern-day complement of sequences.
 Domain shuffling can cause different regions within a gene to have very different genomic histories, with rigorous efforts having been made to develop methods for phylogenetic reconciliation.
 
@@ -503,6 +518,11 @@ Accession numbers for all target sequences were downloaded directly from the PSI
 Given the current depth of species-level coverage in RefSeq, five taxonomic ranges were identified as most appropriate for input into RD-MCL: \textit{Actinopterygii}, \textit{Achelosauria}, \textit{Mammalia}, \textit{Diptera}, and \textit{Hymenoptera}.
 The transcriptomes of 25 cnidarian species~\cite{Zapata:2015cc}, assembled using TransDecoder.LongOrfs V.3.0.1~\cite{Haas:2013jq}, were also queried for WNT sequences using BLASTP\@.
 These sequences were combined with those cnidarian sequences identified in RefSeq for \textit{Cnidaria}-specific RD-MCL analysis.
+
+
+\subsection{Sequence similarity function}\label{subsec:seq-sim-func}
+\lipsum[1]
+
 
 \subsection{RD-MCL fitness function}\label{subsec:rd-mclFitnessFunction}
 Putative orthogroups were assigned a score based on the size and composition of the cluster, as well as the entire population of sequences available.
