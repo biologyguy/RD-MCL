@@ -57,6 +57,7 @@
 %\usepackage[latin1]{inputenc} %UNIX support if unicode package fails
 \usepackage{graphicx}
 \usepackage{lipsum}
+\usepackage{textgreek}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                             %%
@@ -296,7 +297,7 @@ This entire workflow is implemented in the RD-MCL software, so the user is only 
 \end{figure*}
 
 \subsection{Wnt proteins as a benchmark}\label{subsec:benchmarkDatasetWnts}
-The `wingless-related integration site' (Wnt) proteins comprise a gene family with \textasciitilde{}20 members that are remarkably well conserved in vertebrates.
+The `wingless-related integration site' (Wnt) proteins comprise a gene family with approximately 20 members that are remarkably well conserved in vertebrates.
 Because of their central role in key biological processes like embryonic patterning and cellular proliferation, these genes have been carefully and comprehensively cataloged~\cite{Garriock:2007hb}, allowing us to leverage them as a pre-curated dataset for benchmarking purposes in this study.
 The family itself is divided into twelve distinct classes (Wnt1-Wnt11, and Wnt16), many of which are subdivided into two paralogs in mammals and bird, or up to four paralogs in fish.
 Primary isoforms for each Wnt gene belonging to species in \textit{Mammalia}, \textit{Aves}, or \textit{Actinopterygii} were identified in the RefSeq database using PSI-BLAST, and only minor filtering was applied to remove sequences that clearly fall outside of the normal complement of orthogroups (e.g.,\ sequences smaller than 250 or larger than 650 residues, and several duplicate entries for \textit{Home sapiens}, \textit{Mus musculus}, \textit{Rattus norvegicus}, and \textit{Bos taurus}).
@@ -371,11 +372,11 @@ F)~The standardizing affect of the Emms transform becomes most noticeable when c
 
 Despite the improvements provided by the Emms transform, data is still being discarded from the all-by-all similarity matrix when BLAST bit scores are used.
 For example, we know \textit{a priori} that all sequences in the WNT dataset are homologous, yet a small percentage of edges are sparse because their similarity falls below the BLAST threshold.
-This proportion will become higher when more diverse protein families or greater taxonomic coverage are considered, and while these edges may still be pruned away to optimize orthogroup assignment by MCL, we cannot know this beforehand.
+This proportion will become higher when more diverse protein families or greater taxonomic coverage are considered, and while these edges may still be pruned away to optimize orthogroup assignment by MCL (see section~\ref{subsec:TuningParams} below), we cannot know this beforehand.
 BLAST is also considering only a single aspect of primary sequence, namely the amino acid substitution matrix (e.g., BLOSUM or PAM).
-It is, however, perfectly feasible to include an arbitrary number of sequence properties into the similarity metric, so we have devised a new scoring method that forces global alignment of all sequences and considers a substitution matrix along with predicted secondary structure properties.
-Figure~\ref{fig:rdmclscores} illustrates that this new scoring function is independent of sequence length and, while correlated with the Emms transform scores, presents a unique dynamic range.
-The details of the RD-MCL scoring function are elaborated in Materials and Methods section~\ref{subsec:seq-sim-func} and is further compared against BLAST-based metrics for orthogroup assignment in section~\ref{subsec:TuningParams}.
+It is perfectly feasible, however, to include an arbitrary number of sequence properties into the similarity metric, so we have devised a new scoring method that forces a global alignment of all sequences, then considers both a substitution matrix and predicted secondary structure properties.
+Figure~\ref{fig:rdmclscores} illustrates that this new scoring function is independent of sequence length and, while correlated with the Emms transform scores, presents a unique dynamic range of values for MCL\@.
+The details of the new RD-MCL scoring function are elaborated in Materials and Methods section~\ref{subsec:seq-sim-func} and is further compared against BLAST-based metrics for orthogroup assignment in section~\ref{subsec:TuningParams}.
 
 
 \begin{figure}[t]
@@ -387,30 +388,37 @@ The details of the RD-MCL scoring function are elaborated in Materials and Metho
 \end{figure}
 
 
-
 \subsection{MCL parameters must be tuned to maximally resolve orthogroups}\label{subsec:TuningParams}
-Local maxima in cluster number and orthogroup scores are possible across MCL parameter space (see all RefSeq caspase RD-MCL scores).
+The granularity of MCL is controlled by two parameters \textemdash{} the inflation coefficient and the edge similarity threshold~\cite{VanDongen:kJZ890qx} \textemdash{} and modulating these parameters will change the size and number of clusters returned.
+Local maxima in cluster number and orthogroup score may arise within this parameter space (Figure X), meaning a simple hill-climbing optimization algorithm is not appropriate.
+Instead, RD-MCL implements Metropolis coupled Markov chain Monte Carlo~\cite{Hastings:1970iw} to search for optimal MCL parameters, using our orthogroup score as the fitness function.
+It should be noted that the edge similarity threshold has a stronger influence over MCL than the inflation coefficient, which makes intuitive sense because this parameter directly affects the information content in the graph by pruning away edges.
+This increased sparsity will isolate clusters from one another even before the similarity matrix is transformed with MCL\@.
 
-This means that a simple optimization algorithm is not appropriate, hence the choice to use Metropolis-Hastings.
 
-OrthoFinder also uses a static inflation/edge similarity threshold for MCL~\cite{Emms:2015ig}
+Note that OrthoFinder also uses a static inflation/edge similarity threshold for MCL~\cite{Emms:2015ig}
+
 
 \subsection{Recursive MCL compensates for variable evolutionary separation within and between orthogroups}\label{subsec:recursiveMclCompensatesForVariableEvolutionarySeparationBetweenOrthogroups}
-\lipsum[1]
 
-\subsubsection{Number of sequences}
+
+\subsection{Number of sequences}
 WNTs
 
 Simulated: To test the effects of increasing the number of orthogroups and orthogroup size, datasets were simulated with 4 to 30 taxa and between 4 and 30 genes per taxa.
 
-\subsubsection{Missing data}
+
+\subsection{Missing data}
 WNTs
 
-\subsubsection{Gene duplications}
+
+\subsection{Gene duplications}
 WNTs
 
-\subsubsection{Hybrid sequences (weird domain structures)}
+
+\subsection{Hybrid sequences (weird domain structures)}
 TIR-containing proteins
+
 
 \subsection{Simulation data across the dynamic range of RD-MCL}\label{subsec:simulationDataAcrossTheDynamicRangeOfRd-mcl}
 To test the performance of RD-MCL compared to other available ortholog prediction tools, we simulated sets of homologs using the Pyvolve module~\cite{Spielman:2015kv}.
@@ -421,6 +429,7 @@ More extensive descriptions of the following simulations can be found in the Met
 OrthoFinder performs extremely poorly, but this is probably due to the scaling factor that it generates when classifying orthogroups.
 We are not providing enough data to generate a productive linear model~\cite{Emms:2015ig}.
 Is it worth while to create a ven diagram illustrating the overlap between methods?
+
 
 \subsubsection{Branch lengths}
 Given an idealized set of homologous sequences, where there has been no gene loss and all gene duplications occurred prior to the last common ancestor of the taxa included in the set, the phylogenetic relationship within each orthogroup should closely approximate the underlying species tree.
@@ -434,6 +443,7 @@ Branch lengths were varied from 0.05 to 1.55 substitutions per site with standar
 As illustrated in Figure~\ref{fig:branch_len_3d}, RD-MCL was either equivalent to or out performed OrthoFinder, OrthoMCL, and ProteinOrtho across the entire dynamic range assessed.
 All of the methods tested were more sensitive to changes in species tree branch lengths than they were to gene tree branch lengths (i.e., branches within an orthogroup, as opposed to between orthogroups), although both RD-MCL and OrthoMCL performed marginally better on short species trees with the gene trees were longer.
 
+
 % May_3_2017_orthofinder_branch_lengths/orthofinder_BL.ipynb
 % May_3_2017_OrthoMCL_branch_lengths/orthomcl_BL.ipynb
 % May_3_2017_proteinortho_branch_lengths/proteinortho_bl.ipynb
@@ -446,7 +456,9 @@ All of the methods tested were more sensitive to changes in species tree branch 
 \label{fig:branch_len_3d}
 \end{figure}
 
+
 Figure~\ref{fig:branch_len_std} illustrates the case-by-case performance of RD-MCL compared to the other methods by standardizing the relative precision achieved on each dataset against the precision of RD-MCL\@.
+
 
 % May_03_2017_branch_lengths.ipynb
 \begin{figure}[t]
@@ -457,8 +469,18 @@ Figure~\ref{fig:branch_len_std} illustrates the case-by-case performance of RD-M
 \label{fig:branch_len_std}
 \end{figure}
 
+
 \subsection{Downstream analyses of sample gene families}\label{subsec:downstreamAnalysesOfSampleGeneFamilies}
 In this section, I will describe some of the interesting evolutionary and systematic discoveries made possible by fine-grained clustering.
+
+
+\subsubsection{WNTs}
+Big focus on the separation of the fish genes, seeing as the birds and mammals already fit pretty nicely with RefSeq annotations.
+
+
+\subsubsection{TIR-containing proteins}
+Try to fit in some of the work by Mike to say something reasonable about invertebrate sequences.
+
 
 \subsubsection{Caspases}
 Caspases are cysteine-dependent aspartyl-specific proteases with key regulatory roles in inflammation, immunity, and tissue homeostasis~\cite{Songane:2018kq,McIlwain:2013iy}.
@@ -467,15 +489,18 @@ Presence of a caspase catalytic region (CASc) was used as the inclusion criteria
 
 Discuss the mess that is Casps-1/4/5/12/13
 
+
 \subsubsection{Inferring orthogroup `gene-trees' from consensus sequences}
 Reducing the phylogenetic history of a multi-domain gene family down to a single bifurcating tree may not capture the complex evolutionary events behind the modern-day complement of sequences.
 Domain shuffling can cause different regions within a gene to have very different genomic histories, with rigorous efforts having been made to develop methods for phylogenetic reconciliation.
 
 \subsubsection{Inferring species trees from RD-MCL generated orthogroups}
-\lipsum[1]
+Maybe (probably) drop this section.
+Otherwise, give examples from each sample dataset - WNTs, caspases, and TLRs.
+
 
 \subsubsection{Phylogenetic placement of new genes into pre-calculated orthogroups}
-\lipsum[1]
+
 
 \subsection{Implementation}\label{subsec:implementation}
 The entire RD-MCL pipeline has been implemented in Python and can be executed from a command-line interface that comes bundled with the software.
@@ -493,10 +518,12 @@ Distributing the work in this fashion allows an arbitrary number of RD-MCL runs 
 To assist in further analysis, a suite of command-line tools are also included with RD-MCL\@.
 These programs allow the user to easily visualize and manipulate the inferred clusters, which includes the ability to group the original input sequences by cluster, rename or merge clusters, and create orthogroup `gene trees' from cluster consensus sequences.
 
+
 \section{Conclusions}\label{sec:conclusions}
 It is important to remember that true orthologs are not intrinsically special.
 While negative selection is a strong strong evolutionary pressure that tends to preserve function among orthologs, the fate of any given gene is still at the mercy of biological context and the stochastic nature of inheritance.
 Therefore, it can be more appropriate to focus on hierarchical similarity among proteins than on their actual genealogy.
+
 
 \section{Methods}\label{sec:methods}
 \subsection{Simulation data}\label{subsec:simulationData}
@@ -512,6 +539,7 @@ The performance of each tool was assessed by calculating the precision and recal
 
 Where TP is True Positive, FP is False Positives, and FN is False Negatives.
 
+
 \subsection{WNT, TIR-containing, and Caspase sequence data}\label{subsec:wnt,Tir-containing,AndCaspaseSequenceData}
 The CASc domain from human caspase-2 (NCBI accession NP\_116764.2) and the wnt domain from mouse Wnt-6 (UniProt accession AAA40569.1) were each used as the starting sequence for a three-iteration PSI-BLAST search of the RefSeq database, limiting the results to metazoans (taxid: 33208), an expectation threshold of 0.01, and allowing for the return of up to 20,000 target sequences.
 Accession numbers for all target sequences were downloaded directly from the PSI-BLAST results page, then DatabaseBuddy~\cite{Bond:2017bj} was used to filter out isoforms, partial sequences, and low-quality sequences before fetching the GenBank records.
@@ -521,7 +549,7 @@ These sequences were combined with those cnidarian sequences identified in RefSe
 
 
 \subsection{Sequence similarity function}\label{subsec:seq-sim-func}
-\lipsum[1]
+Sort sequences by size, Clustal Omega alignment with the --pileup option, per-residue BLOSUM62 log-odds ratios for best possible and observed scores then dividing observed by best, average per-residue difference in PSI-PRED prediction values for coils, \textalpha-helices, and \textbeta-sheets.
 
 
 \subsection{RD-MCL fitness function}\label{subsec:rd-mclFitnessFunction}
@@ -595,7 +623,6 @@ S_O = \sum_{Y} S_Y
 
 
 \subsection{Markov chain convergence}\label{subsec:markovChainConvergence}
-\lipsum[3]
 
 
 \subsection{Orphan placement}\label{subsec:orphanPlacement}
@@ -633,12 +660,14 @@ S_O = \sum_{Y} S_Y
 \section*{Competing interests}
   The authors declare that they have no competing interests.
 
+
 \section*{Author's contributions}
   SRB is the lead developer of RD-MCL, performed all analyses unless otherwise stated, and wrote the manuscript;
   PG performed the WNT analysis;
   KEK contributed to the code base;
   and ADB was involved in the design and coordination of the project.
   All authors read and approved the final manuscript.
+
 
 \section*{Acknowledgements}
   This research was supported by the Intramural Research Program of the National Human Genome Research Institute, National Institutes of Health.
