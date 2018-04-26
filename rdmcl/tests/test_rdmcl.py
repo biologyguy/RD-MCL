@@ -2192,11 +2192,11 @@ def test_full_run(hf, capsys):
     with open(join(out_dir.path, "final_clusters.txt"), "r") as ifile:
         content = ifile.read()
         assert content == """\
-group_0_0_0\t20.5286\tBOL-PanxαA\tLcr-PanxαH\tMle-Panxα10A\tMle-Panxα9\tVpa-PanxαB
-group_0_2\t4.0\tBOL-PanxαH\tMle-Panxα8
-group_0_1_0_1\t5.25\tLcr-PanxαK\tMle-Panxα7A
-group_0_1_1\t1.25\tMle-Panxα5
-group_0_1_0_0\t2.0833\tBOL-PanxαG
+group_0_0_0\t7.9981\tBOL-PanxαA\tLcr-PanxαH\tMle-Panxα10A\tMle-Panxα9\tVpa-PanxαB
+group_0_2\t3.4365\tBOL-PanxαH\tMle-Panxα8
+group_0_1_0_1\t1.7315\tLcr-PanxαK\tMle-Panxα7A
+group_0_1_1\t0.7906\tMle-Panxα5
+group_0_1_0_0\t0.7217\tBOL-PanxαG
 """, print(content)
 
     out, err = capsys.readouterr()
