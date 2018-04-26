@@ -17,15 +17,15 @@ except ImportError:
     import rdmcl
 
 from buddysuite import buddy_resources as br
-from buddysuite import SeqBuddy as Sb
+# from buddysuite import SeqBuddy as Sb
 import sys
 import os
 from os.path import join
-from io import StringIO
+# from io import StringIO
 import argparse
 import pandas as pd
 from datetime import date
-from subprocess import Popen, PIPE
+# from subprocess import Popen, PIPE
 from multiprocessing import Lock
 import scipy.stats
 import re
@@ -164,6 +164,7 @@ class Check(object):
                                 round(new_clust.score(), 3)])
         self.output = sorted(self.output, key=lambda x: (x[1], -x[2]), reverse=True)
 
+    """
     @staticmethod
     def _mc_fwd_back_old_hmms(seq_chunk, args):
         # This method is only used in check_new_sequence, which is never used.
@@ -307,6 +308,7 @@ class Check(object):
         self.output = [line.strip().split(",") for line in self.output]
         self.output = sorted(self.output, key=lambda x: (float(x[4]), float(x[5])), reverse=True)
         return
+    """
 
     def merge(self, merge_group_name, force=False):
         merge_group = [l for l in self.output if l[0] == merge_group_name]
