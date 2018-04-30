@@ -130,7 +130,7 @@ def main():
     r_files = [join(rdmcl_dir, f) for f in r_files]
     for f in r_files:
         try:
-            new_path = re.sub("{0}$|({0})\.scores".format(group_name), in_args.new_name, f)
+            new_path = re.sub("{0}$|({0})(\.scores)".format(group_name), r'%s\2' % in_args.new_name, f)
             shutil.move(f, new_path)
             print(os.path.relpath(f), "-->", os.path.relpath(new_path))
         except FileNotFoundError:
@@ -145,7 +145,7 @@ def main():
     r_dirs = [join(rdmcl_dir, "mcmcmc", group_name)]
     for d in r_dirs:
         try:
-            new_path = re.sub(r'%s($|\.scores)' % group_name, r'%s\1' % in_args.new_name, f)
+            new_path = re.sub(r'%s($|\.scores)' % group_name, r'%s\1' % in_args.new_name, d)
             shutil.move(d, new_path)
             print(os.path.relpath(d), "-->", os.path.relpath(new_path))
         except (NotADirectoryError, FileNotFoundError):
