@@ -9,6 +9,7 @@ from shutil import copyfile
 from collections import OrderedDict
 import pytest
 from .. import helpers as hlp
+from datetime import date
 
 
 def test_prepare_clusters(hf):
@@ -61,7 +62,7 @@ def test_main(capsys, hf, monkeypatch):
     new_name_space = "new group"
     new_name_slash = "new/group"
     new_name = "penguins"
-    new_name_too_long = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    new_name_too_long = "a" * 100000
     clusters = OrderedDict([('group_0_1', ['BOL-PanxαC', 'Bab-PanxαD', 'Bch-PanxαE', 'Bfo-PanxαD', 'Bfr-PanxαC',
                                            'Cfu-PanxαC', 'Dgl-PanxαG', 'Edu-PanxαB', 'Hca-PanxαH']),
                             ('group_0_3', ['BOL-PanxαA', 'Bab-PanxαB', 'Bch-PanxαC', 'Bfo-PanxαB', 'Dgl-PanxαE',
@@ -154,8 +155,103 @@ def test_main(capsys, hf, monkeypatch):
     assert "placement.log' does not exist." in out
     assert "final_clusters.txt modified" in out
 
+    # Create files and directories
+    hmmdir = rdmcl_dir.subdir("hmm")
+    hmmfile = open(join(hmmdir, group_name), 'w+').close
+    aligndir = rdmcl_dir.subdir("alignments")
+    alignfile = open(join(aligndir, group_name), 'w+').close
+    simdir = rdmcl_dir.subdir("sim_scores")
+    simfile = open(join(simdir, "{}{}".format(group_name, ".scores")), 'w+').close
+    paracliques = join(rdmcl_dir.path, "paralog_cliques")
+    with open(paracliques, "w") as p:
+        p.write(
+            """
+            ###########################################################
+            # If a named cluster contains reciprocal best hit cliques #
+            # among a group of paralogs, they are collapsed down to a #
+            # single representative. The collapses are itemized here. #
+            ###########################################################
+            
+            # group_0_1
+            {"Hvu-Panx\u03b2E": ["Hvu-Panx\u03b2M"]}
+            
+            ###########################################################
+            #  Paralogs were expanded back into the following groups  #
+            ###########################################################
+            
+            # group_0_0_1_1_1
+            {"Hvu-PanxβE": ['Hvu-PanxβM']}
+            
+            """
+        )
+    manual_merge = join(rdmcl_dir.path, "manual_merge.log")
+    with open(manual_merge, "a") as ifile:
+        ifile.write("%s %s -> group_0_3\n" % (date.today(), group_name))
+    placement = join(rdmcl_dir.path, "placement.log")
+    with open(placement, "a") as ifile:
+        ifile.write("group_0_1\n")
+    rdmcl_dir.subdir("mcmcmc")
+    mcdir = rdmcl_dir.subdir(join("mcmcmc", "group_0_1"))
 
+    # Test output
+    rename_orthogroup.main()
+    out, err = capsys.readouterr()
+    assert "/alignments/group_0_1 -->" in out
+    assert os.path.isfile(join(aligndir, group_name)) is False
+    assert os.path.isfile(join(aligndir, new_name)) is True
+    assert "hmm/group_0_1 -->" in out
+    assert os.path.isfile(join(hmmdir, group_name)) is False
+    assert os.path.isfile(join(hmmdir, new_name)) is True
+    assert "/sim_scores/group_0_1.scores -->" in out
+    assert os.path.isfile(join(simdir, "{}{}".format(group_name, ".scores"))) is False
+    assert os.path.isfile(join(simdir, "{}{}".format(new_name, ".scores"))) is True
+    assert "/mcmcmc/group_0_1 -->" in out
+    assert "/final_clusters.txt modified" in out
+    assert "/paralog_cliques modified" in out
+    assert "/manual_merge.log modified" in out
+    assert "/placement.log modified" in out
 
+    # Test file modifications
+    with open(cluster_file, "r") as ifile:
+        line = ifile.readline()
+        assert line.startswith("penguins")
+    with open(paracliques) as ifile:
+        contents = ifile.read()
+        assert ' # penguins' in contents
+    with open(manual_merge) as ifile:
+        contents = ifile.read()
+        assert "penguins ->" in contents
+    with open(placement) as ifile:
+        contents = ifile.read()
+        assert contents == "penguins\n"
 
+    # Test name too long
+    test_dir = br.TempDir()
+    copyfile(join(hf.resource_path, "final_clusters.txt"), join(test_dir.path, "final_clusters.txt"))
+    hmmdir = test_dir.subdir("hmm")
+    hmmfile = open(join(hmmdir, group_name), 'w+').close
+    aligndir = test_dir.subdir("alignments")
+    alignfile = open(join(aligndir, group_name), 'w+').close
+    simdir = test_dir.subdir("sim_scores")
+    simfile = open(join(simdir, "{}{}".format(group_name, ".scores")), 'w+').close
+    paracliques = open(join(test_dir.path, "paralog_cliques"), 'w+').close
+    manual_merge = open(join(test_dir.path, "manual_merge.log"), 'w+').close
+    log = open(join(test_dir.path, "placement.log"), 'w+').close
+    test_dir.subdir("mcmcmc")
+    mcdir = test_dir.subdir(join("mcmcmc", "group_0_1"))
 
+    argv = ['rename_orthogroup.py', test_dir.path, group_name, new_name_too_long]
+    monkeypatch.setattr(rename_orthogroup.sys, "argv", argv)
+    rename_orthogroup.main()
+    out, err = capsys.readouterr()
+    assert "/alignments/group_0_1 -->" not in out
+    assert os.path.isfile(join(aligndir, group_name)) is True
+    assert os.path.isfile(join(aligndir, new_name)) is False
+    assert "hmm/group_0_1 -->" not in out
+    assert os.path.isfile(join(hmmdir, group_name)) is True
+    assert os.path.isfile(join(hmmdir, new_name)) is False
+    assert "/sim_scores/group_0_1.scores -->" not in out
+    assert os.path.isfile(join(simdir, "{}{}".format(group_name, ".scores"))) is True
+    assert os.path.isfile(join(simdir, "{}{}".format(new_name, ".scores"))) is False
+    assert "/mcmcmc/group_0_1 -->" not in out
 
