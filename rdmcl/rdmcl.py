@@ -846,10 +846,10 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
     if resume:
         if not mcmcmc_factory.resume():
-            mcmcmc_factory.run()
+            mcmcmc_factory.run(anneal=(0.25, steps))
 
     else:
-        mcmcmc_factory.run()
+        mcmcmc_factory.run(anneal=(0.25, steps))
 
     best_score = pd.DataFrame()
     for indx in range(len(mcmcmc_factory.chains)):
