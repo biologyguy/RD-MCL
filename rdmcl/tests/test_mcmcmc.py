@@ -662,6 +662,11 @@ def test_mcmcmc_run(capsys):
     assert out.count("Chain2 write_sample()") == 2
     assert out.count("Chain3 write_sample()") == 2
 
+    # Raise error if anneal is set to value less than 1
+    with pytest.raises(ValueError) as err:
+        mc_obj.run(mc_obj, anneal=(1, 0))
+    assert "A positive number of annealing steps must be specified" in str(err)
+
     # assert len([None for x in out if "mc_step_run:" in x]) == 18, print(out)
     assert len([None for x in out if "step_parse:" in x]) == 18
 

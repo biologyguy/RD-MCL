@@ -393,6 +393,9 @@ class MCMCMC(object):
         :param anneal: Simulated annealing (i.e., heat progressively lowers with time)
         :type anneal: tuple (lowest, steps)
         """
+        if anneal[1] < 1:
+            raise ValueError("A positive number of annealing steps must be specified")
+
         counter = 0
         printer = br.DynamicPrint(quiet=not progress)
         while not self._check_convergence() and (counter <= self.steps or self.steps == 0):

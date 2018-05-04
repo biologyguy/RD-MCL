@@ -809,6 +809,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     os.makedirs(mcmcmc_path, exist_ok=True)
     open(join(mcmcmc_path, "max.txt"), "w").close()
     convergence = GELMAN_RUBIN if convergence is None else float(convergence)
+    anneal = (0.25, steps) if steps != 0 else (0.25, 1000)
 
     # If there are no paralogs in the cluster, then it is already at its highest score and MCL is unnecessary
     keep_going = False
@@ -846,10 +847,10 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
     if resume:
         if not mcmcmc_factory.resume():
-            mcmcmc_factory.run(anneal=(0.25, steps))
+            mcmcmc_factory.run(anneal=anneal)
 
     else:
-        mcmcmc_factory.run(anneal=(0.25, steps))
+        mcmcmc_factory.run(anneal=anneal)
 
     best_score = pd.DataFrame()
     for indx in range(len(mcmcmc_factory.chains)):
