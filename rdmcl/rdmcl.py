@@ -925,11 +925,12 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
 
     recursion_clusters = []
     for sub_cluster in mcl_clusters:
-        if sub_cluster.seq_id_hash == master_cluster.seq_id_hash:  # This shouldn't ever happen
-            raise ArithmeticError("The sub_cluster and master_cluster are the same, but are returning different "
-                                  "scores\nsub-cluster score: %s, master score: %s\n%s"
-                                  % (best_score["result"].iloc[0], master_cluster.score(),
-                                     sub_cluster.seq_id_hash))
+        if sub_cluster.seq_id_hash == master_cluster.seq_id_hash:
+            # This can happen because the cluster scores can change depending on context
+            assert len(mcl_clusters) == 1
+            save_cluster("Best MCL cluster is entire master cluster")
+            return cluster_list
+
         sub_cluster.set_name()
         if len(sub_cluster) in [1, 2]:
             _, align = retrieve_all_by_all_scores(Sb.pull_recs(Sb.make_copy(seqbuddy),
@@ -940,6 +941,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                 ofile.write(align.alignments[0].hmm)
             cluster_list.append(sub_cluster)
             continue
+
         recursion_clusters.append(sub_cluster)
 
     for sub_cluster in recursion_clusters:
