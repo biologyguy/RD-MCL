@@ -485,12 +485,12 @@ Oma\tMle\t0"""
     assert np.array_equal(mcl.trans_matrix, expected), print(mcl.trans_matrix)
 
     mcl.mcl_step()
-    expected = np.array([[0.256081074476, 0.179641351104, 0.066523268819, 0.256081074476],
-                         [0.47164902091, 0.581160783768, 0.642542898655, 0.47164902091],
-                         [0.016188764945, 0.059556555003, 0.224410638213, 0.016188764945],
-                         [0.256081074476, 0.179641351104, 0.066523268819, 0.256081074476]],
+    expected = np.array([[0.256081040, 0.179641350, 0.06652327, 0.256081040],
+                         [0.471649080, 0.581160800, 0.64254290, 0.471649080],
+                         [0.016188763, 0.059556555, 0.22441064, 0.016188763],
+                         [0.256081040, 0.179641350, 0.06652327, 0.256081040]],
                         dtype=str(mcl.trans_matrix.dtype))
-    assert np.array_equal(mcl.trans_matrix, expected), print(mcl.trans_matrix)
+    assert np.allclose(mcl.trans_matrix, expected), print(mcl.trans_matrix)
 
     mcl.mcl_step()
     expected = np.array([[0.1263697, 0.1054491, 0.067736246, 0.1263697],
