@@ -683,14 +683,13 @@ def cluster2database(cluster, sql_broker, alignment, update=False):
     :param update: Replace any values already in the record
     :return:
     """
-    sql_broker.query("INSERT OR IGNORE INTO data_table (hash, seq_ids, alignment, graph, cluster_score) "
-                     "VALUES (?, ?, ?, ?, ?)", (cluster.seq_id_hash, cluster.seq_ids_str, str(alignment),
-                                                cluster.sim_scores.to_csv(header=None, index=False), cluster.score(),))
+    sql_broker.query("INSERT OR IGNORE INTO data_table (hash, seq_ids, alignment, graph) "
+                     "VALUES (?, ?, ?, ?)", (cluster.seq_id_hash, cluster.seq_ids_str, str(alignment),
+                                             cluster.sim_scores.to_csv(header=None, index=False),))
     if update:
-        sql_broker.query("UPDATE data_table SET alignment=?, graph=?, cluster_score=? "
+        sql_broker.query("UPDATE data_table SET alignment=?, graph=? "
                          "WHERE hash=?",
-                         (str(alignment), cluster.sim_scores.to_csv(header=None, index=False),
-                          cluster.score(),  cluster.seq_id_hash,))
+                         (str(alignment), cluster.sim_scores.to_csv(header=None, index=False), cluster.seq_id_hash,))
     return
 
 
@@ -1525,9 +1524,9 @@ def mcmcmc_mcl(args, params):
         clusters[indx] = cluster
         score += cluster.score()
 
-        sql_broker.query("""INSERT OR IGNORE INTO data_table (hash, seq_ids, cluster_score)
-                        VALUES (?, ?, ?)
-                        """, (cluster.seq_id_hash, cluster.seq_ids_str, cluster.score(),))
+        sql_broker.query("""INSERT OR IGNORE INTO data_table (hash, seq_ids)
+                        VALUES (?, ?)
+                        """, (cluster.seq_id_hash, cluster.seq_ids_str,))
 
     with LOCK:
         with open(join(exter_tmp_dir, "max.txt"), "r") as ifile:
@@ -2539,7 +2538,7 @@ Please do so now:
         else os.path.abspath(in_args.sqlite_db)
     broker = hlp.SQLiteBroker(db_file=sqlite_path, lock_wait_time=in_args.lock_wait_time)
     broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
-                                       "graph TEXT", "cluster_score TEXT"])
+                                       "graph TEXT"])
     broker.start_broker()
 
     global WORKER_OUT

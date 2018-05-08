@@ -599,7 +599,7 @@ def test_cluster2database(hf, monkeypatch):
     tmpdir = br.TempDir()
     broker = helpers.SQLiteBroker("%s%sdb.sqlite" % (tmpdir.path, hf.sep))
     broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
-                                       "graph TEXT", "cluster_score TEXT"])
+                                       "graph TEXT"])
     broker.start_broker()
     rdmcl.cluster2database(cluster, broker, ">Seq1\nMPQQCS-SS\n>Seq2\nMPQICMAAS")
     broker.close()
@@ -613,7 +613,6 @@ def test_cluster2database(hf, monkeypatch):
     assert 'BOL-PanxαA, BOL-PanxαB, BOL-PanxαC, BOL-PanxαD' in response[0][1]   # seq_ids
     assert response[0][2] == '>Seq1\nMPQQCS-SS\n>Seq2\nMPQICMAAS'               # alignment
     assert 'Hca-PanxαG,Lla-PanxαC,0.291912106162889' in response[0][3]          # graph
-    assert response[0][4] == '20'                                               # score
     connect.close()
 
 
@@ -1117,7 +1116,7 @@ def test_allbyallscores_create(hf):
     tmpdir = br.TempDir()
     sql_broker = helpers.SQLiteBroker(join(tmpdir.path, "db.sqlite"))
     sql_broker.create_table("data_table", ["hash TEXT PRIMARY KEY", "seq_ids TEXT", "alignment TEXT",
-                                           "graph TEXT", "cluster_score TEXT"])
+                                           "graph TEXT"])
     sql_broker.start_broker()
 
     seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
