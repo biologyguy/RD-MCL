@@ -7,6 +7,9 @@ source = /home/travis/build/biologyguy/RD-MCL/rdmcl/rdmcl.py
          /home/travis/build/biologyguy/RD-MCL/rdmcl/merge_orthogroups.py
          /home/travis/build/biologyguy/RD-MCL/rdmcl/tests/conftest.py
          /home/travis/build/biologyguy/RD-MCL/rdmcl/tests/__init__.py
+         /home/travis/build/biologyguy/RD-MCL/rdmcl/rename_orthogroup.py
+         /home/travis/build/biologyguy/RD-MCL/rdmcl/reset_workers.py
+	 /home/travis/build/biologyguy/RD-MCL/rdmcl/install.py
 
 [report]
 exclude_lines=
