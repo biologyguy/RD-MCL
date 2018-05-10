@@ -34,7 +34,6 @@ from buddysuite import buddy_resources as br
 
 # Globals
 SCRIPT_PATH = os.path.abspath(os.path.dirname(__file__))
-print("SCRIPT_PATH is: ", SCRIPT_PATH)
 
 
 def setup():
@@ -69,7 +68,6 @@ def setup():
                 os.chdir(tmp_dir.path)
                 if sys.platform == "darwin":
                     version = "osx-64"
-                    #print("running osx")
                 else:
                     version = "linux-64"
                 url = "https://anaconda.org/biocore/psipred/4.01/download/%s/psipred-4.01-1.tar.bz2" % version
@@ -119,7 +117,6 @@ def setup():
         root, dirs, files = next(os.walk(os.sep + os.path.join(*psipred_bin_dir, "share")))
         psipred_data_dir = re.search("'(psipred.*?)'[,\]]", str(dirs)).group(1)
         psipred_data_dir = os.sep + os.path.join(*psipred_bin_dir, "share", psipred_data_dir, "data")
-        print("{0}{1}{2}".format(data_dir, os.sep, "weights.dat"))
         for next_file in weight_files:
             if not os.path.isfile("{0}{1}{2}".format(data_dir, os.sep, next_file)) \
                     and not os.path.isfile(os.path.join(psipred_data_dir, next_file)):
