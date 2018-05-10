@@ -38,7 +38,6 @@ SCRIPT_PATH = os.path.abspath(os.path.dirname(__file__))
 
 def setup():
     import urllib.request
-
     sys.stdout.write("\033[1mWelcome to RD-MCL!\033[m\nConfirming installation...\n\n")
     sys.stdout.write("\033[1mChecking for PSIPRED:\033[m ")
     path_install = []
@@ -82,7 +81,6 @@ def setup():
                 if os.path.isdir("%s%spsipred" % (SCRIPT_PATH, os.sep)):
                     shutil.rmtree("%s%spsipred" % (SCRIPT_PATH, os.sep))
                 os.makedirs("%s%spsipred" % (SCRIPT_PATH, os.sep))
-
                 shutil.move("bin", "{0}{1}psipred{1}".format(SCRIPT_PATH, os.sep))
                 shutil.move("share{0}psipred_4.01{0}data".format(os.sep),
                             "{0}{1}psipred{1}".format(SCRIPT_PATH, os.sep))

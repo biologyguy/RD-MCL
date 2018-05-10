@@ -31,3 +31,15 @@ py.test ${TEST_SCRIPTS} --cov rdmcl.group_by_cluster --cov-report html --cov-con
 echo "test_rdmcl.py"
 TEST_SCRIPTS=${DIR}'/tests/test_rdmcl.py '
 py.test ${TEST_SCRIPTS} --cov rdmcl.rdmcl --cov-report html -n 8 --cov-config .coveragerc -p no:cacheprovider -p no:logging --durations=10 -m "not slow" $@
+
+echo "test_rename_orthogroup.py"
+TEST_SCRIPTS=${DIR}'tests/test_rename_orthogroup.py '
+py.test ${TEST_SCRIPTS} --cov rdmcl.rename_orthogroup --cov-report html -n 8 --cov-config .coveragerc -p no:cacheprovider -p no:logging --durations=10  $@
+
+echo "test_reset_workers.py"
+TEST_SCRIPTS=${DIR}'tests/test_reset_workers.py '
+py.test ${TEST_SCRIPTS} --cov rdmcl.reset_workers --cov-report html -n 8 --cov-config .coveragerc -p no:cacheprovider -p no:logging --durations=10 -m $@
+
+echo "test_install.py"
+TEST_SCRIPTS=${DIR}'tests/test_install.py '
+py.test ${TEST_SCRIPTS} --cov rdmcl.install --cov-report html -n 8 --cov-config .coveragerc -p no:cacheprovider -p no:logging --durations=10 -m $@

@@ -62,6 +62,30 @@ then
     FAILURE=1
 fi
 
+#### Rename orthogroup tests
+TEST_SCRIPTS='test_rename_orthogroup.py '
+py.test ${TEST_SCRIPTS} --cache-clear -p no:cacheprovider -p no:logging --cov --cov-append --cov-report= --cov-config ../.coveragerc --durations=10
+if [ $? -ne 0 ]
+then
+    FAILURE=1
+fi
+
+#### Reset workers tests
+TEST_SCRIPTS='test_reset_workers.py '
+py.test ${TEST_SCRIPTS} --cache-clear -p no:cacheprovider -p no:logging --cov --cov-append --cov-report= --cov-config ../.coveragerc --durations=10
+if [ $? -ne 0 ]
+then
+    FAILURE=1
+fi
+
+#### Install tests
+TEST_SCRIPTS='test_install.py '
+py.test ${TEST_SCRIPTS} --cache-clear -p no:cacheprovider -p no:logging --cov --cov-append --cov-report= --cov-config ../.coveragerc --durations=10
+if [ $? -ne 0 ]
+then
+    FAILURE=1
+fi
+
 #### Move coverage report file
 mv .coverage /home/travis/build/biologyguy/RD-MCL/
 
