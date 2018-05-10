@@ -48,6 +48,7 @@ def test_main(capsys, monkeypatch):
     sqlite_db.commit()
     sqlite_db.close()
 
+    # Make sure that data was inserted in database
     for table_name, value_list in tables.items():
         sqlite_db = sqlite3.connect(sqlite_filepath)
         cursor = sqlite_db.cursor()
@@ -72,6 +73,8 @@ def test_main(capsys, monkeypatch):
     monkeypatch.setattr(sys, "argv", argv)
     monkeypatch.setattr(hlp, "ExclusiveConnect", GetCursor)
     reset_workers.main()
+
+    # Test that data was successfully deleted from database
     for table_name, value_list in tables.items():
         sqlite_db = sqlite3.connect(sqlite_filepath)
         cursor = sqlite_db.cursor()
