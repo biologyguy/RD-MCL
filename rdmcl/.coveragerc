@@ -9,7 +9,8 @@ source = /home/travis/build/biologyguy/RD-MCL/rdmcl/rdmcl.py
          /home/travis/build/biologyguy/RD-MCL/rdmcl/tests/__init__.py
          /home/travis/build/biologyguy/RD-MCL/rdmcl/rename_orthogroup.py
          /home/travis/build/biologyguy/RD-MCL/rdmcl/reset_workers.py
-	 /home/travis/build/biologyguy/RD-MCL/rdmcl/install.py
+	     /home/travis/build/biologyguy/RD-MCL/rdmcl/install.py
+	     /home/travis/build/biologyguy/RD-MCL/rdmcl/compare_homolog_groups.py
 
 [report]
 exclude_lines=

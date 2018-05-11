@@ -43,3 +43,7 @@ py.test ${TEST_SCRIPTS} --cov rdmcl.reset_workers --cov-report html -n 8 --cov-c
 echo "test_install.py"
 TEST_SCRIPTS=${DIR}'tests/test_install.py '
 py.test ${TEST_SCRIPTS} --cov rdmcl.install --cov-report html -n 8 --cov-config .coveragerc -p no:cacheprovider -p no:logging --durations=10 -m $@
+
+echo "test_compare_homolog_groups.py"
+TEST_SCRIPTS=${DIR}'tests/test_compare_homolog_groups.py '
+py.test ${TEST_SCRIPTS} --cov rdmcl.compare_homolog_groups --cov-report html -n 8 --cov-config .coveragerc -p no:cacheprovider -p no:logging --durations=10 -m $@

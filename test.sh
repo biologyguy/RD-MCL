@@ -86,6 +86,14 @@ then
     FAILURE=1
 fi
 
+#### Compare homolog groups tests
+TEST_SCRIPTS='test_compare_homolog_groups.py '
+py.test ${TEST_SCRIPTS} --cache-clear -p no:cacheprovider -p no:logging --cov --cov-append --cov-report= --cov-config ../.coveragerc --durations=10
+if [ $? -ne 0 ]
+then
+    FAILURE=1
+fi
+
 #### Move coverage report file
 mv .coverage /home/travis/build/biologyguy/RD-MCL/
 
