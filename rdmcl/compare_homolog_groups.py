@@ -61,7 +61,6 @@ class Comparison(object):
             raise ValueError("Not all sequences are present in both sets of clusters")
 
         # For each true cluster, find the query cluster with the most overlap
-        final_clusters = [[] for _ in range(len(self.true_clusters))]
         true_to_query = []
         query_clusters = list(self.query_clusters)
 
@@ -71,23 +70,49 @@ class Comparison(object):
             max_match = 0
             max_match_indx = None
             for query_indx, intersect in enumerate(intersections):
+                # First, we're looking for the true cluster with the highest number of query sequences
                 if len(intersect) > max_match:
                     max_match = len(intersect)
                     max_match_indx = query_indx
+                # If there is a tie, then we want the true cluster with the highest proportion of query seqs
+                elif len(intersect) == max_match and len(intersect) > 0:
+                    orig_proportion = max_match / len(query_clusters[max_match_indx])
+                    new_proportion = len(intersect) / len(query_clusters[query_indx])
+                    if new_proportion > orig_proportion:
+                        max_match = len(intersect)
+                        max_match_indx = query_indx
 
             true_to_query.append([t_indx, max_match_indx])
-            for seq_id in t_cluster:
-                if seq_id not in self.query_clusters[max_match_indx]:
-                    if re.search("Mle", seq_id):
-                        final_clusters[t_indx].append("\033[91m\033[4m%s\033[24m\033[39m" % seq_id)
-                    else:
-                        final_clusters[t_indx].append("\033[91m%s\033[39m" % seq_id)
-                else:
-                    if re.search("Mle", seq_id):
-                        final_clusters[t_indx].append("\033[92m\033[4m%s\033[24m\033[39m" % seq_id)
-                    else:
-                        final_clusters[t_indx].append("\033[92m%s\033[39m" % seq_id)
 
+        final_clusters = [[] for _ in range(len(self.query_clusters))]
+        for q_indx, q_cluster in enumerate(self.query_clusters):
+            t_indx = [t_indx for t_indx, max_match_indx in true_to_query if q_indx == max_match_indx]
+            if not t_indx:
+                for seq_id in q_cluster:
+                    if re.search("Mle", seq_id):
+                        final_clusters[q_indx].append("\033[91m\033[4m%s\033[24m\033[39m" % seq_id)
+                    else:
+                        final_clusters[q_indx].append("\033[91m%s\033[39m" % seq_id)
+            else:
+                t_indx = t_indx[0]
+                for seq_id in q_cluster:
+                    if seq_id not in self.true_clusters[t_indx]:
+                        if re.search("Mle", seq_id):
+                            final_clusters[q_indx].append("\033[91m\033[4m%s\033[24m\033[39m" % seq_id)
+                        else:
+                            final_clusters[q_indx].append("\033[91m%s\033[39m" % seq_id)
+                    else:
+                        if re.search("Mle", seq_id):
+                            final_clusters[q_indx].append("\033[92m\033[4m%s\033[24m\033[39m" % seq_id)
+                        else:
+                            final_clusters[q_indx].append("\033[92m%s\033[39m" % seq_id)
+
+        self._metrics(true_to_query)
+        for q_cluster in final_clusters:
+            self.pretty_out += "%s\n" % "\t".join(q_cluster)
+        return
+
+    def _metrics(self, true_to_query):
         # Setting comparison stats, as explained in Lechner M. et al., 2014 PlosONE. DOI: 10.1371/journal.pone.0105015
         # tp = True positive, fp = False positive, fn = False negative, tn = True negative
         sum_tp, sum_fp, sum_fn, sum_tn = 0, 0, 0, 0
@@ -112,9 +137,6 @@ class Comparison(object):
 
         true_parent = Cluster([_id for _ids in self.true_clusters for _id in _ids])
         self.true_score = sum([Cluster(next_set, parent=true_parent).score() for next_set in self.true_clusters])
-
-        for q_cluster in final_clusters:
-            self.pretty_out += "%s\n" % "\t".join(q_cluster)
         return
 
     def score(self):
