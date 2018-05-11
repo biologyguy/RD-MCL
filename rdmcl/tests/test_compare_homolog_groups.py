@@ -6,6 +6,7 @@ from .. import compare_homolog_groups
 from .. import helpers as hlp
 from types import SimpleNamespace
 from buddysuite import buddy_resources as br
+import sys
 
 
 def test_comparison_init(monkeypatch, capsys):
@@ -150,3 +151,76 @@ Hru-PanxαC""")
     assert comp.query_score > comp.true_score
     assert round(comp.query_score, 2) == 17.46
     assert round(comp.true_score, 2) == 16.65
+
+
+def test_comparison_score():
+    comp = SimpleNamespace(precision=0.1, recall=0.2, accuracy=0.3, tn_rate=0.4, query_score=100, true_score=200,
+                           score=compare_homolog_groups.Comparison.score)
+    score = comp.score(comp)
+    assert score == """\
+Precision:    10.0%
+Recall:       20.0%
+Accuracy:     30.0%
+tn rate:      40.0%
+Query score:  100
+True score:   200
+""", print(score)
+
+
+def test_comparison_str():
+    comp = SimpleNamespace(precision=0.1, recall=0.2, accuracy=0.3, tn_rate=0.4, query_score=100, true_score=200,
+                           score=lambda *_: "Printing out a Comparison object.",
+                           __str__=compare_homolog_groups.Comparison.__str__)
+
+    assert comp.__str__(comp) == "Printing out a Comparison object."
+
+
+def test_main(monkeypatch, capsys):
+    class MockComp(object):
+        def __init__(self, true_clusts, false_clusts):
+            assert true_clusts
+            assert false_clusts
+            self.pretty_out = "Pretty Out!"
+
+        @staticmethod
+        def score():
+            return "Mock score"
+
+    argv = ['compare_homolog_groups.py', "true_clust", "false_clust"]
+    monkeypatch.setattr(sys, "argv", argv)
+    monkeypatch.setattr(compare_homolog_groups, "Comparison", MockComp)
+    compare_homolog_groups.main()
+    out, err = capsys.readouterr()
+
+    assert "Pretty Out!" in out
+
+    argv = ['compare_homolog_groups.py', "true_clust", "false_clust", "-s"]
+    monkeypatch.setattr(sys, "argv", argv)
+    monkeypatch.setattr(compare_homolog_groups, "Comparison", MockComp)
+    compare_homolog_groups.main()
+    out, err = capsys.readouterr()
+
+    assert "Mock score" in out
+
+
+def test_main_errors(monkeypatch, capsys):
+    def mock_raise_valueerror1(*_):
+        raise ValueError("Not all sequences are present")
+
+    def mock_raise_valueerror2(*_):
+        raise ValueError("Foo Bar Baz")
+
+    argv = ['compare_homolog_groups.py', "true_clust", "false_clust"]
+    monkeypatch.setattr(sys, "argv", argv)
+
+    monkeypatch.setattr(compare_homolog_groups, "Comparison", mock_raise_valueerror1)
+    compare_homolog_groups.main()
+    out, err = capsys.readouterr()
+
+    assert "There are differences in the sequences present in your query" in err
+
+    monkeypatch.setattr(compare_homolog_groups, "Comparison", mock_raise_valueerror2)
+    with pytest.raises(ValueError) as err:
+        compare_homolog_groups.main()
+
+    assert "Foo Bar Baz" in str(err)
