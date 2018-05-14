@@ -1043,7 +1043,7 @@ class HeartBeat(object):
                                                       round(time.time() + cursor.lag + activity_modifier),))
                     split_time = time.time() + activity_modifier
                 time.sleep(random())
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, FileNotFoundError):
             open(check_file_path, "w").close()
         return
 
@@ -1506,67 +1506,72 @@ def mcmcmc_mcl(args, params):
     :param params: List of parameters (see below for unpacking assignment)
     :return:
     """
-    inflation, gq, r_seed = args
-    exter_tmp_dir, seqbuddy, parent_cluster, taxa_sep, \
-        sql_broker, psi_pred_ss2, progress, expect_num_results = params
-    rand_gen = Random(r_seed)
-    mcl_obj = hlp.MarkovClustering(parent_cluster.sim_scores, inflation=inflation, edge_sim_threshold=gq)
-    mcl_obj.run()
-    progress.update('mcl_runs', 1)
-    clusters = mcl_obj.clusters
-    # Order the clusters so the big jobs are queued up front.
-    clusters = sorted(clusters, key=lambda x: len(x), reverse=True)
-    score = 0
+    try:
+        inflation, gq, r_seed = args
+        exter_tmp_dir, seqbuddy, parent_cluster, taxa_sep, \
+            sql_broker, psi_pred_ss2, progress, expect_num_results = params
+        rand_gen = Random(r_seed)
+        mcl_obj = hlp.MarkovClustering(parent_cluster.sim_scores, inflation=inflation, edge_sim_threshold=gq)
+        mcl_obj.run()
+        progress.update('mcl_runs', 1)
+        clusters = mcl_obj.clusters
+        # Order the clusters so the big jobs are queued up front.
+        clusters = sorted(clusters, key=lambda x: len(x), reverse=True)
+        score = 0
 
-    for indx, cluster_ids in enumerate(clusters):
-        sim_scores = parent_cluster.pull_scores_subgraph(cluster_ids)
-        cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
-                          r_seed=rand_gen.randint(1, 999999999999999))
+        for indx, cluster_ids in enumerate(clusters):
+            sim_scores = parent_cluster.pull_scores_subgraph(cluster_ids)
+            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
+                              r_seed=rand_gen.randint(1, 999999999999999))
 
-        clusters[indx] = cluster
-        score += cluster.score()
+            clusters[indx] = cluster
+            score += cluster.score()
 
-        sql_broker.query("""INSERT OR IGNORE INTO data_table (hash, seq_ids)
-                        VALUES (?, ?)
-                        """, (cluster.seq_id_hash, cluster.seq_ids_str,))
+            sql_broker.query("""INSERT OR IGNORE INTO data_table (hash, seq_ids)
+                            VALUES (?, ?)
+                            """, (cluster.seq_id_hash, cluster.seq_ids_str,))
 
-    with LOCK:
-        with open(join(exter_tmp_dir, "max.txt"), "r") as ifile:
-            results = ifile.readlines()
-            results = [result.strip() for result in results]
-            results.append(",".join([cluster.seq_id_hash for cluster in clusters]))
-            results = sorted(results)
-
-        with open(join(exter_tmp_dir, "max.txt"), "w") as ofile:
-            ofile.write("\n".join(results))
-
-    if len(results) == expect_num_results:
-        best_score = None
-        best_clusters = []  # Hopefully just find a single best set of cluster, but could be more
-        for clusters in results:
-            score_sum = 0
-            cluster_ids = []
-            for cluster in clusters.split(","):
-                sql_query = sql_broker.query("SELECT seq_ids FROM data_table WHERE hash=?", (cluster,))
-                seq_ids = sql_query[0][0].split(", ")
-                cluster_ids.append(sql_query[0][0])
-                sim_scores = parent_cluster.pull_scores_subgraph(seq_ids)
-                cluster = Cluster(seq_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
-                                  r_seed=rand_gen.randint(1, 999999999999))
-                score_sum += cluster.score()
-            if score_sum == best_score:
-                best_clusters.append(cluster_ids)
-            elif best_score is None or score_sum > best_score:
-                best_clusters = [cluster_ids]
-                best_score = score_sum
-
-        best_clusters = [cluster.replace(', ', '\t') for cluster in best_clusters[0]]
         with LOCK:
-            with open(join(exter_tmp_dir, "best_group"), "w") as ofile:
-                ofile.write('\n'.join(best_clusters))
-            open(join(exter_tmp_dir, "max.txt"), "w").close()
-    elif len(results) > expect_num_results:  # This should never be able to happen
-        raise ValueError("More results written to max.txt than expect_num_results")
+            with open(join(exter_tmp_dir, "max.txt"), "r") as ifile:
+                results = ifile.readlines()
+                results = [result.strip() for result in results]
+                results.append(",".join([cluster.seq_id_hash for cluster in clusters]))
+                results = sorted(results)
+
+            with open(join(exter_tmp_dir, "max.txt"), "w") as ofile:
+                ofile.write("\n".join(results))
+
+        if len(results) == expect_num_results:
+            best_score = None
+            best_clusters = []  # Hopefully just find a single best set of cluster, but could be more
+            for clusters in results:
+                score_sum = 0
+                cluster_ids = []
+                for cluster in clusters.split(","):
+                    sql_query = sql_broker.query("SELECT seq_ids FROM data_table WHERE hash=?", (cluster,))
+                    seq_ids = sql_query[0][0].split(", ")
+                    cluster_ids.append(sql_query[0][0])
+                    sim_scores = parent_cluster.pull_scores_subgraph(seq_ids)
+                    cluster = Cluster(seq_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
+                                      r_seed=rand_gen.randint(1, 999999999999))
+                    score_sum += cluster.score()
+                if score_sum == best_score:
+                    best_clusters.append(cluster_ids)
+                elif best_score is None or score_sum > best_score:
+                    best_clusters = [cluster_ids]
+                    best_score = score_sum
+
+            best_clusters = [cluster.replace(', ', '\t') for cluster in best_clusters[0]]
+            with LOCK:
+                with open(join(exter_tmp_dir, "best_group"), "w") as ofile:
+                    ofile.write('\n'.join(best_clusters))
+                open(join(exter_tmp_dir, "max.txt"), "w").close()
+        elif len(results) > expect_num_results:  # This should never be able to happen
+            raise ValueError("More results written to max.txt than expect_num_results")
+
+    except KeyboardInterrupt:
+        sys.exit()
+
     return score
 
 
@@ -2758,11 +2763,15 @@ Continue? y/[n] """ % len(sequences)
     run_time = br.RunTime(prefix=progress_tracker.__str__, _sleep=0.3, final_clear=True)
     if not in_args.quiet:
         run_time.start()
-    final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences, sql_broker=broker,
-                                       progress=progress_tracker, outdir=in_args.outdir, steps=in_args.mcmc_steps,
-                                       quiet=True, taxa_sep=in_args.taxa_sep, r_seed=in_args.r_seed,
-                                       psi_pred_ss2=psi_pred_files, chains=MCMC_CHAINS, walkers=in_args.walkers,
-                                       convergence=GELMAN_RUBIN, resume=in_args.resume)
+    try:
+        final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences, sql_broker=broker,
+                                           progress=progress_tracker, outdir=in_args.outdir, steps=in_args.mcmc_steps,
+                                           quiet=True, taxa_sep=in_args.taxa_sep, r_seed=in_args.r_seed,
+                                           psi_pred_ss2=psi_pred_files, chains=MCMC_CHAINS, walkers=in_args.walkers,
+                                           convergence=GELMAN_RUBIN, resume=in_args.resume)
+    except KeyboardInterrupt:
+        print(hlp.RED, "Run aborted by user with keyboard interrupt.", hlp.DEF_FONT)
+        sys.exit()
     final_clusters = [cluster for cluster in final_clusters if cluster.subgroup_counter == 0]
     run_time.end()
 
