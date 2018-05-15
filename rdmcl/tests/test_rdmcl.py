@@ -72,7 +72,6 @@ def test_cluster_instantiate_group_0(hf, monkeypatch):
     assert [taxa for taxa in cluster.taxa] == ['BOL', 'Bab', 'Bch', 'Bfo', 'Bfr', 'Cfu', 'Dgl', 'Edu', 'Hca', 'Hru',
                                                'Hvu', 'Lcr', 'Lla', 'Mle', 'Oma', 'Pba', 'Tin', 'Vpa']
     assert hf.string2hash(cluster.sim_scores.to_csv()) == "049088e80b31bac797a66534e518229f"
-    assert cluster.taxa_sep == "-"
     assert cluster.parent is None
     assert cluster.subgroup_counter == 0
     assert cluster.cluster_score is None
@@ -130,7 +129,6 @@ def test_cluster_instantiate_child(hf):
     assert [taxa for taxa in cluster.taxa] == ['BOL', 'Bab', 'Bch', 'Bfo', 'Dgl', 'Edu', 'Hca',
                                                'Hru', 'Lcr', 'Mle', 'Oma', 'Tin', 'Vpa']
     assert hf.string2hash(cluster.sim_scores.to_csv()) == "eb1ef296e9f4e74cd6deea490a447326"
-    assert cluster.taxa_sep == "-"
     assert cluster.parent._name == "group_0"
     assert cluster.subgroup_counter == 0
     assert cluster.cluster_score is None
@@ -488,10 +486,10 @@ def test_rbhc_fail_integration(hf):
     assert cliques[0] == cluster
     assert """Test for KDE separation:
 \t\t\t['BOL-PanxαF', 'Lcr-PanxαI', 'Lcr-PanxαL', 'Mle-Panxα11', 'Mle-Panxα4']
-\t\t\tOuter KDE: {'shape': (1, 5), 'covariance': 0.032070317692, 'inv_cov': 31.181480944314,\
- '_norm_factor': 2.244458447603}
-\t\t\tClique KDE: {'shape': (1, 10), 'covariance': 0.019659970978, 'inv_cov': 50.864774984452,\
-  '_norm_factor': 3.514644232194}""" in log_file.read(), print(log_file.read())
+\t\t\tOuter KDE: {'shape': (1, 5), 'covariance': 0.03207, 'inv_cov': 31.18148,\
+ '_norm_factor': 2.24446}
+\t\t\tClique KDE: {'shape': (1, 10), 'covariance': 0.01966, 'inv_cov': 50.86477,\
+  '_norm_factor': 3.51464}""" in log_file.read(), print(log_file.read())
     assert "FAIL" in log_file.read()
 
 
@@ -508,10 +506,10 @@ def test_rbhc_multi_clique_pass(hf):
 
     assert """Test for KDE separation:
 \t\t\t['BOL-PanxαF', 'Lcr-PanxαI', 'Mle-Panxα4']
-\t\t\tOuter KDE: {'shape': (1, 9), 'covariance': 0.02474153146, 'inv_cov': 40.417869912349,\
- '_norm_factor': 3.548507543023}
-\t\t\tClique KDE: {'shape': (1, 3), 'covariance': 9.9371138e-05, 'inv_cov': 10063.284122696416,\
-  '_norm_factor': 0.074962027018}
+\t\t\tOuter KDE: {'shape': (1, 9), 'covariance': 0.02474, 'inv_cov': 40.41787,\
+ '_norm_factor': 3.54851}
+\t\t\tClique KDE: {'shape': (1, 3), 'covariance': 0.0001, 'inv_cov': 10063.28412,\
+  '_norm_factor': 0.07496}
 """ in log_file.read(), print(log_file.read())
 
     assert """Cliques identified and spun off:
@@ -767,20 +765,17 @@ def test_progress(hf):
 def test_check_sequences(hf, monkeypatch, capsys):
     monkeypatch.setattr(rdmcl, "logging", MockLogging)
     seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
-    rdmcl.check_sequences(seqbuddy, "-")
+    rdmcl.check_sequences(seqbuddy)
     out, err = capsys.readouterr()
-    assert "Checking that the format of all sequence ids matches 'taxa-gene'" in out
+    assert "Checking that the format of all sequence ids matches 'taxa-gene'" in out, print(out)
     assert "    134 sequences PASSED" in out
 
     rdmcl.Sb.rename(seqbuddy, "Mle-Panxα1", "Mle:Panxα1")
-    assert not rdmcl.check_sequences(seqbuddy, "-")
+    assert not rdmcl.check_sequences(seqbuddy)
 
     out, err = capsys.readouterr()
-    assert "Checking that the format of all sequence ids matches 'taxa-gene'" in out
-    print(out)
-    assert "Malformed sequence id(s): 'Mle:Panxα1, Mle:Panxα10A, Mle:Panxα11, Mle:Panxα12'\n" \
-           "The taxa separator character is currently set to '-',\n" \
-           " which can be changed with the '-ts' flag" in out
+    assert "Checking that the format of all sequence ids matches 'taxa-gene'" in out, print(out)
+    assert "Malformed sequence id(s): 'Mle:Panxα1, Mle:Panxα10A, Mle:Panxα11, Mle:Panxα12'" in out
 
 
 def test_heartbeat_init():
@@ -1597,7 +1592,6 @@ def test_mcmcmc_mcl(hf):
                    'Vpa-PanxαB', 'Oma-PanxαC', 'Edu-PanxαA', 'Bch-PanxαC']
     seqbuddy = rdmcl.Sb.SeqBuddy(hf.get_data("cteno_panxs"))
     seqbuddy = rdmcl.Sb.pull_recs(seqbuddy, "^%s$" % "$|^".join(cluster_ids))
-    taxa_sep = "-"
     sql_broker = helpers.SQLiteBroker("%sdb.sqlite" % hf.resource_path)
     sql_broker.start_broker()
 
@@ -1609,7 +1603,7 @@ def test_mcmcmc_mcl(hf):
     progress = rdmcl.Progress(join(ext_tmp_dir.path, "progress"), cluster)
 
     args = (6.372011782427792, 0.901221218627, 1)  # inflation, gq, r_seed
-    params = [ext_tmp_dir.path, seqbuddy, cluster, taxa_sep, sql_broker, hf.get_data("ss2_paths"), progress, 3]
+    params = [ext_tmp_dir.path, seqbuddy, cluster, sql_broker, hf.get_data("ss2_paths"), progress, 3]
 
     assert rdmcl.mcmcmc_mcl(args, params) == 19.538461538461537
     with open(join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
@@ -2116,8 +2110,6 @@ parser.add_argument("-ep", "--ext_penalty", help="Penalty for extending a gap in
                     type=float, default=rdmcl.GAP_EXTEND)
 parser.add_argument("-gn", "--group_name", action="store", default="group", metavar="",
                     help="Supply a name prefix for cluster names (default='group')")
-parser.add_argument("-ts", "--taxa_sep", action="store", default="-",
-                    help="Specify a string that separates taxa ids from gene names")
 parser.add_argument("-cpu", "--max_cpus", type=int, action="store", default=rdmcl.CPUS,
                     help="Specify the maximum number of cores RD-MCL can use.")
 parser.add_argument("-cnv", "--converge", type=float,

@@ -89,6 +89,7 @@ MASTER_ID = None
 MASTER_PULSE = 60
 PSIPREDDIR = ""
 TRIMAL = ["gappyout", 0.5, 0.75, 0.9, 0.95, "clean"]
+TAXA_SEP = "-"
 
 if os.path.isfile(join(SCRIPT_PATH, "hmmer", "hmm_fwd_back")):
     HMM_FWD_BACK = join(SCRIPT_PATH, "hmmer", "hmm_fwd_back")
@@ -122,10 +123,8 @@ np.set_printoptions(precision=12)
 pd.set_option("display.precision", 12)
 
 
-# ToDo: Maybe remove support for taxa_sep. It's complicating my life, so just impose the '-' on users?
 class Cluster(object):
-    def __init__(self, seq_ids, sim_scores, taxa_sep="-", group_prefix="group",
-                 parent=None, collapse=False, r_seed=None):
+    def __init__(self, seq_ids, sim_scores, group_prefix="group", parent=None, collapse=False, r_seed=None):
         """
         - Note that reciprocal best hits between paralogs are collapsed when instantiating group_0, so
           no problem strongly penalizing all paralogs in the scoring algorithm
@@ -134,7 +133,6 @@ class Cluster(object):
         :type seq_ids: list or set
         :param sim_scores: All-by-all similarity matrix for everything in the sequence_ids (and parental clusters)
         :type sim_scores: pandas.DataFrame
-        :param taxa_sep: What character partitions taxon from rec id (deprecated)
         :param group_prefix: The name that is attached to each group
         :param parent: Parental sequence_ids
         :type parent: Cluster
@@ -162,7 +160,6 @@ class Cluster(object):
                              (ids_len, expected_num_edges, len(sim_scores.index), seq_id_hash))
 
         self.sim_scores = sim_scores
-        self.taxa_sep = taxa_sep
         self.parent = parent
 
         self.subgroup_counter = 0
@@ -173,7 +170,7 @@ class Cluster(object):
         self.taxa = OrderedDict()  # key = taxa id. value = list of genes coming fom that taxa.
 
         for next_seq_id in seq_ids:
-            taxa = next_seq_id.split(taxa_sep)[0]
+            taxa = next_seq_id.split(TAXA_SEP)[0]
             self.taxa.setdefault(taxa, [])
             self.taxa[taxa].append(next_seq_id)
 
@@ -202,7 +199,7 @@ class Cluster(object):
         self.seq_ids = set(seq_ids)
         self.taxa = OrderedDict()
         for next_seq_id in self.seq_ids:
-            taxa = next_seq_id.split(self.taxa_sep)[0]
+            taxa = next_seq_id.split(TAXA_SEP)[0]
             self.taxa.setdefault(taxa, [])
             self.taxa[taxa].append(next_seq_id)
         self.max_genes_in_a_taxa = max([len(self.taxa[taxa]) for taxa in self.taxa]) if not self.parent else \
@@ -214,11 +211,11 @@ class Cluster(object):
         while not breakout:
             breakout = True
             for seq1_id in seq_ids:
-                seq1_taxa = seq1_id.split(self.taxa_sep)[0]
+                seq1_taxa = seq1_id.split(TAXA_SEP)[0]
                 paralog_best_hits = []
                 for best_hits_seq1 in self.get_best_hits(seq1_id, "raw_score").itertuples():  # grab best hit for seq1
                     seq2_id = best_hits_seq1.seq1 if best_hits_seq1.seq1 != seq1_id else best_hits_seq1.seq2
-                    if seq2_id.split(self.taxa_sep)[0] != seq1_taxa:
+                    if seq2_id.split(TAXA_SEP)[0] != seq1_taxa:
                         paralog_best_hits = []
                         break
                     for best_hits_seq2 in self.get_best_hits(seq2_id, "raw_score").itertuples():  # Confirm reciprocal
@@ -375,7 +372,7 @@ class Cluster(object):
         items_not_in_parent = set(self.seq_ids) - set(base_cluster.seq_ids)
         for orphan in items_not_in_parent:
             base_cluster.seq_ids.add(orphan)
-            orphan_taxa = orphan.split(self.taxa_sep)[0]
+            orphan_taxa = orphan.split(TAXA_SEP)[0]
             base_cluster.taxa.setdefault(orphan_taxa, [])
             base_cluster.taxa[orphan_taxa].append(orphan)
 
@@ -434,7 +431,7 @@ class Cluster(object):
         items_not_in_parent = set(self.seq_ids) - set(base_cluster.seq_ids)
         for orphan in items_not_in_parent:
             base_cluster.seq_ids.add(orphan)
-            orphan_taxa = orphan.split(self.taxa_sep)[0]
+            orphan_taxa = orphan.split(TAXA_SEP)[0]
             base_cluster.taxa.setdefault(orphan_taxa, [])
             base_cluster.taxa[orphan_taxa].append(orphan)
 
@@ -567,14 +564,14 @@ class Cluster(object):
 
                 total_kde = scipy.stats.gaussian_kde(outer_scores.raw_score, bw_method='silverman')
                 log_file.write("\t\t\tOuter KDE: {'shape': %s, 'covariance': %s, 'inv_cov': %s, '_norm_factor': %s}\n" %
-                               (total_kde.dataset.shape, round(total_kde.covariance[0][0], 12),
-                                round(total_kde.inv_cov[0][0], 12), round(total_kde._norm_factor, 12)))
+                               (total_kde.dataset.shape, round(total_kde.covariance[0][0], 5),
+                                round(total_kde.inv_cov[0][0], 5), round(total_kde._norm_factor, 5)))
 
                 clique_kde = scipy.stats.gaussian_kde(clique_scores.raw_score, bw_method='silverman')
                 log_file.write("\t\t\tClique KDE: {'shape': %s, 'covariance': %s, "
                                "'inv_cov': %s,  '_norm_factor': %s}\n" %
-                               (clique_kde.dataset.shape, round(clique_kde.covariance[0][0], 12),
-                                round(clique_kde.inv_cov[0][0], 12), round(clique_kde._norm_factor, 12)))
+                               (clique_kde.dataset.shape, round(clique_kde.covariance[0][0], 5),
+                                round(clique_kde.inv_cov[0][0], 5), round(clique_kde._norm_factor, 5)))
 
                 clique_resample = clique_kde.resample(10000)[0]  # ToDo: figure out how to control this with r_seed!
                 clique95 = [np.percentile(clique_resample, 2.5), np.percentile(clique_resample, 97.5)]
@@ -626,16 +623,14 @@ class Cluster(object):
 
         for indx, result in enumerate(combined):
             cluster_ids, cluster_sim_scores = result
-            cluster = Cluster(cluster_ids, sim_scores=cluster_sim_scores, taxa_sep=self.taxa_sep,
-                              parent=self)
+            cluster = Cluster(cluster_ids, sim_scores=cluster_sim_scores, parent=self)
             cluster.set_name()
             results.append(cluster)
 
         if remaining_seqs:
             sim_scores = self.pull_scores_subgraph(remaining_seqs)
 
-            remaining_cluster = Cluster(remaining_seqs, sim_scores=sim_scores, parent=self,
-                                        taxa_sep=self.taxa_sep)
+            remaining_cluster = Cluster(remaining_seqs, sim_scores=sim_scores, parent=self)
             remaining_cluster.set_name()
             results.append(remaining_cluster)
         log_file.write("\tCliques identified and spun off:\n\t\t%s\n\n" %
@@ -758,7 +753,7 @@ def compare_psi_pred(psi1_df, psi2_df):
 
 
 def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progress, outdir, psi_pred_ss2,
-                      steps=1000, chains=3, walkers=2, quiet=True, taxa_sep="-", r_seed=None, convergence=None,
+                      steps=1000, chains=3, walkers=2, quiet=True, r_seed=None, convergence=None,
                       resume=False):
     """
     Run MCMCMC on MCL to find the best orthogroups
@@ -770,11 +765,10 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     :param progress: Progress class
     :param outdir: where are files being written to?
     :param psi_pred_ss2: OrdredDict of all ss2 dataframes paths with record IDs as key
-    :param steps: How many MCMCMC iterations to run TODO: calculate this on the fly
+    :param steps: How many MCMCMC iterations to run
     :param chains: Number of MCMCMC chains to spin off
     :param walkers: Number of Metropolis-Hastings walkers per chain
     :param quiet: Suppress StdErr
-    :param taxa_sep: The string that separates taxon names from gene names
     :param r_seed: Set the random generator seed value
     :param convergence: Set minimum Gelman-Rubin PSRF value for convergence
     :param resume: Try to pick up from a previous run
@@ -831,16 +825,15 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     if best_possible_score == worst_possible_score:
         return cluster_list
 
-    mcmcmc_params = [mcmcmc_path, seqbuddy, master_cluster,
-                     taxa_sep, sql_broker, psi_pred_ss2, progress, chains * (walkers + 2)]
+    mcmcmc_params = [mcmcmc_path, seqbuddy, master_cluster, sql_broker, psi_pred_ss2, progress, chains * (walkers + 2)]
     mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, quiet=quiet,
                                    num_walkers=walkers, num_chains=chains, convergence=convergence,
                                    outfile_root=join(mcmcmc_path, "mcmcmc_out"), params=mcmcmc_params,
                                    include_lava=True, include_ice=True, r_seed=rand_gen.randint(1, 999999999999999),
                                    min_max=(worst_possible_score, best_possible_score))
 
-    mcmcmc_factory.reset_params([mcmcmc_path, seqbuddy, master_cluster,
-                                 taxa_sep, sql_broker, psi_pred_ss2, progress, chains * (walkers + 2)])
+    mcmcmc_factory.reset_params([mcmcmc_path, seqbuddy, master_cluster, sql_broker,
+                                 psi_pred_ss2, progress, chains * (walkers + 2)])
 
     if resume:
         if not mcmcmc_factory.resume():
@@ -887,7 +880,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
             child_list[seq_id_hash] = [p, indx, cluster_ids]
         else:
             sim_scores, alb_obj = retrieve_all_by_all_scores(sb_copy, psi_pred_ss2, sql_broker, quiet=True)
-            cluster = Cluster(cluster_ids, sim_scores, parent=master_cluster, taxa_sep=taxa_sep,
+            cluster = Cluster(cluster_ids, sim_scores, parent=master_cluster,
                               r_seed=rand_gen.randint(1, 999999999999999))
             mcl_clusters[indx] = cluster
 
@@ -909,7 +902,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                                                  names=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
                                                  dtype={"seq1": "category", "seq2": "category"})
 
-                    cluster = Cluster(cluster_ids, sim_scores, parent=master_cluster, taxa_sep=taxa_sep,
+                    cluster = Cluster(cluster_ids, sim_scores, parent=master_cluster,
                                       r_seed=rand_gen.randint(1, 999999999999999))
                     mcl_clusters[indx] = cluster
                     del child_list[_name]
@@ -949,7 +942,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         # Recursion... Reassign cluster_list, as all clusters are returned at the end of a call to orthogroup_caller
         cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, sql_broker=sql_broker,
                                          progress=progress, outdir=outdir, steps=steps, quiet=quiet, chains=chains,
-                                         walkers=walkers, taxa_sep=taxa_sep, convergence=convergence, resume=resume,
+                                         walkers=walkers, convergence=convergence, resume=resume,
                                          r_seed=rand_gen.randint(1, 999999999999999), psi_pred_ss2=psi_pred_ss2)
 
     save_cluster("Sub clusters returned")
@@ -984,19 +977,18 @@ class Progress(object):
                % (_progress['mcl_runs'], _progress['placed'], _progress['total'])
 
 
-def check_sequences(seqbuddy, taxa_sep):
-    logging.warning("Checking that the format of all sequence ids matches 'taxa%sgene'" % taxa_sep)
+def check_sequences(seqbuddy):
+    logging.warning("Checking that the format of all sequence ids matches 'taxa-gene'")
     failures = []
     taxa = []
     for rec in seqbuddy.records:
-        rec_id = rec.id.split(taxa_sep)
+        rec_id = rec.id.split(TAXA_SEP)
         if len(rec_id) != 2:
             failures.append(rec.id)
         else:
             taxa.append(rec_id[0])
     if failures:
-        logging.error("Malformed sequence id(s): '%s'\nThe taxa separator character is currently set to '%s',\n"
-                      " which can be changed with the '-ts' flag" % (", ".join(failures), taxa_sep))
+        logging.error("Malformed sequence id(s): '%s'" % ", ".join(failures))
         return False
     else:
         logging.warning("    %s sequences PASSED" % len(seqbuddy))
@@ -1506,8 +1498,7 @@ def mcmcmc_mcl(args, params):
     """
     try:
         inflation, gq, r_seed = args
-        exter_tmp_dir, seqbuddy, parent_cluster, taxa_sep, \
-            sql_broker, psi_pred_ss2, progress, expect_num_results = params
+        exter_tmp_dir, seqbuddy, parent_cluster, sql_broker, psi_pred_ss2, progress, expect_num_results = params
         rand_gen = Random(r_seed)
         mcl_obj = hlp.MarkovClustering(parent_cluster.sim_scores, inflation=inflation, edge_sim_threshold=gq)
         mcl_obj.run()
@@ -1519,7 +1510,7 @@ def mcmcmc_mcl(args, params):
 
         for indx, cluster_ids in enumerate(clusters):
             sim_scores = parent_cluster.pull_scores_subgraph(cluster_ids)
-            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
+            cluster = Cluster(cluster_ids, sim_scores, parent=parent_cluster,
                               r_seed=rand_gen.randint(1, 999999999999999))
 
             clusters[indx] = cluster
@@ -1550,7 +1541,7 @@ def mcmcmc_mcl(args, params):
                     seq_ids = sql_query[0][0].split(", ")
                     cluster_ids.append(sql_query[0][0])
                     sim_scores = parent_cluster.pull_scores_subgraph(seq_ids)
-                    cluster = Cluster(seq_ids, sim_scores, parent=parent_cluster, taxa_sep=taxa_sep,
+                    cluster = Cluster(seq_ids, sim_scores, parent=parent_cluster,
                                       r_seed=rand_gen.randint(1, 999999999999))
                     score_sum += cluster.score()
                 if score_sum == best_score:
@@ -2134,8 +2125,6 @@ def argparse_init():
                               help="If RD-MCL has already calculated PSI-Pred files, point to the directory")
     parser_flags.add_argument("-gn", "--group_name", action="store", default="group", metavar="",
                               help="Supply a name prefix for cluster names (default='group')")
-    parser_flags.add_argument("-ts", "--taxa_sep", action="store", default="-", metavar="",
-                              help="Specify the string that separates taxa ids from gene names (default='-')")
     parser_flags.add_argument("-ch", "--chains", default=MCMC_CHAINS, type=int, metavar="",
                               help="Specify how many MCMC chains to run (default=3)")
     parser_flags.add_argument("-wlk", "--walkers", default=3, type=int, metavar="",
@@ -2344,7 +2333,7 @@ Continue? y/[n] """ % len(sequences)
         else:
             logging.warning("Proceeding with large run.\n")
 
-    if not check_sequences(sequences, in_args.taxa_sep):
+    if not check_sequences(sequences):
         heartbeat.end()
         sys.exit()
     seq_ids_str = ", ".join(sorted([rec.id for rec in sequences.records]))
@@ -2461,13 +2450,13 @@ Continue? y/[n] """ % len(sequences)
 
     # First prepare the really raw first alignment in the database, without any collapsing.
     uncollapsed_group_0 = Cluster([rec.id for rec in sequences.records], scores_data,
-                                  taxa_sep=in_args.taxa_sep, group_prefix=in_args.group_name, r_seed=in_args.r_seed)
+                                  group_prefix=in_args.group_name, r_seed=in_args.r_seed)
     cluster2database(uncollapsed_group_0, broker, alignbuddy)
 
     # Then prepare the 'real' group_0 cluster
     if not in_args.suppress_paralog_collapse:
-        group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data, taxa_sep=in_args.taxa_sep,
-                                  group_prefix=in_args.group_name, collapse=True, r_seed=in_args.r_seed)
+        group_0_cluster = Cluster([rec.id for rec in sequences.records], scores_data, group_prefix=in_args.group_name,
+                                  collapse=True, r_seed=in_args.r_seed)
     else:
         group_0_cluster = uncollapsed_group_0
 
@@ -2530,9 +2519,9 @@ Continue? y/[n] """ % len(sequences)
     try:
         final_clusters = orthogroup_caller(group_0_cluster, final_clusters, seqbuddy=sequences, sql_broker=broker,
                                            progress=progress_tracker, outdir=in_args.outdir, steps=in_args.mcmc_steps,
-                                           quiet=True, taxa_sep=in_args.taxa_sep, r_seed=in_args.r_seed,
-                                           psi_pred_ss2=psi_pred_files, chains=MCMC_CHAINS, walkers=in_args.walkers,
-                                           convergence=GELMAN_RUBIN, resume=in_args.resume)
+                                           quiet=True, r_seed=in_args.r_seed, psi_pred_ss2=psi_pred_files,
+                                           chains=MCMC_CHAINS, walkers=in_args.walkers, convergence=GELMAN_RUBIN,
+                                           resume=in_args.resume)
     except KeyboardInterrupt:
         print(hlp.RED, "Run aborted by user with keyboard interrupt.", hlp.DEF_FONT)
         sys.exit()
