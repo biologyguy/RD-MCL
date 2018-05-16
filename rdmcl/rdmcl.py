@@ -753,7 +753,7 @@ def compare_psi_pred(psi1_df, psi2_df):
 
 
 def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progress, outdir, psi_pred_ss2,
-                      steps=1000, chains=3, walkers=2, quiet=True, r_seed=None, convergence=None,
+                      steps=1000, chains=3, walkers=2, quiet=True, r_seed=None, convergence=None, lava=True, ice=True,
                       resume=False):
     """
     Run MCMCMC on MCL to find the best orthogroups
@@ -771,6 +771,8 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     :param quiet: Suppress StdErr
     :param r_seed: Set the random generator seed value
     :param convergence: Set minimum Gelman-Rubin PSRF value for convergence
+    :param lava: Toggle lava walker
+    :param ice: Toggle ice walker
     :param resume: Try to pick up from a previous run
     :return: list of sequence_ids objects
     """
@@ -829,7 +831,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, quiet=quiet,
                                    num_walkers=walkers, num_chains=chains, convergence=convergence,
                                    outfile_root=join(mcmcmc_path, "mcmcmc_out"), params=mcmcmc_params,
-                                   include_lava=True, include_ice=True, r_seed=rand_gen.randint(1, 999999999999999),
+                                   include_lava=lava, include_ice=ice, r_seed=rand_gen.randint(1, 999999999999999),
                                    min_max=(worst_possible_score, best_possible_score))
 
     mcmcmc_factory.reset_params([mcmcmc_path, seqbuddy, master_cluster, sql_broker,
@@ -942,8 +944,9 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
         # Recursion... Reassign cluster_list, as all clusters are returned at the end of a call to orthogroup_caller
         cluster_list = orthogroup_caller(sub_cluster, cluster_list, seqbuddy=seqbuddy_copy, sql_broker=sql_broker,
                                          progress=progress, outdir=outdir, steps=steps, quiet=quiet, chains=chains,
-                                         walkers=walkers, convergence=convergence, resume=resume,
-                                         r_seed=rand_gen.randint(1, 999999999999999), psi_pred_ss2=psi_pred_ss2)
+                                         walkers=walkers, convergence=convergence, resume=resume, lava=lava,
+                                         ice=ice, r_seed=rand_gen.randint(1, 999999999999999),
+                                         psi_pred_ss2=psi_pred_ss2)
 
     save_cluster("Sub clusters returned")
     return cluster_list
@@ -2159,6 +2162,10 @@ def argparse_init():
     dev_flags = parser.add_argument_group(title="\033[1mDeveloper commands (Caution!)\033[m")
     dev_flags.add_argument("-be", "--build_environment", action="store_true",
                            help="Set up all working directories and files, but don't run RD-MCL")
+    dev_flags.add_argument("-si", "--suppress_ice", action="store_true",
+                           help="Do not include ice walker")
+    dev_flags.add_argument("-sl", "--suppress_lava", action="store_true",
+                           help="Do not include lava walker")
     dev_flags.add_argument("-spc", "--suppress_paralog_collapse", action="store_true",
                            help="Do not merge best hit paralogs")
     # dev_flags.add_argument("-sr", "--suppress_recursion", action="store_true",
@@ -2510,6 +2517,13 @@ Continue? y/[n] """ % len(sequences)
                         "Switching to 2" % in_args.walkers)
         in_args.walkers = 2
 
+    ice = True if not in_args.suppress_ice else False
+    if in_args.suppress_ice:
+        logging.warning("Ice walker has been suppressed")
+    lava = True if not in_args.suppress_lava else False
+    if in_args.suppress_ice:
+        logging.warning("Lava walker has been suppressed")
+
     final_clusters = []
     progress_tracker = Progress(in_args.outdir, group_0_cluster)
 
@@ -2521,7 +2535,7 @@ Continue? y/[n] """ % len(sequences)
                                            progress=progress_tracker, outdir=in_args.outdir, steps=in_args.mcmc_steps,
                                            quiet=True, r_seed=in_args.r_seed, psi_pred_ss2=psi_pred_files,
                                            chains=MCMC_CHAINS, walkers=in_args.walkers, convergence=GELMAN_RUBIN,
-                                           resume=in_args.resume)
+                                           resume=in_args.resume, lava=lava, ice=ice)
     except KeyboardInterrupt:
         print(hlp.RED, "Run aborted by user with keyboard interrupt.", hlp.DEF_FONT)
         sys.exit()
