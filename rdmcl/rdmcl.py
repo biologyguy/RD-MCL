@@ -827,7 +827,11 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
     if best_possible_score == worst_possible_score:
         return cluster_list
 
-    mcmcmc_params = [mcmcmc_path, seqbuddy, master_cluster, sql_broker, psi_pred_ss2, progress, chains * (walkers + 2)]
+    expect_num_results = chains * walkers
+    expect_num_results += chains if lava else 0
+    expect_num_results += chains if ice else 0
+
+    mcmcmc_params = [mcmcmc_path, seqbuddy, master_cluster, sql_broker, psi_pred_ss2, progress, expect_num_results]
     mcmcmc_factory = mcmcmc.MCMCMC([inflation_var, gq_var], mcmcmc_mcl, steps=steps, sample_rate=1, quiet=quiet,
                                    num_walkers=walkers, num_chains=chains, convergence=convergence,
                                    outfile_root=join(mcmcmc_path, "mcmcmc_out"), params=mcmcmc_params,
@@ -835,7 +839,7 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                                    min_max=(worst_possible_score, best_possible_score))
 
     mcmcmc_factory.reset_params([mcmcmc_path, seqbuddy, master_cluster, sql_broker,
-                                 psi_pred_ss2, progress, chains * (walkers + 2)])
+                                 psi_pred_ss2, progress, expect_num_results])
 
     if resume:
         if not mcmcmc_factory.resume():
