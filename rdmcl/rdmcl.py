@@ -908,6 +908,9 @@ def orthogroup_caller(master_cluster, cluster_list, seqbuddy, sql_broker, progre
                                                  names=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
                                                  dtype={"seq1": "category", "seq2": "category"})
 
+                    sim_scores["seq1"] = sim_scores.seq1.astype("category").cat.as_ordered()
+                    sim_scores["seq2"] = sim_scores.seq2.astype("category").cat.as_ordered()
+
                     cluster = Cluster(cluster_ids, sim_scores, parent=master_cluster,
                                       r_seed=rand_gen.randint(1, 999999999999999))
                     mcl_clusters[indx] = cluster
@@ -1177,6 +1180,8 @@ def retrieve_all_by_all_scores(seqbuddy, psi_pred_ss2, sql_broker, quiet=False):
             sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None,
                                      names=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
                                      dtype={"seq1": "category", "seq2": "category"})
+            sim_scores["seq1"] = sim_scores.seq1.astype("category").cat.as_ordered()
+            sim_scores["seq2"] = sim_scores.seq2.astype("category").cat.as_ordered()
             return sim_scores, Alb.AlignBuddy(alignment, in_format="fasta")
 
     # Try to feed the job to independent workers
@@ -1401,6 +1406,8 @@ class WorkerJob(object):
         sim_scores = pd.read_csv(StringIO(sim_scores), index_col=False, header=None,
                                  names=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
                                  dtype={"seq1": "category", "seq2": "category"})
+        sim_scores["seq1"] = sim_scores.seq1.astype("category").cat.as_ordered()
+        sim_scores["seq2"] = sim_scores.seq2.astype("category").cat.as_ordered()
         with hlp.ExclusiveConnect(WORKER_DB) as cursor:
             cursor.execute("DELETE FROM waiting WHERE hash=? AND master_id=?", (self.job_id,
                                                                                 self.heartbeat.id,))
@@ -1424,6 +1431,8 @@ class WorkerJob(object):
         sim_scores = pd.read_csv("%s.graph" % location, index_col=False, header=None,
                                  names=["seq1", "seq2", "subsmat", "psi", "raw_score", "score"],
                                  dtype={"seq1": "category", "seq2": "category"})
+        sim_scores["seq1"] = sim_scores.seq1.astype("category").cat.as_ordered()
+        sim_scores["seq2"] = sim_scores.seq2.astype("category").cat.as_ordered()
         cluster2database(Cluster(self.seq_ids, sim_scores), self.sql_broker, alignment, update=True)
 
         for del_file in [".aln", ".graph", ".seqs"]:
@@ -1628,13 +1637,13 @@ class Seqs2Clusters(object):
             log_output += "\tStd: Null\n\n"
 
         collapsed_genes = [seq_id for seq_ids in clust.collapsed_genes for seq_id in seq_ids]
+        rsquare_vals_df = rsquare_vals_df.loc[(-rsquare_vals_df["seq1"].isin(collapsed_genes)) &
+                                              (-rsquare_vals_df["seq2"].isin(collapsed_genes))].copy()
         if clust.name() in self.large_clusters:
             clust_null_df = rsquare_vals_df.loc[((rsquare_vals_df["seq1"].isin(clust.seq_ids)) &
                                                  (-rsquare_vals_df["seq2"].isin(clust.seq_ids))) |
                                                 ((-rsquare_vals_df["seq1"].isin(clust.seq_ids)) &
-                                                 (rsquare_vals_df["seq2"].isin(clust.seq_ids))) &
-                                                (-rsquare_vals_df["seq1"].isin(collapsed_genes)) &
-                                                (-rsquare_vals_df["seq2"].isin(collapsed_genes))].copy()
+                                                 (rsquare_vals_df["seq2"].isin(clust.seq_ids)))]
             out_of_cluster_output += clust_null_df.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
 
         with LOCK:
@@ -1650,6 +1659,9 @@ class Seqs2Clusters(object):
 
     def _mc_build_seq2group(self, seq_id, args):
         rsquare_vals_df, seq2group_dists_file, orig_clusters_file, temp_log_output = args
+        rsquare_vals_df = rsquare_vals_df.loc[((rsquare_vals_df["seq1"] == seq_id) |
+                                               (rsquare_vals_df["seq2"] == seq_id)) &
+                                              (rsquare_vals_df["seq1"] != rsquare_vals_df["seq2"])].copy()
         seq2group_dists = '"%s":{' % seq_id
         orig_clusters = '"%s":' % seq_id
         log_output = "%s\n" % seq_id
@@ -1661,11 +1673,9 @@ class Seqs2Clusters(object):
             seq_ids = set([i for i in clust.seq_ids if i != seq_id])
 
             # Pull out dataframe rows where current sequence is paired with a sequence from the current cluster
-            df = rsquare_vals_df.loc[((rsquare_vals_df["seq1"].isin(seq_ids)) |
-                                      (rsquare_vals_df["seq2"].isin(seq_ids))) &
-                                     ((rsquare_vals_df["seq1"] == seq_id) |
-                                      (rsquare_vals_df["seq2"] == seq_id)) &
-                                     (rsquare_vals_df["seq1"] != rsquare_vals_df["seq2"])].copy()
+            df = rsquare_vals_df["seq1"].isin(seq_ids) | rsquare_vals_df["seq2"].isin(seq_ids)
+            df = rsquare_vals_df.loc[df]
+
             if df.empty:
                 test_mean = 0
             else:
@@ -2065,7 +2075,10 @@ class FwdScoreCorrelations(object):
     def create_fwd_score_rsquared_matrix(self, force=False):
         # Calculate all-by-all matrix of correlation coefficients on fwd scores among all sequences
         if os.path.isfile(self.rsquares_df_path) and not force:
-            return pd.read_csv(self.rsquares_df_path, dtype={"seq1": "category", "seq2": "category"})
+            df = pd.read_csv(self.rsquares_df_path, dtype={"seq1": "category", "seq2": "category"})
+            df["seq1"] = df.seq1.astype("category").cat.as_ordered()
+            df["seq2"] = df.seq2.astype("category").cat.as_ordered()
+            return df
 
         sub_recs = list(self.seqbuddy.records[1:])
         multicore_data = [None for _ in range(len(self.seqbuddy))]
@@ -2079,6 +2092,8 @@ class FwdScoreCorrelations(object):
         self.rsquare_vals_df = pd.read_csv(tmp_rsquares_file.path, header=None, names=["seq1", "seq2", "r_square"],
                                            dtype={"seq1": "category", "seq2": "category"})
         self.rsquare_vals_df = self.rsquare_vals_df.sort_values(by=["seq1", "seq2"]).reset_index(drop=True)
+        self.rsquare_vals_df["seq1"] = self.rsquare_vals_df.seq1.astype("category").cat.as_ordered()
+        self.rsquare_vals_df["seq2"] = self.rsquare_vals_df.seq2.astype("category").cat.as_ordered()
         self.rsquare_vals_df.to_csv(self.rsquares_df_path, index=False)
         return self.rsquare_vals_df
 
