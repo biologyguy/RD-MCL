@@ -297,17 +297,17 @@ This entire workflow is implemented in the RD-MCL software, so the user is only 
 \end{figure*}
 
 \subsection{Wnt proteins as a benchmark}\label{subsec:benchmarkDatasetWnts}
-The `wingless-related integration site' (Wnt) proteins comprise a gene family with approximately 20 members that are remarkably well conserved in vertebrates.
-Because of their central role in key biological processes like embryonic patterning and cellular proliferation, these genes have been carefully and comprehensively cataloged~\cite{Garriock:2007hb}, allowing us to leverage them as a pre-curated dataset for benchmarking purposes in this study.
+The `wingless-related integration site' (Wnt) protein family contains approximately 20 members that are remarkably well conserved in vertebrates.
+Because of their central role in key biological processes, like embryonic patterning and cellular proliferation, these genes have been carefully and comprehensively cataloged~\cite{Garriock:2007hb}, allowing us to leverage them as a pre-curated dataset for benchmarking purposes in this study.
 The family itself is divided into twelve distinct classes (Wnt1-Wnt11, and Wnt16), many of which are subdivided into two paralogs in mammals and bird, or up to four paralogs in fish.
-Primary isoforms for each Wnt gene belonging to species in \textit{Mammalia}, \textit{Aves}, or \textit{Actinopterygii} were identified in the RefSeq database using PSI-BLAST, and only minor filtering was applied to remove sequences that clearly fall outside of the normal complement of orthogroups (e.g.,\ sequences smaller than 250 or larger than 650 residues, and several duplicate entries for \textit{Home sapiens}, \textit{Mus musculus}, \textit{Rattus norvegicus}, and \textit{Bos taurus}).
-Twenty-one benchmark orthogroups were created from this dataset, strictly based on RefSeq annotation, as summarized in supplemental table X\@.
+Primary isoforms for each Wnt gene belonging to species in \textit{Mammalia}, \textit{Aves}, or \textit{Actinopterygii} were identified in the RefSeq database using PSI-BLAST, and only minor filtering was applied to remove sequences that clearly fall outside of the normal complement of orthogroups (e.g.,\ sequences smaller than 250 or larger than 650 residues, and several duplicate entries for \textit{Homo sapiens}, \textit{Mus musculus}, \textit{Rattus norvegicus}, and \textit{Bos taurus}).
+Twenty-one benchmark orthogroups were created from this dataset, strictly based on RefSeq annotation as summarized in supplemental table X\@.
 
-\subsection{Defining an orthogroup score}\label{subsec:definingAnOrthogroupScore}
+\subsection{Defining an orthogroups score}\label{subsec:definingAnOrthogroupScore}
 If an orthogroup is explicitly defined as ``the set of genes that are descended from a single gene in the last common ancestor of all the species being considered"~\cite{Emms:2015ig}, then we can devise a scoring system to assess the relative quality of any putative orthogroups based on the number of genes from each organism in a cluster and the overall distribution of genes across all clusters (i.e.,\ independent of sequence alignment or phylogenetic inference).
-The details of this `orthogroup score' are outlined in subsection~\ref{subsec:rd-mclFitnessFunction} of the Materials and Methods and Figure~\ref{fig:orthogroupscores}, but, intuitively, a cluster with many sequences each from distinct organisms will be scored higher than a cluster of the same size with many sequences from the same organism.
+The details of this `orthogroups score' are outlined in subsection~\ref{subsec:rd-mclFitnessFunction} of the Materials and Methods and Figure~\ref{fig:orthogroupscores}, but, intuitively, a cluster with many sequences each from distinct organisms will be scored higher than a cluster of the same size with many sequences from the same organism.
 Furthermore, the relative influence a given species can have on the score is scaled according to how many paralogs that species possesses, thereby preventing species-specific gene expansions from confounding the overall picture of homology within the family.
-While these scores allow us to compare putative orthogroups within a given dataset, they are relative and unitless, so they should not be used to directly compare orthogroups from different datasets.
+While these scores allow us to compare putative orthogroups within a given dataset, they are relative and unitless, so they should not be used to directly compare orthogroups from separate datasets.
 
 \begin{figure*}[t]
   \begin{center}
@@ -340,7 +340,7 @@ The severity of the problem becomes even more evident when direct comparisons ar
   \includegraphics[height=0.34\textheight]{../figures/NLE_distributions.eps}
 \end{center}
 \caption{Histograms displaying the distribution of BLASTP-based negative common log of the E-value among mammalian Wnt proteins.
-The upper left panel represents all 1,367,031 comparisons for the 1,654 sequences included in this study, while the remaining panels are restricted to comparisons between orthogroups for each of the seven classes with two named paralogs (e.g., Wnt2/Wnt2b, Wnt3/Wnt3a, Wnt5a/Wnt5b, etc.).}
+The upper left panel represents all 712,222 comparisons for the 1,194 sequences included in this study, while the remaining panels are restricted to comparisons between orthogroups for each of the seven classes with two named paralogs (e.g., Wnt2/Wnt2b, Wnt3/Wnt3a, Wnt5a/Wnt5b, etc.).}
 \label{fig:NLEdistributions}
 \end{figure*}
 
@@ -356,7 +356,7 @@ To mitigate this correlation problem, the bit scores can be scaled directly by s
   \begin{center}
   \includegraphics[height=0.34\textheight]{../figures/Bitscore_transforms.eps}
 \end{center}
-\caption{Two-axes histograms displaying the correlation between BLASTP bit score and sequence lengths among mammalian WNT proteins (1,367,031 comparisons for the 1,654 sequences included in this study).
+\caption{Two-axes histograms displaying the correlation between BLASTP bit score and sequence lengths among mammalian WNT proteins (712,222 comparisons for the 1,194 sequences included in this study).
 Darker regions correspond to higher density.
 A)~Direct comparison between bit score and length of BLAST alignment (hit length).
 A linear relationship exists between the maximum bit score and hit length, so short sequences will be disadvantaged during MCL clustering.
@@ -374,33 +374,106 @@ Despite the improvements provided by the Emms transform, data is still being dis
 For example, we know \textit{a priori} that all sequences in the WNT dataset are homologous, yet a small percentage of edges are sparse because their similarity falls below the BLAST threshold.
 This proportion will become higher when more diverse protein families or greater taxonomic coverage are considered, and while these edges may still be pruned away to optimize orthogroup assignment by MCL (see section~\ref{subsec:TuningParams} below), we cannot know this beforehand.
 BLAST is also considering only a single aspect of primary sequence, namely the amino acid substitution matrix (e.g., BLOSUM or PAM).
-It is perfectly feasible, however, to include an arbitrary number of sequence properties into the similarity metric, so we have devised a new scoring method that forces a global alignment of all sequences, then considers both a substitution matrix and predicted secondary structure properties.
-Figure~\ref{fig:rdmclscores} illustrates that this new scoring function is independent of sequence length and, while correlated with the Emms transform scores, presents a unique dynamic range of values for MCL\@.
-The details of the new RD-MCL scoring function are elaborated in Materials and Methods section~\ref{subsec:seq-sim-func} and is further compared against BLAST-based metrics for orthogroup assignment in section~\ref{subsec:TuningParams}.
+Of course, an arbitrary number of sequence properties can be included in the similarity metric calculation, so we have devised a new scoring method that forces a global alignment of all sequences and then considers both a substitution matrix and predicted secondary structure properties.
+We will refer to this as the SMSS score (\textit{S}ubstitution \textit{M}atrix and \textit{S}econdary \textit{S}tructure).
+Figure~\ref{fig:rdmclscores} illustrates how SMSS scores are independent of sequence length and, while correlated with Emms transformed BLASTP bit scores (referred to as the Emms score, from here on), presents a unique dynamic range of values for MCL\@.
+The SMSS score is elaborated on in Materials and Methods section~\ref{subsec:seq-sim-func} and it is further compared against the Emms score for orthogroup assignment in section~\ref{subsec:TuningParams}.
 
 
 \begin{figure}[t]
   \begin{center}
-  \includegraphics[height=0.6\textheight]{../figures/rdmcl_scoring.eps}
+  \includegraphics[height=0.4\textheight]{../figures/rdmcl_scoring.eps}
 \end{center}
-\caption{Words and stuff}
+\caption{Two axes histograms illustrating the relationship between the Substitution Matrix and Secondary Structure (SMSS) scores from paired mammalian WNT sequences and A) the average sequence length; or B) the Emms transformed score.}
 \label{fig:rdmclscores}
 \end{figure}
 
 
 \subsection{MCL parameters must be tuned to maximally resolve orthogroups}\label{subsec:TuningParams}
-The granularity of MCL is controlled by two parameters \textemdash{} the inflation coefficient and the edge similarity threshold~\cite{VanDongen:kJZ890qx} \textemdash{} and modulating these parameters will change the size and number of clusters returned.
-Local maxima in cluster number and orthogroup score may arise within this parameter space (Figure X), meaning a simple hill-climbing optimization algorithm is not appropriate.
-Instead, RD-MCL implements Metropolis coupled Markov chain Monte Carlo~\cite{Hastings:1970iw} to search for optimal MCL parameters, using our orthogroup score as the fitness function.
-It should be noted that the edge similarity threshold has a stronger influence over MCL than the inflation coefficient, which makes intuitive sense because this parameter directly affects the information content in the graph by pruning away edges.
-This increased sparsity will isolate clusters from one another even before the similarity matrix is transformed with MCL\@.
+The granularity of MCL is controlled by two parameters \textemdash{} the inflation coefficient and the edge similarity threshold~\cite{VanDongen:kJZ890qx} \textemdash{} and modulating these parameters will change the size and number of the clusters returned.
+At present, users of MCL-based orthogroup prediction methods are required to accept predetermined defaults or manually select a small set of static parameters, run MCL, and then choose the outcome they feel best represents their data.
+To demonstrate that this is unlikely to yield an optimal set of orthogroups, we randomly sampled 20,000 points in MCL parameter space, using these parameters to cluster the mammalian or avian WNT sequences.
+The distribution of cluster number or orthogroups score over parameter space is complex (Figure~\ref{fig:smss_mcl_param_space}) and, while the gross structure is similar, correlation between the mammalian and avian distributions is not perfect (Figure~\ref{fig:mamm_bird_max_scores}).
+For example, while the parameters that produce the highest scores from the mammalian dataset also produce relatively high orthogroups scores in the bird dataset, they do not necessarily give the highest scores.
+In practice, this means that a single set of optimal MCL parameters for all sequence similarity graphs does not exist,
+so the parameters should be dynamically optimized for each unique dataset.
 
 
-Note that OrthoFinder also uses a static inflation/edge similarity threshold for MCL~\cite{Emms:2015ig}
+\begin{figure}[t]
+  \begin{center}
+  \includegraphics[height=0.52\textheight]{../figures/smss_mcl_param_space.eps}
+\end{center}
+\caption{Scatter plots relating the two MCL parameters (edge similarity threshold and inflation coefficient) to the results of running MCL on either the mammalian WNTs (upper four panels) or the Avian WNTs (lower four panels). MCL output is heat-mapped against either the number of clusters or orthogroups scores and plotted on the z-axes in left-hand panels to best visualize the magnitude of the dynamic range in each dataset. The right-hand panels are a top-down view of the same data, which more clearly illustrates the complex distribution of MCL outputs through parameter space.}
+\label{fig:smss_mcl_param_space}
+\end{figure}
+
+
+\begin{figure}[t]
+  \begin{center}
+  \includegraphics[height=0.25\textheight]{../figures/mamm_bird_max_scores.eps}
+\end{center}
+\caption{Scatter plot comparing orthogroups scores for mammalian and avian WNTs clustered with the same MCL parameters. The two groups of data points represent the top scoring 5\% of 20,000 randomly sampled parameters from either set of sequences. The correlation between orthogroups scores for these samples is extremely weak.}
+\label{fig:mamm_bird_max_scores}
+\end{figure}
+
+Given the relatively narrow window of optimal MCL parameters, high-coverage random sampling of parameter space is unnecessary.
+However, local maxima exist in the topology of the orthogroups score distribution (Figure~\ref{fig:local_maxima}, so a simple hill-climbing optimization algorithm may also be unideal.
+Instead, RD-MCL implements Metropolis coupled Markov chain Monte Carlo~\cite{Hastings:1970iw} (MCMCMC) with simulated annealing~\cite{Kirkpatrick:1983kv}.
+When compared against random sampling, using an MCMCMC random-walk heuristic to identify parameters tends to produce higher orthogroups scores from fewer MCL runs (Figure~\ref{fig:random_vs_mcmcmc}).
+
+
+\begin{figure}[t]
+  \begin{center}
+  \includegraphics[height=0.4\textheight]{../figures/local_maxima.eps}
+\end{center}
+\caption{Local orthogroups score maxima exist within MCL parameter space. Arrows point to two such maxim in each scatter plot. (I think this will be fine with only the bottom scatter plot, and maybe increase the density of sampled points)}
+\label{fig:local_maxima}
+\end{figure}
+
+
+\begin{figure}[t]
+  \begin{center}
+  \includegraphics[height=0.5\textheight]{../figures/random_vs_mcmcmc.eps}
+\end{center}
+\caption{Using an optimization algorithm improves the chance of identifying MCL parameters that maximize orthogroups score. Parameter space was sampled twenty independent times for the mammal and avian WNTs either randomly (2000 points), with three-chain MCMCMC (335 steps on each chain, for 1005 points), or three-chain MCMCMC with simulated annealing (also 335 steps, for 1005 points).}
+\label{fig:random_vs_mcmcmc}
+\end{figure}
+
+
+At its core, a high orthogroups score only indicates that a diverse range of taxa exist within the clusters being assessed.
+To determine whether we are retrieving correct orthogroups, instead of simply creating cluster diversity, we calculated the recall, precision, true negative (TN) rate, accuracy, and F\textsubscript{1} score for MCL results compared against orthogroups clustered by RefSeq name (Figure~\ref{fig:score_to_accuracy}).
+Strong positive correlations exist between all of the metrics and orthogroups scores, except recall.
+Recall is complicated by the fact that a small number of large orthogroups will have a high number of true positives along with many false positives, so the measure only becomes useful when combined into a harmonic average with precision (i.e., the F\textsubscript{1} score).
+Furthermore, true negatives have a large effect on the calculation of both TN rate and accuracy, so these metrics tend to be quite similar.
+We will, therefore, only report F\textsubscript{1} score and accuracy from here on.
+
+\begin{figure*}[t]
+  \begin{center}
+  \includegraphics[height=0.33\textheight]{../figures/score_to_accuracy.eps}
+\end{center}
+\caption{Scatter plots showing the positive relationship between orthogroups score and several quality scores (recall, precision, true negative rate, accuracy and F\textsubscript{1} score). Each point represents the clusters of mammalian of avian WNT proteins generated from a randomly selected set of MCL parameters, using the names present in RefSeq as the benchmark for `True' orthogroups.}
+\label{fig:score_to_accuracy}
+\end{figure*}
+
+
+Following optimization of MCL parameters, orthogroups derived from graphs of SMSS scores typically outperform those derived from graphs of Emms scores (Figure~\ref{fig:emms_vs_smss}).
+It should be clearly noted, however, that this is still a heuristic method with no guarantee of finding the true optimum.
+
+
+\begin{figure*}[t]
+  \begin{center}
+  \includegraphics[height=0.25\textheight]{../figures/emms_vs_smss.eps}
+\end{center}
+\caption{Direct performance comparison between SMSS scores and Emms scores as the similarity metric for MCL. All-by-all graphs of each metric were created for both mammalian and avian WNTs, then MCL parameters were dynamically optimized for each. The best sets of orthogroups from each of 20 replicates were compared against the `true' orthogroups, revealing an average increase in both accuracy and F\textsubscript{1} score when SMSS scores are used as the similarity metric.}
+\label{fig:emms_vs_smss}
+\end{figure*}
 
 
 \subsection{Recursive MCL compensates for variable evolutionary separation within and between orthogroups}\label{subsec:recursiveMclCompensatesForVariableEvolutionarySeparationBetweenOrthogroups}
+High accuracy
 
+Using the fish as an example group, because there are clearly duplications in the data.
+Need to manually tease the orthgroups apart using phylo-trees of each subtype.
 
 \subsection{Number of sequences}
 WNTs
@@ -530,14 +603,18 @@ Therefore, it can be more appropriate to focus on hierarchical similarity among 
 The performance of each tool was assessed by calculating the precision and recall of the result on simulated data~\cite{Emms:2015ig}.
 
 \begin{gather*}
-    Precision = \frac{TP}{TP + FP}\\
-    \\
     Recall = \frac{TP}{TP + FN}\\
     \\
-    F Score = 2 * \frac{precision * recall}{precision + recall}\\
+    Precision = \frac{TP}{TP + FP}\\
+    \\
+    TN rate = \frac{TN}{TN + FP}
+    \\
+    Accuracy = \frac{TP + TN}{TP + FP + TN + FN}\\
+    \\
+    F_1\ Score = 2 * \frac{precision * recall}{precision + recall}\\
 \end{gather*}
 
-Where TP is True Positive, FP is False Positives, and FN is False Negatives.
+Where TP is True Positive, FP is False Positives, TN is True Negative, and FN is False Negatives.
 
 
 \subsection{WNT, TIR-containing, and Caspase sequence data}\label{subsec:wnt,Tir-containing,AndCaspaseSequenceData}
