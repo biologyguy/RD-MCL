@@ -83,7 +83,7 @@
 %%% Put your definitions there:
 \startlocaldefs
 \endlocaldefs
-
+\newcommand{\goodtilde}{\raisebox{-0.7ex}{\textasciitilde}}
 
 %%% Begin ...
 \begin{document}
@@ -445,7 +445,7 @@ To determine whether we are retrieving correct orthogroups, instead of simply cr
 Strong positive correlations exist between all of the metrics and orthogroups scores, except recall.
 Recall is complicated by the fact that a small number of large orthogroups will have a high number of true positives along with many false positives, so the measure only becomes useful when combined into a harmonic average with precision (i.e., the F\textsubscript{1} score).
 Furthermore, true negatives have a large effect on the calculation of both TN rate and accuracy, so these metrics tend to be quite similar.
-We will, therefore, only report F\textsubscript{1} score and accuracy from here on.
+We will, therefore, only further report F\textsubscript{1} score and accuracy.
 
 \begin{figure*}[t]
   \begin{center}
@@ -457,23 +457,40 @@ We will, therefore, only report F\textsubscript{1} score and accuracy from here 
 
 
 Following optimization of MCL parameters, orthogroups derived from graphs of SMSS scores typically outperform those derived from graphs of Emms scores (Figure~\ref{fig:emms_vs_smss}).
-It should be clearly noted, however, that this is still a heuristic method with no guarantee of finding the true optimum.
-
+It should be clearly noted that this method is heuristic, with no guarantee that the true optimum will be identified regardless of the metric chosen.
 
 \begin{figure*}[t]
   \begin{center}
-  \includegraphics[height=0.25\textheight]{../figures/emms_vs_smss.eps}
+  \includegraphics[height=0.20\textheight]{../figures/emms_vs_smss.eps}
 \end{center}
 \caption{Direct performance comparison between SMSS scores and Emms scores as the similarity metric for MCL. All-by-all graphs of each metric were created for both mammalian and avian WNTs, then MCL parameters were dynamically optimized for each. The best sets of orthogroups from each of 20 replicates were compared against the `true' orthogroups, revealing an average increase in both accuracy and F\textsubscript{1} score when SMSS scores are used as the similarity metric.}
 \label{fig:emms_vs_smss}
 \end{figure*}
 
 
-\subsection{Recursive MCL compensates for variable evolutionary separation within and between orthogroups}\label{subsec:recursiveMclCompensatesForVariableEvolutionarySeparationBetweenOrthogroups}
-High accuracy
+\subsection{Recursive MCL compensates for variable evolutionary separation among orthogroups}\label{subsec:recursiveMcl}
+The mammalian and avian WNT orthogroups from the previous section contain very few duplicate taxa in any given cluster(\textgreater{}5\%), meaning the proteins separated cleaning into groups of one-to-one orthologs.
+When WNTs from teleost fish are considered, however, the picture becomes less clear.
+About 250\textendash{}350 million years ago the ancestral lineage of teleostean fishes experiences a whole genome duplication event, followed by a complicated pattern of gene loss, subfunctionalization, and neofunctionalization~\cite{Jaillon2004}.
+Several of the duplicated WNTs were maintained as novel paralogs~\cite(Garriock:2007hb), meaning the `age' of these orthogroups is considerably younger than the canonical compliment of chordate WNTs, many of which originated before the radiation of ancestral bilaterians some 800 million years ago~\cite{Kusserow:2005js}.
+Even after optimizing MCL parameters, there are several teleost WNT orthogroups with as many as 40\% duplicate taxa.
+This is caused by the relatively small amount of sequence differentiation among these teleost-specific orthogroups relative to the large differentiation among the older orthogroups.
+These differences lead to a bimodal distribution of incompatible `orthogroup thresholds' in MCL parameter space, where parameters that are good at separating old orthogroups cause the young orthogroups to merge, while parameters that can differentiate young orthogroups also erroneously break apart older orthogroups.
+To address this challenge, the orthogroups scoring function is kept relatively permissive to replicate taxa in a cluster, then each cluster is recursively subdivided by further rounds of optimized MCL\@.
+Applying recursion in this manner increases the best orthogroups score for the teleost WNTs by 7.3\%, to \goodtilde92.6\% of the theoretical maximum (Figure~\ref{fig:recursion_improvement}A).
+The primary impact on the actual clusters is the separation of Wnt-2b, Wnt-3/3a, Wnt7a, and Wnt7b each into two distinct orthogroups (Figure~\ref{fig:recursion_improvement}B\textendash{}C).
+When the sequences from these clusters were used to infer a maximum likelihood phylogeny, they assorted into clades that matched almost perfectly with those predicted by recursive MCL (Figure~\ref{fig:recursion_improvement}D).
+Therefore, while a single round of MCL may be unable to separate orthogroups that have experienced dramatically different levels of sequence evolution, the issue can be resolved by recursively re-optimizing MCL parameters for each cluster until the best orthogroups score is identified, thus allowing a more nuanced separation of sequences.
 
-Using the fish as an example group, because there are clearly duplications in the data.
-Need to manually tease the orthgroups apart using phylo-trees of each subtype.
+
+\begin{figure}[t]
+  \begin{center}
+  \includegraphics[height=0.5\textheight]{../figures/recursion_improvement.eps}
+\end{center}
+\caption{Recursively sub-clustering orthogroups accounts for further improves overall score. }
+\label{fig:recursion_improvement}
+\end{figure}
+
 
 \subsection{Number of sequences}
 WNTs
@@ -507,7 +524,7 @@ Is it worth while to create a ven diagram illustrating the overlap between metho
 \subsubsection{Branch lengths}
 Given an idealized set of homologous sequences, where there has been no gene loss and all gene duplications occurred prior to the last common ancestor of the taxa included in the set, the phylogenetic relationship within each orthogroup should closely approximate the underlying species tree.
 Furthermore, the phylogenetic relationship among the orthogroups will approximate the original gene tree of all paralogs present in the last common ancestor.
-As such, two distinct axes of divergence must be accounted for when assessing the effect of branch length (i.e., substitutions per site), which we will refer to as the 'species tree length' and 'gene tree length', respectively.
+As such, two distinct axes of divergence must be accounted for when assessing the effect of branch length (i.e., substitutions per site), which we will refer to as the `species tree length' and `gene tree length', respectively.
 
 % Maybe make a figure here, to show the two axes of divergence??
 
