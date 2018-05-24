@@ -483,13 +483,13 @@ When the sequences from these clusters were used to infer a maximum likelihood p
 Therefore, while a single round of MCL may be unable to separate orthogroups that have experienced dramatically different levels of sequence evolution, the issue can be resolved by recursively re-optimizing MCL parameters for each cluster until the best orthogroups score is identified, thus allowing a more nuanced separation of sequences.
 
 
-\begin{figure}[t]
+\begin{figure*}[t]
   \begin{center}
-  \includegraphics[height=0.5\textheight]{../figures/recursion_improvement.eps}
+  \includegraphics[height=0.8\textheight]{../figures/recursion_improvement.eps}
 \end{center}
-\caption{Recursively sub-clustering orthogroups accounts for further improves overall score. }
+\caption{Recursively sub-clustering fish WNT orthogroups accounts for imbalances in evolutionary separation between groups and improves orthogroups score. A) The maximum orthogroups score identified in 20 independent searches of MCL parameter space, either randomly, with a single round of MCMCMC with simulated annealing, or by recursive rounds of MCMCMC with simulated annealing. B) Clusters produced by the top scoring MCMCMC search, arranged in a `wagon wheel tree'. C) Clusters produced by the top scoring search that included recursion, also arranged in a `wagon wheel tree'. Note that the number of nodes along any given branch represents relative recursive depth. Wnt-2b, Wnt-3/3a, Wnt-7a, and Wnt-7b are of particular note, because they were each broken up into approximately equally sized clusters; D) extracting these sequences and inferring a maximum likelihood phylogeny   resolves the same groupings that were identified by recursive MCL.}
 \label{fig:recursion_improvement}
-\end{figure}
+\end{figure*}
 
 
 \subsection{Number of sequences}
