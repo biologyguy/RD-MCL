@@ -275,8 +275,9 @@ While computationally efficient, these resources are not well suited for fine-gr
 
 [!!!Need to address Kimmen Sjolander's work~\cite{Brown:2007dp,Krishnamurthy:2007fs}!!!]
 
-This leaves a gap in our ability to easily discern evolutionary patterns at this scale, which may be exacerbating the propagation of annotation errors in our public databases~\cite{Schnoes:2009gb}, where annotation transfer following inference of homology against a limited number of reference species is largely the \textit{modus operandi}~\cite{Aken:2016dl,Mi:2016bw,OLeary:2016cm}.
-Here we present a method that overcomes these challenges, along with a suite of tools to assist with detailed downstream analysis.
+This leaves a gap in our ability to easily discern evolutionary patterns at this scale.
+Given that most protein sequences in large public databases have been automatically annotated based on inferred homology with specific orthogroups, generally using a limited number of reference species~\cite{Aken:2016dl,Mi:2016bw,OLeary:2016cm}, the propagation of annotation errors is a non-trivial concern~\cite{Schnoes:2009gb}.
+Here we present a method that greatly improves the orthogroup resolving power of MCL-based methods on individual gene families, along with a suite of tools to assist in detailed downstream analysis.
 
 
 \section{Results and Discussion}\label{sec:resultsAndDiscussion}
@@ -468,6 +469,10 @@ It should be clearly noted that this method is heuristic, with no guarantee that
 \end{figure*}
 
 
+\subsection{Gelman-Rubin PSRF can be used to identify the MCMCMC endpoint}\label{subsec:gelman_rubin}
+
+
+
 \subsection{Recursive MCL compensates for variable evolutionary separation among orthogroups}\label{subsec:recursiveMcl}
 The mammalian and avian WNT orthogroups from the previous section contain very few duplicate taxa in any given cluster(\textgreater{}5\%), meaning the proteins separated cleaning into groups of one-to-one orthologs.
 When WNTs from teleost fish are considered, however, the picture becomes less clear.
@@ -481,7 +486,7 @@ Applying recursion in this manner increases the best orthogroups score for the t
 The primary impact on the actual clusters is the separation of Wnt-2b, Wnt-3/3a, Wnt7a, and Wnt7b each into two distinct orthogroups (Figure~\ref{fig:recursion_improvement}B\textendash{}C).
 When the sequences from these clusters were used to infer a maximum likelihood phylogeny, they assorted into clades that matched almost perfectly with those predicted by recursive MCL (Figure~\ref{fig:recursion_improvement}D).
 Therefore, while a single round of MCL may be unable to separate orthogroups that have experienced dramatically different levels of sequence evolution, the issue can be resolved by recursively re-optimizing MCL parameters for each cluster until the best orthogroups score is identified, thus allowing a more nuanced separation of sequences.
-
+To encompass the dynamic optimization of MCL parameters and recursive search strategy, we have named this new method and the accompanying software package \textit{R}ecursive \textit{D}ynamic \textit{M}arkov \textit{CL}ustering (RD-MCL).
 
 \begin{figure*}[t]
   \begin{center}
@@ -490,6 +495,12 @@ Therefore, while a single round of MCL may be unable to separate orthogroups tha
 \caption{Recursively sub-clustering fish WNT orthogroups accounts for imbalances in evolutionary separation between groups and improves orthogroups score. A) The maximum orthogroups score identified in 20 independent searches of MCL parameter space, either randomly, with a single round of MCMCMC with simulated annealing, or by recursive rounds of MCMCMC with simulated annealing. B) Clusters produced by the top scoring MCMCMC search, arranged in a `wagon wheel tree'. C) Clusters produced by the top scoring search that included recursion, also arranged in a `wagon wheel tree'. Note that the number of nodes along any given branch represents relative recursive depth. Wnt-2b, Wnt-3/3a, Wnt-7a, and Wnt-7b are of particular note, because they were each broken up into approximately equally sized clusters; D) extracting these sequences and inferring a maximum likelihood phylogeny   resolves the same groupings that were identified by recursive MCL.}
 \label{fig:recursion_improvement}
 \end{figure*}
+
+\subsection{A final polishing steps can place orphaned sequences into orthogroups}\label{subsec:polish}
+Returning to the avian WNT sequences, we observe a number of sequences that are separated out into small orthogroups of less than five sequences after full RD-MCL (Figure~\ref{fig:avian_wagon_wheels}A).
+Closer inspection of these sequences, along with the orthogroups they belong to according to RefSeq, suggests that they are `collateral damage' of MCL optimization.
+
+
 
 
 \subsection{Number of sequences}
@@ -562,7 +573,7 @@ Figure~\ref{fig:branch_len_std} illustrates the case-by-case performance of RD-M
 
 \subsection{Downstream analyses of sample gene families}\label{subsec:downstreamAnalysesOfSampleGeneFamilies}
 In this section, I will describe some of the interesting evolutionary and systematic discoveries made possible by fine-grained clustering.
-
+Maybe include some discussion about horizontal gene transfer?
 
 \subsubsection{WNTs}
 Big focus on the separation of the fish genes, seeing as the birds and mammals already fit pretty nicely with RefSeq annotations.
