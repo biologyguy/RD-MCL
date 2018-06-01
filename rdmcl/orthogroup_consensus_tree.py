@@ -422,7 +422,7 @@ def main():
 
     if in_args.include_count:
         for clust, rec_ids in all_clusters.items():
-            hash_dict[clust] += "[%s]" % len(rec_ids)
+            hash_dict[clust] += "--%s" % len(rec_ids)
 
     # Infer consensus
     if in_args.domain_partitions:
@@ -489,9 +489,12 @@ Phylogenetic inference (%s bootstraps):
         for clust_hash, clust_name in hash_dict.items():
             with open(join(outdir, next_file), "r") as ifile:
                 data = re.sub(r'%s' % clust_hash, r'%s' % clust_name, ifile.read())
+
+            data = re.sub("'", "", data) if next_file.endswith("nwk") else data
             with open(join(outdir, next_file), "w") as ofile:
                 ofile.write(data)
     return
+
 
 if __name__ == '__main__':
     main()
