@@ -2497,6 +2497,8 @@ Continue? y/[n] """ % len(sequences)
     # Base cluster score
     base_score = group_0_cluster.score()
     logging.warning("Base cluster score: %s" % round(base_score, 4))
+    logging.warning("Theoretical minimum: %s" % round(group_0_cluster.min_score(), 4))
+    logging.warning("Theoretical maximum: %s" % round(group_0_cluster.max_score(), 4))
 
     # End if the user just wants the environment built
     if in_args.build_environment:
