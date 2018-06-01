@@ -70,7 +70,18 @@ class Nexus(object):
 class Node(object):
     def __init__(self, leaf_list, rank, ave_support, std_support):
         self.leaf_list = sorted(leaf_list, key=lambda x: x.support, reverse=True)
-        self.rank = rank.split("_")
+        front = ""
+        back = ""
+        for r in rank.split("_"):
+            try:
+                int(r)
+                back += "%s_" % r
+            except ValueError:
+                front += "%s_%s_" % (back, r) if back else "%s_" % r
+                back = ""
+
+        self.rank = [front]
+        self.rank += back.strip("_").split("_") if back else []
         self.support = ave_support
         self.std = std_support
 
