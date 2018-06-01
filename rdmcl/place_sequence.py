@@ -20,37 +20,11 @@ from buddysuite import AlignBuddy as Alb
 import sys
 import os
 from os.path import join
-import pandas as pd
-from subprocess import Popen, PIPE
-from multiprocessing import Lock
-from io import StringIO
 import argparse
 import numpy as np
 
 VERSION = hlp.VERSION
-VERSION.name = "merge_orthogroups"
-LOCK = Lock()
-
-
-def fwd_back_run(self, rec, args):
-    hmm_scores_file = args[0]
-    hmm_path = join(self.outdir, "hmm", "%s.hmm" % rec.id)
-
-    fwdback_output = Popen("%s %s %s" % (rdmcl.HMM_FWD_BACK, hmm_path, self.tmp_dir.subfiles[0]),
-                           shell=True, stdout=PIPE, stderr=PIPE).communicate()[0].decode()
-    fwd_scores_df = pd.read_csv(StringIO(fwdback_output), delim_whitespace=True,
-                                header=None, comment="#", index_col=False)
-    fwd_scores_df.columns = ["rec_id", "fwd_raw", "back_raw", "fwd_bits", "back_bits"]
-    fwd_scores_df["hmm_id"] = rec.id
-
-    hmm_fwd_scores = pd.DataFrame(columns=["hmm_id", "rec_id", "fwd_raw"])
-    hmm_fwd_scores = hmm_fwd_scores.append(fwd_scores_df.loc[:, ["hmm_id", "rec_id", "fwd_raw"]],
-                                           ignore_index=True)
-    hmm_fwd_scores = hmm_fwd_scores.to_csv(path_or_buf=None, header=None, index=False, index_label=False)
-    with LOCK:
-        with open(hmm_scores_file, "a") as ofile:
-            ofile.write(hmm_fwd_scores)
-    return
+VERSION.name = "place_sequences"
 
 
 def argparse_init():
@@ -152,11 +126,11 @@ def main():
     for rec in seqbuddy.records:
         check.check_new_sequence(rec, in_args.min)
 
-        out_str = "%sTesting %s%s\n" % (hlp.BOLD, rec.id, hlp.END)
+        print("%sTesting %s%s: %s" % (hlp.BOLD, rec.id, hlp.END, rec.description))
         longest_group_name = len(sorted([g[0] for g in check.output], key=lambda x: len(x), reverse=True)[0]) + 2
 
-        out_str += "{4}{0: <{1}}Size  {2: <17}{3: <17}{5}\n".format("Group", longest_group_name, "R² 95%-CI",
-                                                                    "Forward 95%-CI", hlp.UNDERLINE, hlp.END)
+        out_str = "{4}{0: <{1}}Size  {2: <17}{3: <17}{5}\n".format("Group", longest_group_name, "R² 95%-CI",
+                                                                   "Forward 95%-CI", hlp.UNDERLINE, hlp.END)
 
         longest_fwd_score = len(str(check.output[0][4]))
         for output in check.output:
