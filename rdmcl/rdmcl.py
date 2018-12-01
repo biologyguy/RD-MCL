@@ -311,7 +311,7 @@ class Cluster(object):
         :rtype: pd.DataFrame
         """
         best_hits = self.get_best_hits(gene, column)
-        global_best_hits = global_best_hits.append(best_hits, ignore_index=True)
+        global_best_hits = global_best_hits.append(best_hits, ignore_index=True, sort=False)
         for _edge in best_hits.itertuples():
             if _edge.seq1 not in tested_ids:
                 tested_ids.append(_edge.seq1)

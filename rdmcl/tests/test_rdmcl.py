@@ -222,9 +222,9 @@ def test_cluster_recursive_best_hits(hf):
     global_best_hits = pd.DataFrame(columns=["seq1", "seq2", "score"])
     best_hits = cluster.recursive_best_hits('Bab-PanxαB', global_best_hits, ['Bab-PanxαB'], "raw_score")
     assert best_hits.to_csv() == """\
-,psi,raw_score,score,seq1,seq2,subsmat
-0,0.9841450231425388,0.9710485816574068,0.9776353490763704,Bab-PanxαB,Vpa-PanxαB,0.9748454887622982
-1,1.0,0.991398404562704,1.0,Mle-Panxα9,Vpa-PanxαB,1.0
+,seq1,seq2,score,subsmat,psi,raw_score
+0,Bab-PanxαB,Vpa-PanxαB,0.9776353490763704,0.9748454887622982,0.9841450231425388,0.9710485816574068
+1,Mle-Panxα9,Vpa-PanxαB,1.0,1.0,1.0,0.991398404562704
 """, print(best_hits.to_csv())
 
 
