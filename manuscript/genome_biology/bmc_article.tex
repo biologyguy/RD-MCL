@@ -143,7 +143,7 @@
 %%                                          %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\address[id=aff1]{%                           % unique id
+\address[id=aff1]{                            % unique id
   \orgname{Computational and Statistical
    Genomics Branch, Division of Intramural    % university, etc
     Research, National Human Genome
@@ -185,14 +185,14 @@
 
 \begin{abstractbox}
 
-\begin{abstract} % abstract
+\begin{abstract}        % Abstract
 \parttitle{Background}  % Required
 Blahh
 
-\parttitle{Results}  % Required
+\parttitle{Results}     % Required
 Blahh
 
-\parttitle{Conclusions}  % Required
+\parttitle{Conclusions} % Required
 Blahh
 
 \end{abstract}
@@ -219,7 +219,7 @@ Blahh
 %\end{keyword}
 
 \end{abstractbox}
-%
+
 \end{fmbox} % uncomment this for twcolumn layout
 
 \end{frontmatter}
@@ -244,12 +244,9 @@ Blahh
 %%                                          %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%%%%%%%%%%%%%%%%%%%%%%%% start of article main body
-% <put your article body there>
-
 %%%%%%%%%%%%%%%%
 %% Background %%
-%%
+%%%%%%%%%%%%%%%%
 \section{Background}\label{sec:background}
 When a gene evolves an important physiological function, purifying selection tends to maintain that function through evolutionary time~\cite{Altenhoff:2012ea,KryuchkovaMostacci:2016iw,Rogozin:2014fp}.
 As a result, orthology (i.e., homology via speciation) has become a widely used predictor of shared gene product function among species, and considerable effort has been made to develop computational tools for identifying orthologs from genomic data.
@@ -276,7 +273,7 @@ While computationally efficient, these resources are not well suited for fine-gr
 [!!!Need to address Kimmen Sjolander's work~\cite{Brown:2007dp,Krishnamurthy:2007fs}!!!]
 
 This leaves a gap in our ability to easily discern evolutionary patterns at this scale.
-Given that most protein sequences in large public databases have been automatically annotated based on inferred homology with specific orthogroups, generally using a limited number of reference species~\cite{Aken:2016dl,Mi:2016bw,OLeary:2016cm}, the propagation of annotation errors is a non-trivial concern~\cite{Schnoes:2009gb}.
+Given that most protein sequences in large public databases have been automatically annotated using inferred homology to predefined orthogroups, often using a limited number of reference species~\cite{Aken:2016dl,Mi:2016bw,OLeary:2016cm}, the propagation of annotation errors is a non-trivial concern~\cite{Schnoes:2009gb}.
 Here we present a method that greatly improves the orthogroup resolving power of MCL-based methods on individual gene families, along with a suite of tools to assist in detailed downstream analysis.
 
 
@@ -305,8 +302,9 @@ Primary isoforms for each Wnt gene belonging to species in \textit{Mammalia}, \t
 Twenty-one benchmark orthogroups were created from this dataset, strictly based on RefSeq annotation as summarized in supplemental table X\@.
 
 \subsection{Defining an orthogroups score}\label{subsec:definingAnOrthogroupScore}
-If an orthogroup is explicitly defined as ``the set of genes that are descended from a single gene in the last common ancestor of all the species being considered"~\cite{Emms:2015ig}, then we can devise a scoring system to assess the relative quality of any putative orthogroups based on the number of genes from each organism in a cluster and the overall distribution of genes across all clusters (i.e.,\ independent of sequence alignment or phylogenetic inference).
-The details of this `orthogroups score' are outlined in subsection~\ref{subsec:rd-mclFitnessFunction} of the Materials and Methods and Figure~\ref{fig:orthogroupscores}, but, intuitively, a cluster with many sequences each from distinct organisms will be scored higher than a cluster of the same size with many sequences from the same organism.
+If an orthogroup is explicitly defined as ``the set of genes that are descended from a single gene in the last common ancestor of all the species being considered"~\cite{Emms:2015ig}, then we can devise a scoring system to assess the relative quality of putative orthogroups using the number of genes from each organism in a cluster and the overall distribution of genes across all clusters.
+This approach benefits from the fact that it is independent of sequence alignment or phylogenetic inference.
+The details of the `orthogroups score' are outlined in subsection~\ref{subsec:rd-mclFitnessFunction} of the Materials and Methods and Figure~\ref{fig:orthogroupscores}, but, intuitively, a cluster with many sequences each from distinct organisms will be scored higher than a cluster of the same size with many sequences from the same organism.
 Furthermore, the relative influence a given species can have on the score is scaled according to how many paralogs that species possesses, thereby preventing species-specific gene expansions from confounding the overall picture of homology within the family.
 While these scores allow us to compare putative orthogroups within a given dataset, they are relative and unitless, so they should not be used to directly compare orthogroups from separate datasets.
 
@@ -333,7 +331,7 @@ Historically, the negative common log (-log\textsubscript{10}) of the BLASTP exp
 The popularity of BLAST as an ortholog assessment metric is understandable, given that it is one of the most widely used and trusted tools in bioinformatics~\cite{Altschul:1990dy} and strikes a convenient balance between speed and sensitivity when working with genome-scale datasets.
 Unfortunately, the common implementations of BLASTP fail to resolve differences among any sequences with similarities that return an E-value of less than 10\textsuperscript{-180}, which can become problematic if trying to separate closely related orthogroups.
 Indeed, among the mammalian Wnts, 6.6\% of the comparisons in an all-by-all NLE similarity matrix have a `perfect' score of 180 (Figure~\ref{fig:NLEdistributions}), meaning information has been lost that may otherwise have helped differentiate these sequences.
-The severity of the problem becomes even more evident when direct comparisons are made between known Wnt orthogroups that are very closely related, such as Wnt2 vs. Wnt2b, Wnt3 vs. Wnt3b, Wnt5a vs. Wnt5b, and Wnt7a vs. Wnt7b, where the proportion of comparisons with NLE values of 180 ranges from 69.6\% to 85.0\% (Figure~\ref{fig:NLEdistributions}).
+When comparing sets of Wnt orthogroups that are very closely related, such as Wnt2 and Wnt2b, Wnt3 and Wnt3b, Wnt5a and Wnt5b, and Wnt7a and Wnt7b, the proportion of NLE values of 180 reaches 69.6\% to 85.0\% (Figure~\ref{fig:NLEdistributions}).
 
 
 \begin{figure*}[t]
@@ -362,7 +360,8 @@ Darker regions correspond to higher density.
 A)~Direct comparison between bit score and length of BLAST alignment (hit length).
 A linear relationship exists between the maximum bit score and hit length, so short sequences will be disadvantaged during MCL clustering.
 B)~Scaling bit score by hit length equalizes the dynamic range across hit length, but can also inaccurately inflate the implied similarity between sequences which only meet the BLAST similarity threshold along a small localized region.
-C)~Total similarity can be better assessed by transforming bit scores against a linear model as described by Emms and Kelly~\cite{Emms:2015ig}. The `Emms transform' was achieved by binning all data according to combined sequence lengths for each pair, selecting the top 5\% from each bin, finding parameters \textit{a} and \textit{b} that best fit the equation log\textsubscript{10}\textit{B\textsubscript{qh}} = \textit{a}log\textsubscript{10}\textit{L\textsubscript{qh}} + \textit{b} (where \textit{B\textsubscript{qh}} is the bitscore and \textit{L\textsubscript{qh}} is the product of the two sequence lengths), then fitting all bit scores to this linear model.
+C)~Total similarity can be better assessed by transforming bit scores against a linear model as described by Emms and Kelly~\cite{Emms:2015ig}.
+The `Emms transform' was achieved by binning all data according to combined sequence lengths for each pair, selecting the top 5\% from each bin, finding parameters \textit{a} and \textit{b} that best fit the equation log\textsubscript{10}\textit{B\textsubscript{qh}} = \textit{a}log\textsubscript{10}\textit{L\textsubscript{qh}} + \textit{b} (where \textit{B\textsubscript{qh}} is the bitscore and \textit{L\textsubscript{qh}} is the product of the two sequence lengths), then fitting all bit scores to this linear model.
 D)~Direct comparison between bit score and full sequence lengths (averaged).
 E)~Scaling bit score by full sequence length also equalizes the dynamic range of the scores, but better accounts for cases where short hit lengths in dissimilar sequences over-inflate the scaled score.
 F)~The standardizing affect of the Emms transform becomes most noticeable when compared against full sequence length, where both long and short sequences are able to achieve both high and low scores.
@@ -385,7 +384,8 @@ The SMSS score is elaborated on in Materials and Methods section~\ref{subsec:seq
   \begin{center}
   \includegraphics[height=0.4\textheight]{../figures/rdmcl_scoring.eps}
 \end{center}
-\caption{Two axes histograms illustrating the relationship between the Substitution Matrix and Secondary Structure (SMSS) scores from paired mammalian WNT sequences and A) the average sequence length; or B) the Emms transformed score.}
+\caption{Two axes histograms illustrating the relationship between the Substitution Matrix and Secondary Structure (SMSS) scores from paired mammalian WNT sequences and A) the average sequence length;
+or B) the Emms transformed score.}
 \label{fig:rdmclscores}
 \end{figure}
 
@@ -404,7 +404,9 @@ so the parameters should be dynamically optimized for each unique dataset.
   \begin{center}
   \includegraphics[height=0.52\textheight]{../figures/smss_mcl_param_space.eps}
 \end{center}
-\caption{Scatter plots relating the two MCL parameters (edge similarity threshold and inflation coefficient) to the results of running MCL on either the mammalian WNTs (upper four panels) or the Avian WNTs (lower four panels). MCL output is heat-mapped against either the number of clusters or orthogroups scores and plotted on the z-axes in left-hand panels to best visualize the magnitude of the dynamic range in each dataset. The right-hand panels are a top-down view of the same data, which more clearly illustrates the complex distribution of MCL outputs through parameter space.}
+\caption{Scatter plots relating the two MCL parameters (edge similarity threshold and inflation coefficient) to the results of running MCL on either the mammalian WNTs (upper four panels) or the Avian WNTs (lower four panels).
+MCL output is heat-mapped against either the number of clusters or orthogroups scores and plotted on the z-axes in left-hand panels to best visualize the magnitude of the dynamic range in each dataset.
+The right-hand panels are a top-down view of the same data, which more clearly illustrates the complex distribution of MCL outputs through parameter space.}
 \label{fig:smss_mcl_param_space}
 \end{figure}
 
@@ -413,7 +415,9 @@ so the parameters should be dynamically optimized for each unique dataset.
   \begin{center}
   \includegraphics[height=0.25\textheight]{../figures/mamm_bird_max_scores.eps}
 \end{center}
-\caption{Scatter plot comparing orthogroups scores for mammalian and avian WNTs clustered with the same MCL parameters. The two groups of data points represent the top scoring 5\% of 20,000 randomly sampled parameters from either set of sequences. The correlation between orthogroups scores for these samples is extremely weak.}
+\caption{Scatter plot comparing orthogroups scores for mammalian and avian WNTs clustered with the same MCL parameters.
+The two groups of data points represent the top scoring 5\% of 20,000 randomly sampled parameters from either set of sequences.
+The correlation between orthogroups scores for these samples is extremely weak.}
 \label{fig:mamm_bird_max_scores}
 \end{figure}
 
@@ -427,7 +431,8 @@ When compared against random sampling, using an MCMCMC random-walk heuristic to 
   \begin{center}
   \includegraphics[height=0.4\textheight]{../figures/local_maxima.eps}
 \end{center}
-\caption{Local orthogroups score maxima exist within MCL parameter space. Arrows point to two such maxim in each scatter plot. (I think this will be fine with only the bottom scatter plot, and maybe increase the density of sampled points)}
+\caption{Local orthogroups score maxima exist within MCL parameter space.
+Arrows point to two such maxim in each scatter plot. (I think this will be fine with only the bottom scatter plot, and maybe increase the density of sampled points)}
 \label{fig:local_maxima}
 \end{figure}
 
@@ -436,7 +441,8 @@ When compared against random sampling, using an MCMCMC random-walk heuristic to 
   \begin{center}
   \includegraphics[height=0.5\textheight]{../figures/random_vs_mcmcmc.eps}
 \end{center}
-\caption{Using an optimization algorithm improves the chance of identifying MCL parameters that maximize orthogroups score. Parameter space was sampled twenty independent times for the mammal and avian WNTs either randomly (2000 points), with three-chain MCMCMC (335 steps on each chain, for 1005 points), or three-chain MCMCMC with simulated annealing (also 335 steps, for 1005 points).}
+\caption{Using an optimization algorithm improves the chance of identifying MCL parameters that maximize orthogroups score.
+Parameter space was sampled twenty independent times for the mammal and avian WNTs either randomly (2000 points), with three-chain MCMCMC (335 steps on each chain, for 1005 points), or three-chain MCMCMC with simulated annealing (also 335 steps, for 1005 points).}
 \label{fig:random_vs_mcmcmc}
 \end{figure}
 
@@ -452,7 +458,8 @@ We will, therefore, only further report F\textsubscript{1} score and accuracy.
   \begin{center}
   \includegraphics[height=0.33\textheight]{../figures/score_to_accuracy.eps}
 \end{center}
-\caption{Scatter plots showing the positive relationship between orthogroups score and several quality scores (recall, precision, true negative rate, accuracy and F\textsubscript{1} score). Each point represents the clusters of mammalian of avian WNT proteins generated from a randomly selected set of MCL parameters, using the names present in RefSeq as the benchmark for `True' orthogroups.}
+\caption{Scatter plots showing the positive relationship between orthogroups score and several quality scores (recall, precision, true negative rate, accuracy and F\textsubscript{1} score).
+Each point represents the clusters of mammalian of avian WNT proteins generated from a randomly selected set of MCL parameters, using the names present in RefSeq as the benchmark for `True' orthogroups.}
 \label{fig:score_to_accuracy}
 \end{figure*}
 
@@ -464,7 +471,8 @@ It should be clearly noted that this method is heuristic, with no guarantee that
   \begin{center}
   \includegraphics[height=0.20\textheight]{../figures/emms_vs_smss.eps}
 \end{center}
-\caption{Direct performance comparison between SMSS scores and Emms scores as the similarity metric for MCL. All-by-all graphs of each metric were created for both mammalian and avian WNTs, then MCL parameters were dynamically optimized for each. The best sets of orthogroups from each of 20 replicates were compared against the `true' orthogroups, revealing an average increase in both accuracy and F\textsubscript{1} score when SMSS scores are used as the similarity metric.}
+\caption{Direct performance comparison between SMSS scores and Emms scores as the similarity metric for MCL. All-by-all graphs of each metric were created for both mammalian and avian WNTs, then MCL parameters were dynamically optimized for each.
+The best sets of orthogroups from each of 20 replicates were compared against the `true' orthogroups, revealing an average increase in both accuracy and F\textsubscript{1} score when SMSS scores are used as the similarity metric.}
 \label{fig:emms_vs_smss}
 \end{figure*}
 
@@ -492,7 +500,13 @@ To encompass the dynamic optimization of MCL parameters and recursive search str
   \begin{center}
   \includegraphics[height=0.8\textheight]{../figures/recursion_improvement.eps}
 \end{center}
-\caption{Recursively sub-clustering fish WNT orthogroups accounts for imbalances in evolutionary separation between groups and improves orthogroups score. A) The maximum orthogroups score identified in 20 independent searches of MCL parameter space, either randomly, with a single round of MCMCMC with simulated annealing, or by recursive rounds of MCMCMC with simulated annealing. B) Clusters produced by the top scoring MCMCMC search, arranged in a `wagon wheel tree'. C) Clusters produced by the top scoring search that included recursion, also arranged in a `wagon wheel tree'. Note that the number of nodes along any given branch represents relative recursive depth. Wnt-2b, Wnt-3/3a, Wnt-7a, and Wnt-7b are of particular note, because they were each broken up into approximately equally sized clusters; D) extracting these sequences and inferring a maximum likelihood phylogeny   resolves the same groupings that were identified by recursive MCL.}
+\caption{Recursively sub-clustering fish WNT orthogroups accounts for imbalances in evolutionary separation between groups and improves orthogroups score.
+A) The maximum orthogroups score identified in 20 independent searches of MCL parameter space, either randomly, with a single round of MCMCMC with simulated annealing, or by recursive rounds of MCMCMC with simulated annealing.
+B) Clusters produced by the top scoring MCMCMC search, arranged in a `wagon wheel tree'.
+C) Clusters produced by the top scoring search that included recursion, also arranged in a `wagon wheel tree'.
+Note that the number of nodes along any given branch represents relative recursive depth.
+Wnt-2b, Wnt-3/3a, Wnt-7a, and Wnt-7b are of particular note, because they were each broken up into approximately equally sized clusters;
+D) extracting these sequences and inferring a maximum likelihood phylogeny   resolves the same groupings that were identified by recursive MCL.}
 \label{fig:recursion_improvement}
 \end{figure*}
 
@@ -503,21 +517,21 @@ Closer inspection of these sequences, along with the orthogroups they belong to 
 
 
 
-\subsection{Number of sequences}
+\subsection{Number of sequences}\label{subsec:number-of-sequences}
 WNTs
 
 Simulated: To test the effects of increasing the number of orthogroups and orthogroup size, datasets were simulated with 4 to 30 taxa and between 4 and 30 genes per taxa.
 
 
-\subsection{Missing data}
+\subsection{Missing data}\label{subsec:missing-data}
 WNTs
 
 
-\subsection{Gene duplications}
+\subsection{Gene duplications}\label{subsec:gene-duplications}
 WNTs
 
 
-\subsection{Hybrid sequences (weird domain structures)}
+\subsection{Hybrid sequences (weird domain structures)}\label{subsec:hybrid-sequencesweird-domain-structures}
 TIR-containing proteins
 
 
