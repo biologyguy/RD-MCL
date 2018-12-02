@@ -1,27 +1,37 @@
 sudo: required
+dist: xenial
 language: python
 python:
+  - "3.5"
   - "3.6"
+  - "3.7"
 install:
   - sudo apt-get update -qq
   - sudo apt-get install -qq tar python3 bzip2 build-essential
   - wget -q https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh
   - bash ~/miniconda.sh -b -p /home/travis/miniconda
-  - /home/travis/miniconda/bin/conda config --set always_yes yes --set changeps1 no
-  - /home/travis/miniconda/bin/conda update -q conda
-  - /home/travis/miniconda/bin/conda info -a
-  - /home/travis/miniconda/bin/conda install scipy numpy pandas git
-  - /home/travis/miniconda/bin/conda install -c biocore mafft psipred=4.01
-  - /home/travis/miniconda/bin/conda install -c bioconda clustalo
-  - /home/travis/miniconda/bin/pip install --upgrade
-  - /home/travis/miniconda/bin/pip install py pytest pytest-xdist pytest-cov pytest-colordots
-  - /home/travis/miniconda/bin/pip install biopython python-coveralls buddysuite dill
-  - /home/travis/miniconda/bin/git clone https://github.com/biologyguy/BuddySuite.git /home/travis/build/biologyguy/BuddySuite
-  - /home/travis/miniconda/bin/git --git-dir=/home/travis/build/biologyguy/BuddySuite/.git --work-tree=/home/travis/build/biologyguy/BuddySuite checkout develop
-  - mv /home/travis/build/biologyguy/BuddySuite/buddysuite/*.py /home/travis/miniconda/lib/python3.6/site-packages/buddysuite/
+  - export PATH="/home/travis/miniconda/envs/test-environment/bin:/home/travis/miniconda/bin:$PATH"
+  - conda config --set always_yes yes --set changeps1 no
+  - conda update -q conda
+  - conda info -a
+  - conda create -q -n test-environment python=$TRAVIS_PYTHON_VERSION scipy numpy pandas git
+  - source activate test-environment
+  - conda install -c biocore mafft psipred=4.01
+  - conda install -c bioconda clustalo
+  - pip install pip --upgrade
+  - pip install py pytest pytest-xdist pytest-cov pytest-colordots
+  - pip install biopython python-coveralls 'coverage>=4.4' buddysuite dill
+  - git clone https://github.com/biologyguy/BuddySuite.git /home/travis/build/biologyguy/BuddySuite
+  - git --git-dir=/home/travis/build/biologyguy/BuddySuite/.git --work-tree=/home/travis/build/biologyguy/BuddySuite checkout develop
+  - mkdir -p /home/travis/miniconda/envs/test-environment/lib/python3.5/site-packages/buddysuite/
+  - mkdir -p /home/travis/miniconda/envs/test-environment/lib/python3.6/site-packages/buddysuite/
+  - mkdir -p /home/travis/miniconda/envs/test-environment/lib/python3.7/site-packages/buddysuite/
+  - cp /home/travis/build/biologyguy/BuddySuite/buddysuite/*.py /home/travis/miniconda/envs/test-environment/lib/python3.5/site-packages/buddysuite/
+  - cp /home/travis/build/biologyguy/BuddySuite/buddysuite/*.py /home/travis/miniconda/envs/test-environment/lib/python3.6/site-packages/buddysuite/
+  - cp /home/travis/build/biologyguy/BuddySuite/buddysuite/*.py /home/travis/miniconda/envs/test-environment/lib/python3.7/site-packages/buddysuite/
   - touch /home/travis/build/biologyguy/RD-MCL/rdmcl/config.ini
   - mkdir /home/travis/build/biologyguy/RD-MCL/rdmcl/psipred/
-  - cp -r /home/travis/miniconda/share/psipred_4.01/data /home/travis/build/biologyguy/RD-MCL/rdmcl/psipred/
+  - cp -r /home/travis/miniconda/envs/test-environment/share/psipred_4.01/data /home/travis/build/biologyguy/RD-MCL/rdmcl/psipred/
   - wget -q http://eddylab.org/software/hmmer3/3.1b2/hmmer-3.1b2.tar.gz -O ~/hmmer-3.1b2.tar.gz
   - tar -xzf ~/hmmer-3.1b2.tar.gz -C ~/
   - sed -i -e 's/p7_gmx_Dump(stdout, fwd, p7_DEFAULT);//g' ~/hmmer-3.1b2/src/generic_fwdback.c
@@ -32,4 +42,4 @@ install:
   - cp ~/hmmer-3.1b2/src/generic_fwdback_example /home/travis/build/biologyguy/RD-MCL/rdmcl/hmmer/hmm_fwd_back
   - cp ~/hmmer-3.1b2/src/generic_fwdback_example /home/travis/miniconda/bin/hmm_fwd_back
 script:
-  - travis_wait 40 source test.sh
+  - source test.sh
