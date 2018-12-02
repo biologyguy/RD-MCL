@@ -13,7 +13,7 @@ install:
   - /home/travis/miniconda/bin/conda install scipy numpy pandas git
   - /home/travis/miniconda/bin/conda install -c biocore mafft psipred=4.01
   - /home/travis/miniconda/bin/conda install -c bioconda clustalo
-  - /home/travis/miniconda/bin/pip install --upgrade
+  - /home/travis/miniconda/bin/pip install pip --upgrade
   - /home/travis/miniconda/bin/pip install py pytest pytest-xdist pytest-cov pytest-colordots
   - /home/travis/miniconda/bin/pip install biopython python-coveralls buddysuite dill
   - /home/travis/miniconda/bin/git clone https://github.com/biologyguy/BuddySuite.git /home/travis/build/biologyguy/BuddySuite
