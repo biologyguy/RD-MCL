@@ -23,12 +23,8 @@ install:
   - pip install biopython python-coveralls 'coverage>=4.4' buddysuite dill
   - git clone https://github.com/biologyguy/BuddySuite.git /home/travis/build/biologyguy/BuddySuite
   - git --git-dir=/home/travis/build/biologyguy/BuddySuite/.git --work-tree=/home/travis/build/biologyguy/BuddySuite checkout develop
-  - mkdir -p /home/travis/miniconda/envs/test-environment/lib/python3.5/site-packages/buddysuite/
-  - mkdir -p /home/travis/miniconda/envs/test-environment/lib/python3.6/site-packages/buddysuite/
-  - mkdir -p /home/travis/miniconda/envs/test-environment/lib/python3.7/site-packages/buddysuite/
-  - cp /home/travis/build/biologyguy/BuddySuite/buddysuite/*.py /home/travis/miniconda/envs/test-environment/lib/python3.5/site-packages/buddysuite/
-  - cp /home/travis/build/biologyguy/BuddySuite/buddysuite/*.py /home/travis/miniconda/envs/test-environment/lib/python3.6/site-packages/buddysuite/
-  - cp /home/travis/build/biologyguy/BuddySuite/buddysuite/*.py /home/travis/miniconda/envs/test-environment/lib/python3.7/site-packages/buddysuite/
+  - mkdir -p /home/travis/miniconda/envs/test-environment/lib/python$TRAVIS_PYTHON_VERSION/site-packages/buddysuite/
+  - cp /home/travis/build/biologyguy/BuddySuite/buddysuite/*.py /home/travis/miniconda/envs/test-environment/lib/python$TRAVIS_PYTHON_VERSION/site-packages/buddysuite/
   - touch /home/travis/build/biologyguy/RD-MCL/rdmcl/config.ini
   - mkdir /home/travis/build/biologyguy/RD-MCL/rdmcl/psipred/
   - cp -r /home/travis/miniconda/envs/test-environment/share/psipred_4.01/data /home/travis/build/biologyguy/RD-MCL/rdmcl/psipred/
