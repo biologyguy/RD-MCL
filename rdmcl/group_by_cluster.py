@@ -174,7 +174,7 @@ def main():
             else:
                 with open(paralog_file, "r") as ifile:
                     paralogs = ifile.read()
-                paralogs = re.search("# .*?(?:_0)\n(.*)\n", paralogs)
+                paralogs = re.search(r"# .*?(?:_0)\n(.*)\n", paralogs)
                 paralogs = {} if not paralogs else json.loads(paralogs.group(1))
 
         for rank, node in cluster_file.items():
@@ -198,7 +198,7 @@ def main():
                             del node[node.index(p)]
 
             if in_args.strip_taxa:
-                node = [re.sub("^.*?-", "", x) for x in node]
+                node = [re.sub(r"^.*?-", "", x) for x in node]
 
             ids = "^%s$" % "$|^".join(node)
             subset = Sb.pull_recs(Sb.make_copy(seqbuddy), ids)
@@ -210,7 +210,7 @@ def main():
             if mode == "list":
                 rank_output += rank
                 for rec in subset.records:
-                    rec.description = re.sub("^%s" % rec.id, "", rec.description)
+                    rec.description = re.sub(r"^%s" % rec.id, "", rec.description)
                     rank_output += "\n%s %s" % (rec.id, rec.description)
                 rank_output += "\n"
 

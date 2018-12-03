@@ -556,9 +556,9 @@ def main():
             tb = "%s: %s\n\n" % (type(err).__name__, err)
             for _line in traceback.format_tb(sys.exc_info()[2]):
                 if os.name == "nt":
-                    _line = re.sub('"(?:[A-Za-z]:)*\{0}.*\{0}(.*)?"'.format(os.sep), r'"\1"', _line)
+                    _line = re.sub(r'"(?:[A-Za-z]:)*\{0}.*\{0}(.*)?"'.format(os.sep), r'"\1"', _line)
                 else:
-                    _line = re.sub('"{0}.*{0}(.*)?"'.format(os.sep), r'"\1"', _line)
+                    _line = re.sub(r'"{0}.*{0}(.*)?"'.format(os.sep), r'"\1"', _line)
                 tb += _line
             print("\nWorker_%s crashed!\n" % wrkr.heartbeat.id, tb)
 

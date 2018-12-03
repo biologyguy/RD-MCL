@@ -32,8 +32,8 @@ def prepare_clusters(ifile):
         del output[-1]
 
     for indx, line in enumerate(output):
-        group_name = re.search("(^.*?)\s", line).group(1)
-        line = re.sub("^.*?\s+", "", line)
+        group_name = re.search(r"(^.*?)\s", line).group(1)
+        line = re.sub(r"^.*?\s+", "", line)
         line = line.split()
         output[indx] = (group_name, line)
     output = OrderedDict(output)
@@ -130,7 +130,7 @@ def main():
     r_files = [join(rdmcl_dir, f) for f in r_files]
     for f in r_files:
         try:
-            new_path = re.sub("{0}$|({0})(\.scores)".format(group_name), r'%s\2' % in_args.new_name, f)
+            new_path = re.sub(r"{0}$|({0})(\.scores)".format(group_name), r'%s\2' % in_args.new_name, f)
             shutil.move(f, new_path)
             print(os.path.relpath(f), "-->", os.path.relpath(new_path))
         except FileNotFoundError:
