@@ -2265,13 +2265,13 @@ Please do so now:
         sys.exit()
 
     # I'm pretty sure that SeqBuddy 1.2 is still fine, but Alb needs to be updated. Might as well just force the update.
-    if int(re.search("([0-9]+)", Sb.VERSION.minor).group(1)) < 3:
+    if int(re.search(r"([0-9]+)", Sb.VERSION.minor).group(1)) < 3:
         logging.error("\nERROR: Your version of SeqBuddy (%s.%s) is too old to work with RDMCL, please update it."
                       % (Sb.VERSION.major, Sb.VERSION.minor))
         sys.exit()
     logging.info("SeqBuddy version: %s.%s" % (Sb.VERSION.major, Sb.VERSION.minor))
 
-    if int(re.search("([0-9]+)", Alb.VERSION.minor).group(1)) < 3:
+    if int(re.search(r"([0-9]+)", Alb.VERSION.minor).group(1)) < 3:
         logging.error("Your version of AlignBuddy (%s.%s) is too old to work with RDMCL, please update it."
                       % (Alb.VERSION.major, Alb.VERSION.minor))
         sys.exit()
@@ -2472,7 +2472,7 @@ Continue? y/[n] """ % len(sequences)
     logging.info("\t-- finished in %s --\n" % TIMER.split())
 
     # Don't allow forward slashes or spaces in group names
-    in_args.group_name = re.sub("[/ ]", "_", in_args.group_name)
+    in_args.group_name = re.sub(r"[/ ]", "_", in_args.group_name)
 
     # First prepare the really raw first alignment in the database, without any collapsing.
     uncollapsed_group_0 = Cluster([rec.id for rec in sequences.records], scores_data,

@@ -109,8 +109,8 @@ def main():
     else:
         data = in_args.input_file
 
-    blocks = re.findall("Query[^=]*?\n\n|Query[^=]*$", data, re.DOTALL)
-    front_matter_len = re.match("Query +1 +", blocks[0])
+    blocks = re.findall(r"Query[^=]*?\n\n|Query[^=]*$", data, re.DOTALL)
+    front_matter_len = re.match(r"Query +1 +", blocks[0])
     front_matter_len = front_matter_len.end()
     for i, block in enumerate(blocks):
         block = block.strip().split("\n")
@@ -121,7 +121,7 @@ def main():
             if back.endswith(" "):
                 back = [back[:-2], None]
             else:
-                back = re.search("(.*)? {2}([0-9]+)", back)
+                back = re.search(r"(.*)? {2}([0-9]+)", back)
                 back = [back.group(1), int(back.group(2))]
             back[0] = re.sub(" ", "-", back[0])
             line = front + back

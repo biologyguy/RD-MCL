@@ -3,12 +3,12 @@
 
 from os.path import join
 import os
-from .. import rename_orthogroup
+from rdmcl import rename_orthogroup
 from buddysuite import buddy_resources as br
 from shutil import copyfile
 from collections import OrderedDict
 import pytest
-from .. import helpers as hlp
+from rdmcl import helpers as hlp
 from datetime import date
 
 

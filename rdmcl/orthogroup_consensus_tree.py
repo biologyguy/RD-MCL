@@ -31,9 +31,9 @@ VERSION.name = "orthogroup_consensus_tree"
 
 
 def clean_tree(tree):
-    tree = re.sub(":[0-9.]+e-[0-9]+", "", str(tree))
-    tree = re.sub(":[0-9]+\.[0-9]+", "", tree)
-    tree = re.sub("\)[0-9]+\.[0-9]+", ")", tree)
+    tree = re.sub(r":[0-9.]+e-[0-9]+", "", str(tree))
+    tree = re.sub(r":[0-9]+\.[0-9]+", "", tree)
+    tree = re.sub(r"\)[0-9]+\.[0-9]+", ")", tree)
     tree = re.sub("'", "", tree)
     return tree
 

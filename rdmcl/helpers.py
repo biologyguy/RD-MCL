@@ -371,13 +371,13 @@ def prepare_clusters(ifile,  hierarchy=False):
     if hierarchy:
         for indx, line in enumerate(output):
             group_name = re.search("(^.*?)\s", line).group(1)
-            line = re.sub("(^.*?)\s-*[0-9]+\.[0-9]*\s+", "", line)
+            line = re.sub(r"(^.*?)\s-*[0-9]+\.[0-9]*\s+", "", line)
             line = line.split()
             output[indx] = (group_name, line)
         output = OrderedDict(output)
     else:
         for indx, line in enumerate(output):
-            line = re.sub("(^.*?)\s-*[0-9]+\.[0-9]*\s+", "", line)
+            line = re.sub(r"(^.*?)\s-*[0-9]+\.[0-9]*\s+", "", line)
             line = line.split()
             output[indx] = line
     return output
