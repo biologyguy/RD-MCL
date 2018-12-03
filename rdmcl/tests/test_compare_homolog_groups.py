@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 import pytest
-from .. import compare_homolog_groups
-from .. import helpers as hlp
+from rdmcl import compare_homolog_groups
+from rdmcl import helpers as hlp
 from types import SimpleNamespace
 from buddysuite import buddy_resources as br
 import sys

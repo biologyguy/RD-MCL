@@ -4,7 +4,7 @@
 import pytest
 import os
 import buddysuite.SeqBuddy
-from .. import helpers
+from rdmcl import helpers
 from hashlib import md5
 import pandas as pd
 

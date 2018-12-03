@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from .. import install
+from rdmcl import install
 import shutil
 from buddysuite import buddy_resources as br
 import urllib.request

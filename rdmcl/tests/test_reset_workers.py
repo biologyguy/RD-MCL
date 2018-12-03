@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from .. import reset_workers
+from rdmcl import reset_workers
 from buddysuite import buddy_resources as br
 import sys
 from os.path import join
 import sqlite3
-from .. import helpers as hlp
+from rdmcl import helpers as hlp
 
 
 def test_main(capsys, monkeypatch):

@@ -14,9 +14,9 @@ import pytest
 import scipy.stats
 from buddysuite import buddy_resources as br
 
-from .. import compare_homolog_groups
-from .. import helpers as hlp
-from .. import merge_orthogroups
+from rdmcl import compare_homolog_groups
+from rdmcl import helpers as hlp
+from rdmcl import merge_orthogroups
 
 
 def generate_user_answer():

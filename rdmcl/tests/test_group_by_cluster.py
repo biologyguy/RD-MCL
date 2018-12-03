@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import pytest
-from .. import group_by_cluster
+from rdmcl import group_by_cluster
 from buddysuite import SeqBuddy as Sb
 from buddysuite import AlignBuddy as Alb
 from buddysuite import buddy_resources as br

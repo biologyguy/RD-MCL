@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import pytest
-from .. import rdmcl
-from .. import helpers
-from .. import launch_worker
+from rdmcl import rdmcl
+from rdmcl import helpers
+from rdmcl import launch_worker
 import os
 import sqlite3
 import pandas as pd

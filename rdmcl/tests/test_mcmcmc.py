@@ -9,9 +9,8 @@ import pandas as pd
 from collections import OrderedDict
 from types import SimpleNamespace
 from buddysuite import buddy_resources as br
-from multiprocessing import Lock
 
-from .. import mcmcmc
+from rdmcl import mcmcmc
 
 
 def test_variable_init():

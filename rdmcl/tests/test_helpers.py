@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import pytest
-from .. import helpers
+from rdmcl import helpers
 import os
 import buddysuite.buddy_resources as br
 import sqlite3

@@ -9,8 +9,8 @@ import pandas as pd
 import shutil
 import argparse
 from types import SimpleNamespace
-from .. import rdmcl
-from .. import helpers
+from rdmcl import rdmcl
+from rdmcl import helpers
 from math import ceil
 from collections import OrderedDict
 from buddysuite import buddy_resources as br
