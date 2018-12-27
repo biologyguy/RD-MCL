@@ -265,7 +265,7 @@ def test_sqlitebroker_close():
     assert not broker.broker.is_alive()
 
 
-def test_logger():
+def test_logger(caplog):
     tmp = br.TempFile()
     logger = helpers.Logger(tmp.path)
 
@@ -280,9 +280,7 @@ def test_logger():
     logger.logger.log(helpers.logging.WARNING, "Some info")
     helpers.logging.warning("Some Warnings")
 
-    logger.move_log("%sfirst.log" % tmp.path)
-    with open("%sfirst.log" % tmp.path, "r") as ofile:
-        assert ofile.read() == "Some info\nSome Warnings\n"
+    assert caplog.text == "Some info\nSome Warnings\n"
 
 
 def test_timer(monkeypatch):

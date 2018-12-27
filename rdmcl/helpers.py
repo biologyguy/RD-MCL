@@ -229,6 +229,7 @@ class SQLiteBroker(object):
 class Logger(object):
     def __init__(self, location):
         self.location = location
+        open(location, "w").close()
 
         # Set up logging. Use 'info' to write to file only, anything higher will go to both terminal and file.
         logging.basicConfig(filename=self.location, level=logging.INFO, format="")

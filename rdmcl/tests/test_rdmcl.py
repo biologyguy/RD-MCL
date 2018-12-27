@@ -2188,10 +2188,10 @@ def test_full_run(hf, capsys):
         content = ifile.read()
         assert content == """\
 group_0_0_0\t7.9981\tBOL-PanxαA\tLcr-PanxαH\tMle-Panxα10A\tMle-Panxα9\tVpa-PanxαB
+group_0_1\t3.8717\tLcr-PanxαK\tMle-Panxα7A
 group_0_2\t3.4365\tBOL-PanxαH\tMle-Panxα8
-group_0_1_0_1\t1.7315\tLcr-PanxαK\tMle-Panxα7A
-group_0_1_1\t0.7906\tMle-Panxα5
-group_0_1_0_0\t0.7217\tBOL-PanxαG
+group_0_3_0\t0.7217\tBOL-PanxαG
+group_0_3_1\t0.559\tMle-Panxα5
 """, print(content)
 
     out, err = capsys.readouterr()
