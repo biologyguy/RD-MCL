@@ -20,11 +20,11 @@ take the average (not currently implemented).
 """
 
 try:
-    import rdmcl
-    import helpers as hlp
-except ImportError:
     from rdmcl import rdmcl
     from rdmcl import helpers as hlp
+except ImportError:
+    import rdmcl
+    import helpers as hlp
 
 import re
 from collections import OrderedDict

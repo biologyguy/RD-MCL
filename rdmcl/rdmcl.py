@@ -55,13 +55,13 @@ from buddysuite import buddy_resources as br
 
 # Other RD-MCL modules
 try:
+    from rdmcl import mcmcmc
+    from rdmcl import helpers as hlp
+    from rdmcl.install import setup
+except ImportError:
     import mcmcmc
     import helpers as hlp
     from install import setup
-except ImportError:
-    from . import mcmcmc
-    from . import helpers as hlp
-    from .install import setup
 
 
 # Globals (I apologize to all of you cringing over this...)

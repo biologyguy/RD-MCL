@@ -7,9 +7,9 @@ Replace the 'group_0_XXX' designation for a given group
 """
 
 try:
-    import helpers as hlp
-except ImportError:
     from rdmcl import helpers as hlp
+except ImportError:
+    import helpers as hlp
 
 import os
 from os.path import join

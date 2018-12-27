@@ -6,9 +6,9 @@ Output the description line for each record in each cluster, neatly organized as
 """
 
 try:
-    import helpers as hlp
-except ImportError:
     from rdmcl import helpers as hlp
+except ImportError:
+    import helpers as hlp
 
 from buddysuite import SeqBuddy as Sb
 from buddysuite import AlignBuddy as Alb

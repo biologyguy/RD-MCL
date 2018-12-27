@@ -12,9 +12,9 @@ from time import time, sleep
 from buddysuite.buddy_resources import DynamicPrint, TempFile, CustomHelpFormatter
 
 try:
-    import helpers as hlp
-except ImportError:
     from rdmcl import helpers as hlp
+except ImportError:
+    import helpers as hlp
 
 VERSION = hlp.VERSION
 VERSION.name = "monitor_dbs"

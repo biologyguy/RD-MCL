@@ -6,9 +6,9 @@
 Convert the output from RD-MCL final_clusters into an SVG tree of polytomies
 """
 try:
-    import helpers as hlp
-except ImportError:
     from rdmcl import helpers as hlp
+except ImportError:
+    import helpers as hlp
 
 VERSION = hlp.VERSION
 VERSION.name = "orthgroup_polytomy_tree"
