@@ -1,12 +1,18 @@
 #! /bin/bash
 # -*- coding: utf-8 -*-
 
-export PATH="/home/travis/miniconda/envs/test-environment/bin:/home/travis/miniconda/bin:$PATH"
+#export PATH="/home/travis/miniconda/envs/test-environment/bin:/home/travis/miniconda/bin:$PATH"
 FAILURE=0
 
 # Disable py.test cacheprovider because it requires r/w access to the test directory
 #### Pre-tests
 cd /home/travis/build/biologyguy/RD-MCL/rdmcl/tests
+printf "
+************************** Pre-Tests **************************
+"
+pwd
+ls -la
+
 TEST_SCRIPTS='test_fixtures.py '
 py.test ${TEST_SCRIPTS} --cache-clear --durations=10
 if [[ $? -ne 0 ]]

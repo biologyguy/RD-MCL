@@ -6,11 +6,11 @@ Create a maximum likelihood tree from consensus sequences using orthgroup sampli
 """
 
 try:
-    from . import helpers as hlp
-    from .group_by_cluster import make_msa
-except ImportError:
     import helpers as hlp
     from group_by_cluster import make_msa
+except ImportError:
+    from rdmcl import helpers as hlp
+    from rdmcl.group_by_cluster import make_msa
 
 from buddysuite import SeqBuddy as Sb
 from buddysuite import AlignBuddy as Alb

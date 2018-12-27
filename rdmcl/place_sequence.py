@@ -6,13 +6,13 @@ Given RD-MCL clusters, where do new sequences fit in?
 """
 
 try:
-    from .merge_orthogroups import Check
-    from . import helpers as hlp
-    from . import rdmcl
-except ImportError:
-    from merge_orthogroups import Check
-    import helpers as hlp
     import rdmcl
+    import helpers as hlp
+    from merge_orthogroups import Check
+except ImportError:
+    from rdmcl import rdmcl
+    from rdmcl import helpers as hlp
+    from rdmcl.merge_orthogroups import Check
 
 from buddysuite import buddy_resources as br
 from buddysuite import SeqBuddy as Sb

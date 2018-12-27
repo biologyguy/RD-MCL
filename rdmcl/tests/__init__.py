@@ -10,8 +10,12 @@ from io import StringIO
 
 SEP = os.sep
 
+# Make sure the rdmcl module is in Python path
 DIRECTORY_SCRIPT = os.path.dirname(os.path.realpath(__file__))
-sys.path.insert(0, "%s%s.." % (DIRECTORY_SCRIPT, SEP))
+DIRECTORY_SCRIPT = DIRECTORY_SCRIPT.split(SEP)[:-1]
+DIRECTORY_SCRIPT = os.path.join(*DIRECTORY_SCRIPT)
+if DIRECTORY_SCRIPT not in sys.path:
+    sys.path.insert(0, DIRECTORY_SCRIPT)
 RESOURCE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'unit_test_resources') + SEP
 
 '''

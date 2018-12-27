@@ -14,7 +14,7 @@ from buddysuite.buddy_resources import DynamicPrint, TempFile, CustomHelpFormatt
 try:
     import helpers as hlp
 except ImportError:
-    from . import helpers as hlp
+    from rdmcl import helpers as hlp
 
 VERSION = hlp.VERSION
 VERSION.name = "monitor_dbs"

@@ -23,11 +23,11 @@ import traceback
 
 # My packages
 try:
-    from . import helpers as hlp
-    from . import rdmcl
-except ImportError:
-    import helpers as hlp
     import rdmcl
+    import helpers as hlp
+except ImportError:
+    from rdmcl import rdmcl
+    from rdmcl import helpers as hlp
 
 
 # Globals

@@ -9,9 +9,9 @@ import os
 import shutil
 from buddysuite import buddy_resources as br
 try:
-    from . import helpers as hlp
-except ImportError:
     import helpers as hlp
+except ImportError:
+    from rdmcl import helpers as hlp
 
 VERSION = hlp.VERSION
 VERSION.name = "reset_workers"

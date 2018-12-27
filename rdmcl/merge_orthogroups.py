@@ -8,13 +8,13 @@ Only allow groups to be placed in larger groups
 """
 
 try:
-    from .compare_homolog_groups import Cluster
-    from . import helpers as hlp
-    from . import rdmcl
-except ImportError:
-    from compare_homolog_groups import Cluster
-    import helpers as hlp
     import rdmcl
+    import helpers as hlp
+    from compare_homolog_groups import Cluster
+except ImportError:
+    from rdmcl import rdmcl
+    from rdmcl import helpers as hlp
+    from rdmcl.compare_homolog_groups import Cluster
 
 from buddysuite import buddy_resources as br
 # from buddysuite import SeqBuddy as Sb
