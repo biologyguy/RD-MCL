@@ -177,7 +177,7 @@ def test_main_min_max(monkeypatch, hf, capsys):
 def test_main_strip_taxa(monkeypatch, hf, capsys):
     tmp_file = br.TempFile()
     seqbuddy = Sb.SeqBuddy(join(hf.resource_path, "Cteno_pannexins.fa"))
-    seqbuddy = Sb.rename(seqbuddy, "^.*?\-")
+    seqbuddy = Sb.rename(seqbuddy, r"^.*?\-")
     tmp_file.write(str(seqbuddy))
     argv = ['rdmcl.py', hf.resource_path, "-s", tmp_file.path, "-st"]
     monkeypatch.setattr(sys, "argv", argv)

@@ -354,11 +354,11 @@ Oma\tMle\t0"""
     assert mcl.edge_sim_threshold == 0.6
     assert sorted(list(mcl.name_order)) == ['Bab', "Cfu", "Mle", "Oma"]
     assert sorted(list(mcl.name_order_indx)) == [0, 1, 2, 3]
-    expected = np.matrix([[0.333333343267, 0.333333343267, 0., 0.333333343267],
-                          [0.333333343267, 0.333333343267, 0., 0.333333343267],
-                          [0.,         0.,         0., 0.],
-                          [0.333333343267, 0.333333343267, 0., 0.333333343267]],
-                         dtype=str(mcl.trans_matrix.dtype))
+    expected = np.array([[0.333333343267, 0.333333343267, 0., 0.333333343267],
+                         [0.333333343267, 0.333333343267, 0., 0.333333343267],
+                         [0.,         0.,         0., 0.],
+                         [0.333333343267, 0.333333343267, 0., 0.333333343267]],
+                        dtype=str(mcl.trans_matrix.dtype))
     assert np.array_equal(mcl.trans_matrix, expected), print(mcl.trans_matrix)
     assert mcl.clusters == []
 
@@ -386,15 +386,15 @@ Oma\tMle\t0"""
 
 
 def test_markov_clustering_normalize():
-    matrix = np.matrix([[0., 1., 0., 1.],
-                        [1., 0., 0., 1.],
-                        [0., 0., 0., 0.],
-                        [1., 1., 0., 0.]])
+    matrix = np.array([[0., 1., 0., 1.],
+                       [1., 0., 0., 1.],
+                       [0., 0., 0., 0.],
+                       [1., 1., 0., 0.]])
     normalized = helpers.MarkovClustering.normalize(matrix)
-    expected = np.matrix([[0., 0.5, 0., 0.5],
-                          [0.5, 0., 0., 0.5],
-                          [0., 0., 0., 0.],
-                          [0.5, 0.5, 0., 0.]])
+    expected = np.array([[0., 0.5, 0., 0.5],
+                         [0.5, 0., 0., 0.5],
+                         [0., 0., 0., 0.],
+                         [0.5, 0.5, 0., 0.]])
     assert np.array_equal(normalized, expected), print(normalized)
 
 
@@ -417,7 +417,7 @@ Oma\tMle\t0"""
                         dtype=str(mcl.trans_matrix.dtype))
     assert np.array_equal(mcl._df_to_transition_matrix(), expected), print(mcl._df_to_transition_matrix())
 
-    mcl.dataframe = mcl.dataframe.ix[1:, :]
+    mcl.dataframe = mcl.dataframe.iloc[1:, :]
     with pytest.raises(ValueError) as err:
         mcl._df_to_transition_matrix()
     assert "The provided dataframe is not a symmetric graph" in str(err)

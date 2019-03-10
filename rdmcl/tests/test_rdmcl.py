@@ -105,7 +105,7 @@ def test_cluster_instantiate_group_0(hf, monkeypatch):
 
     with pytest.raises(ValueError) as err:
         sim_scores = hf.get_data("cteno_sim_scores")
-        sim_scores = sim_scores.ix[1:, :]
+        sim_scores = sim_scores.iloc[1:, :]
         rdmcl.Cluster(cluster.seq_ids, sim_scores)
     assert "The number of incoming sequence ids (134) does not match the expected graph size of 8911" in str(err)
     assert os.path.isfile("cad7ae67468eea9293c3ae2689e116ed.error")
