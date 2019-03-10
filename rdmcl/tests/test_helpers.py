@@ -496,7 +496,7 @@ Oma\tMle\t0"""
                          [0.0042984216, 0.0076005417, 0.020647783, 0.0042984216],
                          [0.1263697, 0.1054491, 0.067736246, 0.1263697]],
                         dtype=str(mcl.trans_matrix.dtype))
-    assert np.array_equal(mcl.trans_matrix, expected), print(mcl.trans_matrix)
+    assert np.allclose(mcl.trans_matrix, expected), print(mcl.trans_matrix)
 
     mcl.mcl_step()
     expected = np.array([[1.9703692e-02, 1.9275241e-02, 1.8409636e-02, 1.9703692e-02],
@@ -504,7 +504,7 @@ Oma\tMle\t0"""
                          [7.5001088e-05, 7.8738136e-05, 8.7761167e-05, 7.5001088e-05],
                          [1.9703692e-02, 1.9275241e-02, 1.8409636e-02, 1.9703692e-02]],
                         dtype=str(mcl.trans_matrix.dtype))
-    assert np.array_equal(mcl.trans_matrix, expected), print(mcl.trans_matrix)
+    assert np.allclose(mcl.trans_matrix, expected), print(mcl.trans_matrix)
 
 
 def test_markov_clustering_run(monkeypatch, capsys):
