@@ -1607,20 +1607,24 @@ def test_mcmcmc_mcl(hf):
 
     assert rdmcl.mcmcmc_mcl(args, params) == 19.538461538461537
     with open(join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
-        output = ifile.read()
-        assert output == "6b39ebc4f5fe7dfef786d8ee3e1594ed,cb23cf3b4d355140e525a1158af5102d," \
+        output = sorted(ifile.read().split(","))
+        output = ",".join(output)
+        assert output == "09cac4f034df8a2805171e1e61cc8666,6b39ebc4f5fe7dfef786d8ee3e1594ed," \
                          "8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9," \
-                         "09cac4f034df8a2805171e1e61cc8666", print(output)
+                         "cb23cf3b4d355140e525a1158af5102d", print(output)
 
     args = (3.1232, 0.73432, 1)  # inflation, gq, r_seed
     assert rdmcl.mcmcmc_mcl(args, params) == 20.923076923076923
     with open(join(ext_tmp_dir.path, "max.txt"), "r") as ifile:
-        output = ifile.read()
-        assert output == "6b39ebc4f5fe7dfef786d8ee3e1594ed,cb23cf3b4d355140e525a1158af5102d," \
+        output = ""
+        for line in ifile.read().split("\n"):
+            line = sorted(line.split(","))
+            output += ",".join(line) + "\n"
+        assert output == "09cac4f034df8a2805171e1e61cc8666,6b39ebc4f5fe7dfef786d8ee3e1594ed," \
                          "8521872b6c07205f3198bb70699f3d93,a06adee8cc3631773890bb5842bf8df9," \
-                         "09cac4f034df8a2805171e1e61cc8666\n" \
-                         "fdffc226205a71dfbdd6cc093cab56cf,cb23cf3b4d355140e525a1158af5102d," \
-                         "a06adee8cc3631773890bb5842bf8df9,09cac4f034df8a2805171e1e61cc8666", print(output)
+                         "cb23cf3b4d355140e525a1158af5102d\n" \
+                         "09cac4f034df8a2805171e1e61cc8666,a06adee8cc3631773890bb5842bf8df9," \
+                         "cb23cf3b4d355140e525a1158af5102d,fdffc226205a71dfbdd6cc093cab56cf\n", print(output)
 
     args = (10.1232, 0.43432, 1)  # inflation, gq, r_seed
     assert rdmcl.mcmcmc_mcl(args, params) == 24.153846153846153
