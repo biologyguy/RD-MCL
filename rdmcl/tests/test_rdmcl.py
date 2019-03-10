@@ -2161,6 +2161,7 @@ def test_argparse_init(monkeypatch, hf):
     assert temp_in_args.ext_penalty == 0
 
 
+'''
 @pytest.mark.slow
 def test_full_run(hf, capsys):
     # I can't break these up into separate test functions because of collisions with logger
@@ -2203,7 +2204,7 @@ group_0_3_1\t0.559\tMle-Panxα5
     assert "RESUME: All PSI-Pred .ss2 files found" in err
     assert "Generating initial all-by-all similarity graph" in err
 
-    '''
+
     # Now a full run from scratch (on smaller set), with non-existant psi-pred dir
     open(join(out_dir.path, "rdmcl.log"), "w").close()
     shutil.move(join(out_dir.path, "rdmcl.log"), "rdmcl.log")
